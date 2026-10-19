@@ -4,7 +4,7 @@ import { createPrompts } from "./src/prompts.js"
 import { createSelfCheck } from "./src/selfcheck.js"
 import { createShadowLog, parseShadowLog } from "./src/shadowlog.js"
 import { createState } from "./src/state.js"
-import { createStore } from "./src/lessons.js"
+import { createStore, score } from "./src/lessons.js"
 import { extract } from "./src/extract.js"
 import { resolveConfig } from "./src/config.js"
 
@@ -58,6 +58,13 @@ export default {
 
     const writeSelfCheck = () => {
       try {
+        const lessons = store.list()
+        check.stock({
+          lessons: lessons.length,
+          top: lessons[0]?.id ?? null,
+          topScore: lessons.length ? score(lessons[0]) : null,
+          queued: state.pending.length,
+        })
         mkdirSync(config.dir, { recursive: true })
         writeFileSync(config.selfcheck, check.render())
       } catch (err) {

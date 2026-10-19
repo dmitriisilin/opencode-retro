@@ -389,6 +389,14 @@ session, checking the result still parses into lessons — the only check that e
 whole pipeline including a user-edited prompt; and which resolution layer each prompt came
 from, with any pending update named.
 
+### It is about the plugin, not about the session
+
+The liveness assertions can only be measured from real traffic, but that does not make the
+report a session summary. The file states up front that it is about the plugin, cites the
+session it measured on as evidence in one line, and keeps anything the human has to *act*
+on — lessons waiting, sessions queued — in its own section. `sessions/` holds the sessions
+and `lessons/` holds what was learned from them; the self-check holds neither.
+
 ### The file explains itself
 
 Decision 17. This is the whole file, not an excerpt — the prose is part of the artifact:

@@ -20,8 +20,11 @@ export function createSelfCheck({ versions, repo, loadedAt = Date.now() }) {
     heartbeat: null,
     verified: null,
     session: null,
+    sessionEnded: null,
     checks: [],
     notes: [],
+    /** Not health: how much is sitting there waiting for the human. */
+    stock: null,
   }
 
   return {
@@ -32,10 +35,14 @@ export function createSelfCheck({ versions, repo, loadedAt = Date.now() }) {
     note: (text) => {
       if (text && !state.notes.includes(text)) state.notes.push(text)
     },
+    stock: (stock) => {
+      state.stock = stock
+    },
     verify(session, at = Date.now()) {
       state.verified = at
       state.heartbeat = at
       state.session = session.id
+      state.sessionEnded = at
       state.checks = assess(session)
       return state
     },
@@ -145,7 +152,14 @@ export function render(state) {
   const lines = [
     "# retro self-check",
     "",
-    [state.versions?.opencode && `opencode ${state.versions.opencode}`, state.versions?.plugin && `opencode-retro ${state.versions.plugin}`, state.repo]
+    "This file is about whether the plugin is working. It is not a report on your session —",
+    "your sessions are in `sessions/`, and what was learned from them is in `lessons/`.",
+    "",
+    [
+      state.versions?.opencode && `opencode ${state.versions.opencode}`,
+      state.versions?.plugin && `opencode-retro ${state.versions.plugin}`,
+      state.repo,
+    ]
       .filter(Boolean)
       .join(" · "),
     "",
@@ -160,26 +174,58 @@ export function render(state) {
     "that failed to load. Check that `opencode.json` points at an absolute path, then run",
     "`/retro check`.",
     "",
+    "## Is it working",
+    "",
   ]
 
-  if (state.session) {
-    lines.push(`## Last session — ${state.session}`, "")
+  if (state.checks.length) {
     for (const c of state.checks) {
       lines.push(`- ${c.status.padEnd(width)}  ${c.name.padEnd(12)}  ${c.detail}`)
       if (c.meaning) lines.push(`  ${" ".repeat(width)}  ${" ".repeat(12)}  → ${c.meaning}`)
     }
-    lines.push("")
+    lines.push(
+      "",
+      `Liveness can only be proven by real traffic, so the above was measured on session`,
+      `\`${state.session}\`, which ended at ${stamp(state.sessionEnded)}.`,
+      "",
+    )
   } else {
-    lines.push("## Last session", "", "No session has ended since the plugin loaded.", "")
+    lines.push(
+      "Nothing measured yet. Hooks that registered prove nothing — a wrong hook name",
+      "registers happily and never fires — so these lines stay empty until a session ends.",
+      "",
+    )
+  }
+
+  if (state.stock) {
+    lines.push("## What is waiting for you", "", ...renderStock(state.stock), "")
   }
 
   if (state.notes.length) {
-    lines.push("## Notes", "")
-    for (const n of state.notes) lines.push(`- ${n}`)
-    lines.push("")
+    lines.push("## Notes", "", ...state.notes.map((n) => `- ${n}`), "")
   }
 
   return lines.join("\n")
 }
+
+function renderStock({ lessons = 0, topScore = null, top = null, queued = 0 } = {}) {
+  const lines = []
+  if (lessons === 0) lines.push("- no lessons recorded yet")
+  else {
+    lines.push(
+      `- ${lessons} lesson${lessons === 1 ? "" : "s"} in \`lessons/\` — run \`/retro\` to review` +
+        (top ? `, starting with \`${top}\`${topScore != null ? ` (score ${round(topScore)})` : ""}` : ""),
+    )
+  }
+  if (queued) {
+    lines.push(
+      `- ${queued} session${queued === 1 ? "" : "s"} queued for extraction, which runs at the start of` +
+        " your next session",
+    )
+  }
+  return lines
+}
+
+const round = (n) => (Number.isInteger(n) ? n : Number(n.toFixed(1)))
 
 export const STATUS = { OK, DEGRADED, BROKEN, SKIPPED }

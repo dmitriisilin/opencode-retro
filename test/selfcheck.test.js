@@ -55,6 +55,36 @@ test("a missing log and a missing trigger are each BROKEN", () => {
   assert.equal(status(assess({ ...healthy, triggered: null }), "trigger"), STATUS.BROKEN)
 })
 
+test("the file says it is about the plugin, not about the session", () => {
+  const check = createSelfCheck({ versions: {}, repo: "r" })
+  check.verify(healthy)
+  const text = check.render()
+
+  assert.match(text, /about whether the plugin is working/)
+  assert.match(text, /not a report on your session/)
+  assert.match(text, /## Is it working/)
+  assert.doesNotMatch(text, /## Last session/, "the session is evidence, not the subject")
+  assert.match(text, /measured on session\n?`ses_x`/, "but it is cited, for debugging")
+})
+
+test("the stock of lessons is reported separately from health", () => {
+  const check = createSelfCheck({ versions: {}, repo: "r" })
+  check.verify(healthy)
+  check.stock({ lessons: 3, top: "lint-skill-no-config", topScore: 27, queued: 1 })
+  const text = check.render()
+
+  assert.match(text, /## What is waiting for you/)
+  assert.match(text, /3 lessons in `lessons\/` — run `\/retro` to review/)
+  assert.match(text, /`lint-skill-no-config` \(score 27\)/)
+  assert.match(text, /1 session queued for extraction/)
+})
+
+test("an empty store says so rather than staying silent", () => {
+  const check = createSelfCheck({ versions: {}, repo: "r" })
+  check.stock({ lessons: 0, queued: 0 })
+  assert.match(check.render(), /no lessons recorded yet/)
+})
+
 test("the rendered file carries its own cadence, threshold and remedy", () => {
   const check = createSelfCheck({ versions: { opencode: "2.0.32", plugin: "0.0.2" }, repo: "github.com/x/y" })
   check.note("prompts/extract.md is locally edited (base 2); a newer default is in prompts/updates/extract.v3.md")
@@ -72,5 +102,7 @@ test("the rendered file carries its own cadence, threshold and remedy", () => {
 
 test("before any session ends the file says so rather than looking healthy", () => {
   const check = createSelfCheck({ versions: {}, repo: "r" })
-  assert.match(check.render(), /No session has ended/)
+  const text = check.render()
+  assert.match(text, /Nothing measured yet/)
+  assert.match(text, /registers happily and never fires/, "and says why registration is no proof")
 })
