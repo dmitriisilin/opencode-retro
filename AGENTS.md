@@ -37,76 +37,199 @@ Motivating example: a project carries a `lint` skill borrowed from another harne
 
 Lesson frontmatter: see README "Lesson format". Keep it human-editable — users will open these files.
 
-## OpenCode v2 plugin API — what we know and what we don't
+> ⚠ **`.opencode/` does not survive M0.** Every write under `.opencode/` makes OpenCode
+> rescan skills and emit `skill.updated`, so a plugin that writes on events writes forever
+> (see "Gotchas" below, and `fixtures/payloads/event-feedback-loop.jsonl`). Even without the
+> loop, one shadow-log append per tool call means one skill rescan per tool call.
+>
+> The layout has to move out of `.opencode/`. Measured: `<project>/.retro/` is clean —
+> 1 `skill.updated`, no loop — and keeps the files in the project, human-readable and
+> git-visible, which is the point of decision 3. Proposed:
+>
+> ```
+> .retro/
+> ├── sessions/<sessionID>.jsonl
+> ├── lessons/<lessonID>.md
+> ├── archive/
+> └── state.json
+> ```
+>
+> Owner's call: `.retro/` as above, or move the machine-local part (sessions, state) into
+> OpenCode's own data dir keyed by `location.project.id` and keep only `lessons/` in the
+> project. **Not decided — do not write the path into code until it is.**
 
-Shape (confirmed by docs):
+## OpenCode v2 plugin API — verified against 2.0.32
+
+Checked on a real install (`opencode v2.0.32`, Bun runtime) with `spike/probe`.
+Raw payloads: `fixtures/payloads/`. Everything in this section is observed, not inferred.
+
+### Package
+
+`@opencode/plugin` — **not** `@opencode-ai/plugin`. Two unrelated npm lines:
+
+| Package | Latest | What it is |
+|---|---|---|
+| `@opencode/plugin` | `2.0.32` | v2. Versioned in lockstep with the `opencode` binary. |
+| `@opencode-ai/plugin` | `1.19.3` | v1, plus a transitional `./v2/promise` subpath whose context has none of the hooks we need. Ignore it. |
+
+Exports: `.` (promise flavour — use this), `./effect`, `./host`, `./runtime`, `./tui`.
+`import { Plugin } from "@opencode/plugin"` works: the entry does `export * as Plugin from "./plugin.js"`.
+Our `peerDependencies` is already right (`>=2.0.18 <3`) but names the wrong package — fix in M1.
+
+### Shape
 
 ```ts
-import { Plugin } from "@opencode/plugin"   // ⚠ see open question 1
+import { Plugin } from "@opencode/plugin"
 
 export default Plugin.define({
   id: "opencode-retro",
   async setup(ctx) {
-    await ctx.tool.hook("execute.before", (e) => { /* e.tool, e.input */ })
-    await ctx.tool.hook("execute.after",  (e) => { /* e.result, e.output, e.outputPaths */ })
-    await ctx.session.hook("prompt",      (e) => { /* user prompt admission */ })
-    await ctx.session.hook("compaction",  (e) => { /* before compaction */ })
-    await ctx.command.transform((cmds) => {
-      cmds.update("retro", (c) => { c.description = "..."; c.template = "..." })
-    })
+    await ctx.tool.hook("execute.after", (e) => {})        // returns { dispose }
+    await ctx.session.hook("prompt", (e) => {})
+    await ctx.command.transform((cmds) => cmds.add({ name, description, execute }))
     const ac = new AbortController()
     void (async () => {
-      for await (const ev of ctx.event.subscribe({ signal: ac.signal })) {
-        if (ev.type === "session.idle") { /* trigger extraction */ }
-      }
+      for await (const ev of ctx.event.subscribe({ signal: ac.signal })) {}
     })()
-    return () => ac.abort()
+    return () => ac.abort()                                // cleanup runs on shutdown
   },
 })
 ```
 
-Also on `ctx`: `session.create/get/prompt/command/interrupt`, `skill.list/transform/reload`, `agent.transform`, `options` (from config), `location.directory`.
+`ctx` carries 26 keys. The ones that matter to us:
 
-Local loading: put the file in `.opencode/plugins/` of a project, or reference it in `opencode.json(c)`:
-`"plugins": [{ "package": "/abs/path/to/opencode-retro", "options": { ... } }]`.
-Verify loaded plugins: `opencode2 api get /api/plugin` (or the equivalent for the installed binary).
+| | |
+|---|---|
+| `tool` | `hook("execute.before"\|"execute.after")`, `transform`, `list`, `reload` |
+| `session` | `hook(…)` ×12, plus `create / prompt / generate / command / compact / context / wait / interrupt / …` |
+| `event` | `subscribe({ signal })` → `AsyncIterable` over every event in the location |
+| `generate` | `text({ prompt, model: { providerID, id } })` → `{ text }` |
+| `command` | `transform(cmds => cmds.add({ name, description, execute }))`, `list`, `reload` |
+| `skill` | `list`, `transform`, `reload` |
+| `vcs` | `status`, `diff`, `base`, `branch`, `get` |
+| `storage` | `get / set / remove / scan` — JSON KV, plugin-scoped |
+| `permission` | `hook`, `assert`, `list`, `reply` |
+| `shell` | `hook` |
+| `location` | `{ directory, project: { id, directory, canonical }, workspaceID }` |
 
-### Open questions — resolve on a real install before writing real code
+`location.project.id` is a stable workspace identifier — use it for lesson scoping
+(decision 8) instead of shelling out to `git rev-parse`.
 
-1. **Package name.** Docs disagree: `@opencode/plugin` (migration guide, used by opencode-instincts ≥2.0.18) vs `@opencode-ai/plugin/v2` (v2.opencode.ai plugins page). Check what the installed OpenCode actually resolves; fix `package.json` peerDependency accordingly.
-2. **Calling a model from a plugin.** No documented `generate.text`. opencode-instincts README claims `ctx.generate.text({ prompt, model })` exists. Alternative: `ctx.session.create()` a hidden session + `ctx.session.prompt()`. Pick whichever works; the extractor must run with a clean context and ideally a configurable (cheap) model.
-3. **What `execute.after` and `prompt` events actually carry** — session id, step index, tool name, args, output shape, exit codes for bash. Dump real payloads to a file first.
-4. **How `/retro` should interact** — one-by-one accept/reject inside a chat session. Likely a command whose template instructs the agent to walk `lessons/` and use a plugin-registered tool (`retro_decide(id, action)`) to record decisions. Verify a command template + custom tool is enough, or whether a TUI plugin is needed.
-5. **Does `session.idle` fire reliably** at end of work, and is it per-session (subagents too)?
+Local loading: `"plugins": [{ "package": "/abs/path", "options": {…} }]` in
+`opencode.json`. Verify with `opencode api get /api/plugin -H "x-opencode-directory: <dir>"`;
+ours reports `source: { type: "local", path }`, `features: { server: true }`.
+
+### What the payloads actually look like
+
+**Tool calls.** `execute.before` / `execute.after` both carry
+`{ tool, sessionID, agent, messageID, id, input }`; `after` adds
+`status: "completed" | "error"` and `result: { output, content, metadata }`.
+Observed tool names: `read`, `glob`, `edit`, `shell`, `skill`. Not `bash` — `shell`.
+
+- **A skill invocation is an ordinary tool call**: `tool: "skill"`, `input: { id: "lint" }`,
+  and the result's `metadata` gives `{ name, directory }` — the exact `SKILL.md` to
+  propose a change to. The skill→failure anchor needs nothing but the shadow log.
+- **`edit` returns a unified patch** per file in `result.metadata.files[]` with
+  `{ file, patch, additions, deletions, status }`. Revert detection can compare patches
+  instead of guessing from paths.
+- **`shell` exit codes live in `result.output.exit` / `result.metadata.exit`**, *not* in
+  `status`. The eslint failure in the trap fixture is `status: "completed"` with `exit: 2`.
+  Any failure detector that reads `status` will see a clean session.
+- **Tool calls run in parallel.** `before` events arrive batched ahead of their `after`s
+  (observed: 3 × `before`, then 3 × `after`). Pair them by `id`; never assume interleaving
+  and never use arrival order as a step index.
+
+**Prompts.** `session.prompt` → `{ sessionID, messageID, prompt: { text, files }, delivery }`.
+
+**Step index.** Every event carries `durable: { aggregateID, seq, version }`, where
+`aggregateID` is the session and `seq` is monotonic per session. That is our evidence
+coordinate (decision 6) — not a counter we maintain ourselves.
+
+**Clean-context model call.** `ctx.generate.text({ prompt, model: { providerID, id } })`
+returns `{ text }` — one-shot, no session, no history. This is the extractor's call
+(decision 5). `ctx.session.create({ title, location })` also works as a fallback if the
+extractor ever needs tools.
+
+**`/retro` is a real command.** `cmds.add({ name, description, execute })` registers, and
+`execute` fires with `{ sessionID, prompt: { text }, delivery }`. No template and no TUI
+plugin needed — and it gets the `sessionID`, so it can drive the review conversation with
+`ctx.session.prompt()`.
+
+### Gotchas that cost time
+
+1. **Writing under `.opencode/` is a feedback loop.** Any write there makes OpenCode
+   rescan skills and emit `skill.updated`. A plugin that writes on each event therefore
+   writes forever: the probe produced 416 `skill.updated` in one session and kept growing
+   by ~17 events/second with no session running
+   (`fixtures/payloads/event-feedback-loop.jsonl`). The same probe writing to
+   `<project>/.retro-probe/` or outside the project emits exactly 1.
+   **This breaks the on-disk layout above — see the flag there.**
+2. **`session.idle` never fired.** Not in `opencode run --standalone`, not on the
+   background service a minute after the turn finished. The event type exists in the
+   schema; assume it is TUI-only. Use `session.execution.succeeded` / `.failed` /
+   `.interrupted` — they fire reliably and carry `{ sessionID }`. Decision 5 says
+   "on `session.idle`"; read it as "on `session.execution.*`".
+3. **The plugin path must be absolute.** A relative `package` path hangs session startup
+   with no error message at all — not a load failure, a hang.
+4. **The background service caches the plugin**, including the environment it was started
+   with. Use `--standalone` while iterating, or `opencode service restart`.
+5. **Never hook `session.hook("http.request"|"http.response")`** — they carry the provider
+   `Authorization` header. `model.request` is safe (checked: headers are session/telemetry
+   only), and that is the one to use if we ever need the model ref.
+6. **API requests are location-scoped.** GETs honour `-H "x-opencode-directory: <dir>"`;
+   `POST /api/session` ignores it and needs `location: { directory }` in the body. A
+   session created in the wrong location makes a plugin-registered command 404 with
+   `CommandNotFoundError` even though `/api/command` lists it.
+7. **Plugins load lazily per location.** The first command invocation right after service
+   start can 404 before the plugin has finished loading.
+
+### Still unverified
+
+- Does `session.execution.*` fire separately for subagent sessions, and does
+  `event.subscribe` see them? (Needed before we decide whether subagent sessions get their
+  own shadow log.)
+- `session.hook("compaction")` — registered without error but never fired; no session got
+  long enough. Decision 3 means we do not depend on it, but the payload is still unknown.
+- `ctx.storage` vs our own files. Storage is plugin-scoped JSON KV and would be the natural
+  home for `state.json`, but decision 12 / the "human-readable files" convention argues
+  for staying on disk. Not urgent.
+- Whether `/api/experimental/session/{id}/log` (the durable event log) makes the shadow log
+  redundant. Decision 3 says keep our own; worth a look before M1 ships.
 
 ## Plan
 
-**M0 — spikes (first session on a real OpenCode install)**
-- [ ] Minimal plugin loads from a local path; logs `setup` to a file.
-- [ ] Dump raw payloads of `tool.execute.after`, `session.prompt`, `session.idle`, `compaction` into a file. Commit sample payloads to `fixtures/payloads/`.
-- [ ] Answer open questions 1–5 above; update this file.
+**M0 — spikes — done** (OpenCode 2.0.32, `spike/`, `fixtures/payloads/`)
+- [x] Minimal plugin loads from a local path; logs `setup` to a file.
+- [x] Dump raw payloads. 9 hooks registered, 0 failures; committed to `fixtures/payloads/`.
+      `session.idle` never fired and `compaction` never fired — see "Gotchas" and "Still unverified".
+- [x] Answer open questions 1–5; this file rewritten against what the install actually does.
+- [x] Playground with planted traps (`spike/playground/`); the `lint` trap from "What we are
+      building" reproduces on every source edit.
 
 **M1 — capture (L0, no LLM)**
-- [ ] Shadow log writer.
+- [ ] Decide the on-disk path first (see the flag under "On-disk layout").
+- [ ] Shadow log writer. Pair `execute.before`/`after` by `id`; index steps by `durable.seq`.
+- [ ] Fix `peerDependencies` to `@opencode/plugin`.
 - [ ] Projection: shadow log → compressed text for the extractor (deterministic, unit-tested on fixtures).
 - [ ] Anchor detectors: revert, repeat. (skill→failure, abandon, correction later.)
 
 **M2 — extraction**
-- [ ] Extractor prompt + clean-context model call on `session.idle`.
+- [ ] Extractor prompt + `ctx.generate.text` on `session.execution.succeeded|failed|interrupted`.
 - [ ] Lesson store: create / merge (recurrence++) / score / cap / archive.
 - [ ] Rejected-ids fed back into the extractor prompt.
 
 **M3 — `/retro` (L1)**
-- [ ] Command + decision tool; accept applies diff, reject/later recorded.
+- [ ] Command via `cmds.add({ execute })` + decision tool; accept applies diff, reject/later recorded.
 - [ ] End-of-review summary + `git diff`.
 
 **M4 — first public release** (`v0.1.0` tag → CI publishes).
 
 ## Dev environment
 
-- Develop **outside** your everyday OpenCode config: load the plugin by absolute path in a dedicated playground project's `opencode.json`, not globally.
-- Keep a **playground repo with planted traps** (e.g. a `lint` skill in a project with no linter, a README with a wrong build command, a missing CLI tool). Deterministic friction → reproducible test sessions.
-- Save real shadow logs from the playground into `fixtures/sessions/` — then projection, detectors and the extractor prompt can be iterated without running OpenCode.
+- Develop **outside** your everyday OpenCode config: load the plugin by absolute path in a dedicated playground project's `opencode.json`, not globally. The path must be absolute — a relative one hangs startup.
+- The **playground with planted traps** lives in `spike/playground/` (`lint` skill with no linter, `AGENTS.md` pointing at a `npm run build` that does not exist). See `spike/README.md` for how to run it. Deterministic friction → reproducible test sessions.
+- Use `--standalone` while iterating; the background service caches the plugin and its environment.
+- Save real shadow logs from the playground into `fixtures/sessions/` — then projection, detectors and the extractor prompt can be iterated without running OpenCode. Raw hook/event captures (a layer below the shadow log) are in `fixtures/payloads/`.
 - Dogfooding: once M1 works, keep the plugin enabled while developing the plugin itself.
 
 ## Conventions
