@@ -1,0 +1,49 @@
+{
+  "name": "opencode-retro",
+  "version": "0.0.1",
+  "description": "Retrospectives for coding agents: an OpenCode v2 plugin that turns session friction into changes to skills, instructions and tools",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "opencode",
+    "opencode-plugin",
+    "retro",
+    "retrospective",
+    "self-improvement",
+    "agent-skills",
+    "continuous-learning"
+  ],
+  "author": "Dmitrii Silin",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dmitriisilin/opencode-retro.git"
+  },
+  "homepage": "https://github.com/dmitriisilin/opencode-retro#readme",
+  "bugs": {
+    "url": "https://github.com/dmitriisilin/opencode-retro/issues"
+  },
+  "peerDependencies": {
+    "@opencode/plugin": ">=2.0.18 <3"
+  },
+  "peerDependenciesMeta": {
+    "@opencode/plugin": {
+      "optional": true
+    }
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
