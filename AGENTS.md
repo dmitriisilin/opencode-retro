@@ -26,7 +26,7 @@ Motivating example: a project carries a `lint` skill borrowed from another harne
 12. **Not a memory plugin.** We edit artifacts the harness already reads; we don't build a knowledge base the agent must remember to query.
 13. **Both prompts live in the user's project, not in the package.** The extraction prompt (log → lessons) and the application prompt (lesson → proposal) are the two places where this plugin's behaviour is actually decided, so they sit next to their inputs and outputs, in `.retro/prompts/`. The package ships defaults; on first run they are copied into the project if absent. Resolution order per prompt: project → global (`~/.config/opencode/retro/prompts/`) → packaged default. `options` in `opencode.json` can override the directory and the extractor model.
 14. **The prompt is editable; the output contract is compiled in.** The project file is entirely the user's — criteria, emphasis, project-specific wording. The output format the parser needs lives in the plugin's source and is wrapped around the prompt at call time. It is never written to disk, so it cannot be edited away by accident, and the prompt file has no "do not touch" region in it. `/retro check` prints the contract for anyone who wants to see it.
-15. **New defaults arrive as news, not as changes.** One live prompt file per prompt, seeded from our default, carrying `base` (the default's version) and `base_sha` (its hash) in frontmatter. On load: if the body still hashes to `base_sha` the user never touched it, so replace it silently and bump `base`. If it does not, the user owns it — never touch it, and instead drop the new default into `.retro/prompts/updates/extract.v3.md` and name it in `selfcheck.md`. Updates accumulate and are never applied for them; they are release notes with the full text attached. Rejected alternative: shipping a default file plus a user override file. It forces the user to know what the default said before they can write a meaningful override, makes partial overrides ambiguous, and gives two sources of truth for one prompt.
+15. **New defaults arrive as news, never as changes.** One live file per prompt, seeded from our default, carrying `base` (the default's version) in frontmatter. We never write to it again — not even when the user has not touched it. A newer default lands in `.retro/prompts/updates/extract.v3.md`, headed by a statement that *this file is not used*, that the live file is what runs, and that if they have their own version they should keep it and consider adapting it to what changed. Named in `selfcheck.md` so it is not just a file in a directory nobody opens. Updates accumulate like release notes; deleting them is the user's call. Rejected alternative: shipping a default file plus a user override file. It forces the user to know what the default said before they can write a meaningful override, makes partial overrides ambiguous, and gives two sources of truth for one prompt.
 16. **The plugin must prove it is alive, in a file.** `.retro/selfcheck.md`. Registration proves nothing (see "Gotchas": wrong hook names register happily), so the report asserts *liveness*, not setup. It carries three timestamps — `loaded`, `heartbeat`, `verified` — because they fail separately and the gaps between them name which half broke.
 17. **Everything the file needs to be understood is in the file.** `selfcheck.md` states its own cadence, its own staleness threshold, what each failing line means, what to run next, and the version and repo it came from. Nobody reads documentation to interpret a diagnostic, and a diagnostic that needs documentation is not one. Same rule for `.retro/prompts/updates/`: each update file explains in its own header what it is and that nothing was changed on the user's behalf.
 
@@ -141,9 +141,14 @@ Observed tool names: `read`, `glob`, `edit`, `shell`, `skill`. Not `bash` — `s
 
 **Prompts.** `session.prompt` → `{ sessionID, messageID, prompt: { text, files }, delivery }`.
 
-**Step index.** Every event carries `durable: { aggregateID, seq, version }`, where
-`aggregateID` is the session and `seq` is monotonic per session. That is our evidence
-coordinate (decision 6) — not a counter we maintain ourselves.
+**Step index.** Every *event* carries `durable: { aggregateID, seq, version }`, where
+`aggregateID` is the session and `seq` is monotonic per session. Hooks carry no `seq` at
+all, so indexing tool calls by it would mean joining hook data to `session.tool.called` on
+the call id and racing the event stream. So the evidence coordinate (decision 6) is `n` —
+our own per-session counter, assigned when a record is appended, deterministic from the log
+alone — and `seq` is recorded alongside it when the event supplies it, which in practice is
+every time (17/17 in a live session). Corrects an earlier claim in this file that `seq`
+should be the index outright.
 
 **Clean-context model call.** `ctx.generate.text({ prompt, model: { providerID, id } })`
 returns `{ text }` — one-shot, no session, no history. This is the extractor's call
@@ -405,15 +410,21 @@ understood is just a diagnostic that was written badly.
 - [x] Playground with planted traps (`spike/playground/`); the `lint` trap from "What we are
       building" reproduces on every source edit.
 
-**M1 — capture (L0, no LLM)**
-- [ ] Shadow log writer into `.retro/sessions/`. Pair `execute.before`/`after` by `id`;
-      index steps by `durable.seq`.
-- [ ] Fix `peerDependencies` to `@opencode/plugin`.
-- [ ] Passive self-check (decisions 16–17): three timestamps, the five liveness assertions,
-      the throttled heartbeat, and the self-explaining prose. Ship this *with* the shadow
-      log, not after it — an unverified capture layer is worse than none.
-- [ ] Projection: shadow log → compressed text for the extractor (deterministic, unit-tested on fixtures).
-- [ ] Anchor detectors: revert, repeat. (skill→failure, abandon, correction later.)
+**M1 — capture (L0, no LLM) — done** (30 tests, `npm test`; verified live in the playground)
+- [x] Shadow log writer into `.retro/sessions/` (`src/shadowlog.js`, `src/ingest.js`). Pairs
+      `execute.before`/`after` by `id`; steps indexed by our own `n`, with `durable.seq`
+      joined in from the event stream.
+- [x] Fix `peerDependencies` to `@opencode/plugin`.
+- [x] Passive self-check (`src/selfcheck.js`): three timestamps, five liveness assertions,
+      throttled heartbeat, self-explaining prose. Shipped *with* the shadow log — an
+      unverified capture layer is worse than none.
+- [x] Projection (`src/projection.js`): deterministic, 26 KB of log → 9.5 KB of text.
+- [x] Anchor detectors (`src/anchors.js`): repeat, revert, and skill→failure. The last one
+      matches on *what the skill prescribes*, because a live session put the skill at step 9
+      and its failing command at step 18 — any fixed proximity window is arbitrary.
+- [x] Real shadow log saved to `fixtures/sessions/lint-trap-live.jsonl`.
+- [ ] Left for M2, where they have something to be judged against: abandon and correction
+      detectors (both need assistant text analysis, not tool shapes).
 
 **M2 — extraction**
 - [ ] Packaged default `extract.md` + seeding into `.retro/prompts/`, the three-layer
@@ -439,7 +450,10 @@ understood is just a diagnostic that was written badly.
 
 - Develop **outside** your everyday OpenCode config: load the plugin by absolute path in a dedicated playground project's `opencode.json`, not globally. The path must be absolute — a relative one hangs startup and the plugin never loads.
 - The **playground with planted traps** lives in `spike/playground/` (`lint` skill with no linter, `AGENTS.md` pointing at a `npm run build` that does not exist). See `spike/README.md` for how to run it. Deterministic friction → reproducible test sessions.
-- Use `--standalone` while iterating; the background service caches the plugin and its environment.
+- The background service caches the plugin and its environment, so restart it after editing
+  (`opencode service restart`). `--standalone` avoids that but is flaky here — it has hung
+  at `serve --stdio` repeatedly, with an absolute-path control passing seconds later. Prefer
+  restarting the service.
 - Save real shadow logs from the playground into `fixtures/sessions/` — then projection, detectors and the extractor prompt can be iterated without running OpenCode. Raw hook/event captures (a layer below the shadow log) are in `fixtures/payloads/`.
 - Dogfooding: once M1 works, keep the plugin enabled while developing the plugin itself.
 
