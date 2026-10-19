@@ -25,9 +25,10 @@ Motivating example: a project carries a `lint` skill borrowed from another harne
 11. **Autonomy ladder L0–L3** (see README). v1 target is L1. Promotion between levels is to be driven by accept/reject stats, later.
 12. **Not a memory plugin.** We edit artifacts the harness already reads; we don't build a knowledge base the agent must remember to query.
 13. **Both prompts live in the user's project, not in the package.** The extraction prompt (log → lessons) and the application prompt (lesson → proposal) are the two places where this plugin's behaviour is actually decided, so they sit next to their inputs and outputs, in `.retro/prompts/`. The package ships defaults; on first run they are copied into the project if absent. Resolution order per prompt: project → global (`~/.config/opencode/retro/prompts/`) → packaged default. `options` in `opencode.json` can override the directory and the extractor model.
-14. **The prompt is editable; the output contract is not.** The project file holds criteria, emphasis and project-specific wording. The plugin appends an output-format block it owns and the user does not edit. Reason: a free-form edit that breaks parsing would silently stop lessons from being created — the exact failure mode decision 16 exists to prevent.
-15. **Shipped prompts upgrade without clobbering local edits.** Each copied prompt records in frontmatter the hash of the default it came from. On load: unchanged copy + newer default → upgrade silently; locally edited + newer default → leave the local file alone and say so in the self-check report, with the diff available. Never overwrite an edited prompt.
-16. **The plugin must prove it is alive, in a file.** `.retro/selfcheck.md`, rewritten at the end of every session. Registration proves nothing (see "Gotchas": wrong hook names register happily), so the report asserts *liveness*, not setup. If the file is older than the user's last session, the plugin is not running — that is the one failure it cannot report itself, so the file's mtime carries it.
+14. **The prompt is editable; the output contract is compiled in.** The project file is entirely the user's — criteria, emphasis, project-specific wording. The output format the parser needs lives in the plugin's source and is wrapped around the prompt at call time. It is never written to disk, so it cannot be edited away by accident, and the prompt file has no "do not touch" region in it. `/retro check` prints the contract for anyone who wants to see it.
+15. **New defaults arrive as news, not as changes.** One live prompt file per prompt, seeded from our default, carrying `base` (the default's version) and `base_sha` (its hash) in frontmatter. On load: if the body still hashes to `base_sha` the user never touched it, so replace it silently and bump `base`. If it does not, the user owns it — never touch it, and instead drop the new default into `.retro/prompts/updates/extract.v3.md` and name it in `selfcheck.md`. Updates accumulate and are never applied for them; they are release notes with the full text attached. Rejected alternative: shipping a default file plus a user override file. It forces the user to know what the default said before they can write a meaningful override, makes partial overrides ambiguous, and gives two sources of truth for one prompt.
+16. **The plugin must prove it is alive, in a file.** `.retro/selfcheck.md`. Registration proves nothing (see "Gotchas": wrong hook names register happily), so the report asserts *liveness*, not setup. It carries three timestamps — `loaded`, `heartbeat`, `verified` — because they fail separately and the gaps between them name which half broke.
+17. **Everything the file needs to be understood is in the file.** `selfcheck.md` states its own cadence, its own staleness threshold, what each failing line means, what to run next, and the version and repo it came from. Nobody reads documentation to interpret a diagnostic, and a diagnostic that needs documentation is not one. Same rule for `.retro/prompts/updates/`: each update file explains in its own header what it is and that nothing was changed on the user's behalf.
 
 ## On-disk layout (in the user's project, not this repo)
 
@@ -228,41 +229,52 @@ packaged defaults are also the seed: on first run each missing prompt is copied 
 `.retro/prompts/` so there is something concrete to edit, rather than an empty directory
 and a doc telling you what you could have written.
 
-### Keeping the contract while letting the prose move
+### The output contract is not on disk
 
-The file is split: everything the user writes, then a block the plugin appends and owns.
+The prompt file is wholly the user's. The format the parser needs is a constant in our
+source, wrapped around the prompt at call time:
 
-```markdown
----
-retro: extract
-base: 9f2a1c4            # hash of the packaged default this was seeded from
----
-
-<!-- Everything above the marker is yours. Edit freely. -->
-
-You are reviewing one coding session…
-
-<!-- retro:output-contract — appended by the plugin, do not edit -->
+```
+generate.text({ prompt: userPrompt + OUTPUT_CONTRACT })
 ```
 
-The appended block carries the output format the parser needs. Edits to it are discarded
-on load (and reported), because a prompt that no longer produces parseable lessons fails
-*silently* — the session ends, nothing appears in `lessons/`, and nobody finds out for a
-week. Keeping the contract out of reach is what makes the rest safe to edit.
+No "managed block", no marker comments, no region the user is told not to touch — because a
+file with a do-not-touch region is a file someone will eventually touch. The seeded prompt
+carries one line saying the output format is appended automatically and that `/retro check`
+will print it.
 
-`base` is how an upgrade stays non-destructive. On load, compare the file against the
-default it was seeded from:
+### New defaults arrive as news
 
-| local file | packaged default | action |
+```
+.retro/prompts/
+├── extract.md                  # live. the only file the plugin reads
+├── apply.md
+└── updates/
+    └── extract.v3.md           # a newer default, for you to read. nothing was changed.
+```
+
+The live file's frontmatter records where it came from:
+
+```yaml
+---
+prompt: extract
+base: 2            # our default version it was seeded from
+base_sha: 9f2a1c4  # hash of that default's body
+---
+```
+
+On load, hash the live body:
+
+| hashes to `base_sha` | newer default shipped | what happens |
 |---|---|---|
-| unchanged | unchanged | nothing |
-| unchanged | newer | replace silently, update `base` |
-| edited | unchanged | nothing |
-| edited | newer | **leave it alone**, note it in `selfcheck.md` with the diff |
+| yes (untouched) | no | nothing |
+| yes (untouched) | yes | replaced silently, `base` bumped — there was nothing to lose |
+| no (user owns it) | no | nothing |
+| no (user owns it) | yes | `updates/extract.v3.md` written, named in `selfcheck.md`, live file untouched |
 
-That last row is the one that matters: the user's work is never overwritten, and they
-still find out that a better default exists. It is also the path for contributing back —
-the diff between the local prompt and its `base` is exactly the patch to propose upstream.
+Updates accumulate like release notes and are never applied on the user's behalf. We never
+delete them either — that is the user's call. The diff between the live file and its `base`
+is also the patch to propose back upstream.
 
 ### Config
 
@@ -285,9 +297,9 @@ the diff between the local prompt and its `base` is exactly the patch to propose
 
 ## Self-check
 
-Decision 16. The failure this guards against is specific and measured: **a hook whose name
-the API changed still registers successfully and simply never fires** (Gotcha 8). A plugin
-that reports "setup complete" is reporting nothing.
+Decisions 16–17. The failure this guards against is specific and measured: **a hook whose
+name the API changed still registers successfully and simply never fires** (Gotcha 8). A
+plugin that reports "setup complete" is reporting nothing.
 
 So `.retro/selfcheck.md` asserts liveness, and it does it by cross-checking two independent
 paths to the same fact. The event stream (`ctx.event.subscribe`) and the hooks
@@ -295,58 +307,93 @@ paths to the same fact. The event stream (`ctx.event.subscribe`) and the hooks
 twelve tool calls happened and the hook fired zero times, the hook API moved — and we can
 say so, with numbers, instead of guessing.
 
-### Passive, every session
+### Three timestamps, because three things fail separately
 
-Written at `session.execution.succeeded|failed|interrupted`:
+| Field | Written | Costs | Gone means |
+|---|---|---|---|
+| `loaded` | plugin `setup` runs | nothing | the plugin is not being loaded at all |
+| `heartbeat` | on tool-call activity, throttled to ≤1 write/min | one small file write | hooks stopped firing mid-session |
+| `verified` | at `session.execution.succeeded\|failed\|interrupted`, after the assertions below | one file write | our end-of-session trigger is gone |
+
+The gaps diagnose the halves. `loaded` fresh but `verified` old → we load and hook, but the
+trigger event moved (`session.idle` is already one such casualty, Gotcha 2). All three old
+→ not running. `heartbeat` fresh, `verified` old → the session never ended cleanly.
+
+The heartbeat is what makes staleness mean something. Without it, a long session looks
+identical to a dead plugin. One write per minute, into `.retro/` which provokes no watcher
+rescan (measured — Gotcha 1 is about `.opencode/` only), is cheap enough to not think about.
+
+### The assertions
+
+Evaluated when a session ends, written into `verified`:
 
 | Check | Assertion | What a failure means |
 |---|---|---|
 | prompt hook | a session that ran at all produced ≥1 `session.prompt` | the prompt hook is dead |
 | tool hook | `session.tool.called` events seen ⇒ equally many `tool.execute.after` with matching `id` | the tool hook is dead, or the payload shape moved |
-| shadow log | the session's `.jsonl` exists and is non-empty | writing is broken (permissions, path, the `.opencode/` loop) |
-| trigger | the end-of-session event arrived | our extraction trigger is gone (`session.idle` is already one such casualty) |
+| shadow log | the session's `.jsonl` exists and is non-empty | writing is broken (permissions, path) |
+| trigger | the end-of-session event arrived | our extraction trigger is gone |
 | extraction | ran, and produced either lessons or an explicit "nothing to learn" | the model call or the output contract broke |
 
-### Active, on `/retro check`
+Statuses are `ok`, `DEGRADED`, `BROKEN`, and `not exercised` — a session with no tool calls
+does not prove the tool hook works and must not claim to.
 
-Costs a model call, so it is asked for, not automatic:
+### `/retro check` — the active version
 
-- versions: `ctx.app.version`, the plugin's own, the resolved `@opencode/plugin`;
-- surface: every `ctx` domain and method we rely on is present, not `undefined` (this part
-  *is* detectable at load — Gotcha 8);
-- connectivity: `ctx.generate.text` with a trivial prompt against the configured model;
-- round-trip: run the real extraction prompt over a committed fixture session and check the
-  result parses into lessons. This is the only check that exercises the whole pipeline,
-  including a user-edited prompt, which is why the fixture ships with the package;
-- prompts: which of the three resolution layers each prompt came from, and whether a local
-  edit is sitting on a stale `base`.
+Costs a model call, so it is asked for, not automatic. Adds: versions (`ctx.app.version`,
+ours, the resolved `@opencode/plugin`); the `ctx` surface we depend on, member by member
+(this part *is* detectable — missing ones read `undefined`, Gotcha 8); connectivity via
+`ctx.generate.text`; a round-trip of the real extraction prompt over a bundled fixture
+session, checking the result still parses into lessons — the only check that exercises the
+whole pipeline including a user-edited prompt; and which resolution layer each prompt came
+from, with any pending update named.
 
-### What it looks like
+### The file explains itself
+
+Decision 17. This is the whole file, not an excerpt — the prose is part of the artifact:
 
 ```markdown
 # retro self-check
 
-opencode 2.0.32 · opencode-retro 0.1.0 · checked 2026-10-19 20:31
+opencode 2.0.32 · opencode-retro 0.1.0 · github.com/dmitriisilin/opencode-retro
 
-- ok        prompt hook          3 prompts
-- ok        tool hook            12 events / 12 hook calls
-- ok        shadow log           sessions/ses_eabb21.jsonl, 47 entries
-- ok        trigger              session.execution.succeeded
-- DEGRADED  extraction           model call failed: Model unavailable: foo/bar
-- note      prompts/extract.md   locally edited, base 9f2a1c4, default is now 2b71e08
+loaded     2026-10-19 20:29   (plugin start)
+heartbeat  2026-10-19 20:31   (refreshed while a session is working, at most once a minute)
+verified   2026-10-19 20:31   (rewritten when a session ends)
+
+**If you are working right now and `heartbeat` is more than a few minutes old, this plugin
+is not running.** Nothing else will tell you: OpenCode does not report a plugin that failed
+to load. Check that `opencode.json` points at an absolute path, then run `/retro check`.
+
+## Last session — ses_eabb21faaffeVlcHi1DAhqgq1p
+
+- ok              prompt hook     3 prompts seen
+- ok              tool hook       12 tool-call events / 12 hook calls
+- ok              shadow log      sessions/ses_eabb21.jsonl, 47 entries
+- ok              trigger         session.execution.succeeded
+- DEGRADED        extraction      model call failed: Model unavailable: foo/bar
+                                  → no lessons from this session. Check `options.model`
+                                    in opencode.json, then /retro check.
+
+## Notes
+
+- prompts/extract.md is locally edited (base 2). A newer default is in
+  prompts/updates/extract.v3.md. Nothing was changed for you.
 ```
 
-Honest statuses only: `ok`, `DEGRADED`, `BROKEN`, and `not exercised` for anything this
-session could not test (a session with no tool calls does not prove the tool hook works, and
-must not claim to).
+Every failing line carries what broke and what to do about it, next to each other. The
+version and the repo are in the header so that whoever debugs this — a person or an agent
+reading the file — needs no other context.
 
-### The one thing it cannot say
+### Debugging needs no shipped toolkit
 
-If the plugin does not load at all — bad path, throwing `setup`, a module that will not
-import — nothing is written, because nothing is running, and OpenCode will not mention it
-either (Gotcha 9). The file's own staleness is therefore part of the contract, and the README
-has to say it plainly: **if `.retro/selfcheck.md` is older than your last session, the plugin
-is not running.**
+The question "how will an agent know how this is supposed to work?" is answered by the file
+above, not by a kit. It states the pipeline, the versions, which stage failed, and the next
+command. An agent handed `.retro/selfcheck.md` has what it needs; the header's repo URL
+covers the rest. We do not register a skill, add instructions to the user's harness, or
+install anything into their agent's context — our prompts operate on our own extraction, not
+in the user's skill space, and a diagnostic that needs to inject itself into a session to be
+understood is just a diagnostic that was written badly.
 
 ## Plan
 
@@ -362,19 +409,21 @@ is not running.**
 - [ ] Shadow log writer into `.retro/sessions/`. Pair `execute.before`/`after` by `id`;
       index steps by `durable.seq`.
 - [ ] Fix `peerDependencies` to `@opencode/plugin`.
-- [ ] Passive self-check (decision 16): the five liveness assertions, written to
-      `.retro/selfcheck.md` at `session.execution.*`. Ship this *with* the shadow log, not
-      after it — an unverified capture layer is worse than none.
+- [ ] Passive self-check (decisions 16–17): three timestamps, the five liveness assertions,
+      the throttled heartbeat, and the self-explaining prose. Ship this *with* the shadow
+      log, not after it — an unverified capture layer is worse than none.
 - [ ] Projection: shadow log → compressed text for the extractor (deterministic, unit-tested on fixtures).
 - [ ] Anchor detectors: revert, repeat. (skill→failure, abandon, correction later.)
 
 **M2 — extraction**
 - [ ] Packaged default `extract.md` + seeding into `.retro/prompts/`, the three-layer
-      resolution, and the owned output-contract block (decisions 13–14).
+      resolution, and `OUTPUT_CONTRACT` as a source constant wrapped at call time
+      (decisions 13–14).
 - [ ] Extractor runs it through `ctx.generate.text` on `session.execution.succeeded|failed|interrupted`.
 - [ ] Lesson store: create / merge (recurrence++) / score / cap / archive.
 - [ ] Rejected-ids fed back into the extractor prompt.
-- [ ] `base`-hash upgrade logic for shipped prompts (decision 15).
+- [ ] `base`/`base_sha` logic: silent upgrade when untouched, `prompts/updates/<name>.v<n>.md`
+      when the user owns the file (decision 15).
 - [ ] Bundled fixture session + the round-trip check that a prompt still parses, so
       `/retro check` can exercise the whole pipeline.
 
