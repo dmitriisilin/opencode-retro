@@ -25,12 +25,18 @@ export function createSelfCheck({ versions, repo, loadedAt = Date.now() }) {
     notes: [],
     /** Not health: how much is sitting there waiting for the human. */
     stock: null,
+    activeChecks: null,
+    activeAt: null,
   }
 
   return {
     state,
     beat: (at = Date.now()) => {
       state.heartbeat = at
+    },
+    active: (checks) => {
+      state.activeChecks = checks
+      state.activeAt = Date.now()
     },
     note: (text) => {
       if (text && !state.notes.includes(text)) state.notes.push(text)
@@ -197,6 +203,16 @@ export function render(state) {
     )
   }
 
+  if (state.activeChecks?.length) {
+    const width = Math.max(...state.activeChecks.map((c) => c.status.length), DEGRADED.length)
+    lines.push(`## Last \`/retro check\` — ${stamp(state.activeAt)}`, "")
+    for (const c of state.activeChecks) {
+      lines.push(`- ${c.status.padEnd(width)}  ${c.name.padEnd(14)}  ${c.detail}`)
+      if (c.meaning) lines.push(`  ${" ".repeat(width)}  ${" ".repeat(14)}  → ${c.meaning}`)
+    }
+    lines.push("")
+  }
+
   if (state.stock) {
     lines.push("## What is waiting for you", "", ...renderStock(state.stock), "")
   }
@@ -229,3 +245,129 @@ function renderStock({ lessons = 0, topScore = null, top = null, queued = 0 } = 
 const round = (n) => (Number.isInteger(n) ? n : Number(n.toFixed(1)))
 
 export const STATUS = { OK, DEGRADED, BROKEN, SKIPPED }
+
+/* ------------------------------------------------------- the active check */
+
+/**
+ * `/retro check` (AGENTS.md decision 16, "the active version").
+ *
+ * Costs a model call, so it is asked for. It checks the things a passing session cannot:
+ * that the `ctx` surface we depend on is still there, that the model answers, that the
+ * prompts resolve, and that a real extraction prompt still round-trips into a parseable
+ * lesson — which is the only check that exercises a user-edited prompt end to end.
+ */
+export async function activeCheck({ ctx, config, prompts, store, state, log, generate }) {
+  const checks = []
+  const notes = []
+
+  // 1. Surface. This part *is* detectable at load: a missing member reads undefined.
+  const required = [
+    ["tool", "hook"],
+    ["tool", "transform"],
+    ["session", "hook"],
+    ["session", "synthetic"],
+    ["command", "transform"],
+    ["event", "subscribe"],
+    ["generate", "text"],
+  ]
+  const missing = required.filter(([domain, member]) => typeof ctx?.[domain]?.[member] !== "function")
+  checks.push(
+    missing.length
+      ? {
+          status: BROKEN,
+          name: "ctx surface",
+          detail: `missing: ${missing.map((m) => m.join(".")).join(", ")}`,
+          meaning: "this OpenCode moved the plugin API; opencode-retro needs an update.",
+        }
+      : { status: OK, name: "ctx surface", detail: `${required.length} members present` },
+  )
+
+  // 2. Connectivity.
+  if (!config.model?.providerID || !config.model?.id) {
+    checks.push({
+      status: DEGRADED,
+      name: "model",
+      detail: "none configured",
+      meaning:
+        'extraction cannot run. Set options.model, e.g. { "providerID": "deepseek", "id": "deepseek-flash" } ' +
+        "— without it OpenCode resolves the free tier, which a plugin may not use.",
+    })
+  } else {
+    const started = Date.now()
+    try {
+      const reply = await generate({ prompt: "Reply with one word: ok", model: config.model })
+      checks.push({
+        status: reply?.text ? OK : DEGRADED,
+        name: "model",
+        detail: `${config.model.providerID}/${config.model.id} answered in ${Date.now() - started} ms`,
+      })
+    } catch (err) {
+      checks.push({
+        status: BROKEN,
+        name: "model",
+        detail: `${config.model.providerID}/${config.model.id}: ${String(err?.message ?? err).slice(0, 120)}`,
+        meaning: "extraction will keep failing until this resolves.",
+      })
+    }
+  }
+
+  // 3. Prompts: which layer is in force, and is a newer default waiting.
+  const prompt = prompts.resolve("extract")
+  checks.push(
+    prompt
+      ? { status: OK, name: "extract prompt", detail: `${prompt.layer} (base ${prompt.base ?? "?"})` }
+      : { status: BROKEN, name: "extract prompt", detail: "could not be resolved at any layer" },
+  )
+  for (const file of prompts.pendingUpdates()) {
+    notes.push(`prompts/updates/${file} is a newer default waiting to be read. Nothing was changed for you.`)
+  }
+
+  // 4. Round trip: does the contract still produce something we can parse?
+  if (prompt && config.model?.providerID) {
+    const { parseLessons, OUTPUT_CONTRACT } = await import("./contract.js")
+    try {
+      const reply = await generate({
+        prompt:
+          "A session edited one file and then reverted it, achieving nothing.\n\n" +
+          OUTPUT_CONTRACT +
+          "\n\nReturn exactly one lesson about that, with steps [1, 2].",
+        model: config.model,
+      })
+      const parsed = parseLessons(reply?.text)
+      checks.push(
+        parsed.ok
+          ? { status: OK, name: "round trip", detail: `contract parsed, ${parsed.lessons.length} lesson(s)` }
+          : {
+              status: BROKEN,
+              name: "round trip",
+              detail: `reply did not parse: ${parsed.error}`,
+              meaning: "lessons will silently stop appearing. Check prompts/extract.md for instructions that fight the output format.",
+            },
+      )
+    } catch (err) {
+      checks.push({ status: DEGRADED, name: "round trip", detail: String(err?.message ?? err).slice(0, 120) })
+    }
+  }
+
+  // 5. Stock, so the answer to "is it doing anything" is in the same place.
+  const lessons = store.list()
+  checks.push({
+    status: OK,
+    name: "store",
+    detail: `${lessons.length} lesson(s), ${state.pending.length} session(s) queued`,
+  })
+
+  return { checks, notes, text: renderActive(checks, notes) }
+}
+
+function renderActive(checks, notes) {
+  const width = Math.max(...checks.map((c) => c.status.length), DEGRADED.length)
+  const lines = ["# retro check", ""]
+  for (const c of checks) {
+    lines.push(`- ${c.status.padEnd(width)}  ${c.name.padEnd(14)}  ${c.detail}`)
+    if (c.meaning) lines.push(`  ${" ".repeat(width)}  ${" ".repeat(14)}  → ${c.meaning}`)
+  }
+  if (notes.length) lines.push("", ...notes.map((n) => `- ${n}`))
+  lines.push("", "Written to `.retro/selfcheck.md` as well.")
+  return lines.join("\n")
+}

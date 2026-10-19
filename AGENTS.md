@@ -20,11 +20,11 @@ Motivating example: a project carries a `lint` skill borrowed from another harne
 6. **No separate "incident" entity.** Log → lessons. Each lesson carries `evidence` (session id + step ranges).
 7. **Lesson ≠ proposal.** Extracting the lesson is mandatory; proposing where to apply it is optional. Targets `skill | instruction | tool | refactor | other` are prompt hints, not an enum the extractor must fit into. "Doesn't fit the ontology" is a normal outcome — the human decides.
 8. **Lessons are workspace-scoped** (git root), capped (default 30), ranked by `score = cost × recurrence × confidence`. When an extraction matches an existing lesson, increment `recurrence` instead of creating a duplicate. Overflow is archived, not deleted.
-9. **Integration loop is human-triggered:** `/retro` walks lessons by score, one by one: accept / edit / reject / later. Accept applies the diff. Reject is remembered and fed back to the extractor so it isn't proposed again. `tool` and `refactor` are never auto-applied — only written up as requests.
+9. **Integration loop is human-triggered, and the plugin stops at the proposal.** `/retro` delivers **one** lesson — the highest-scoring one still undecided — into the session the user ran it in, and stops. The human and the agent already in that session work out whether they like it and how to integrate it; the plugin does not patch files and does not drive the conversation. One invocation, one lesson: deciding is not a wizard to be stepped through. The outcome comes back through a `retro_decide` tool, which is bookkeeping only — a rejection is remembered and fed to the extractor so it is not proposed again. *Amended after M2: the earlier "accept applies the diff" could not work. The extractor's `proposal.change` comes out as prose — "add a precondition as step 1: ..." — because the model has not carefully read the target file and the file may have moved since. The agent in the session has both the file and the human; we have neither.*
 10. **Project-scoped by default.** Global promotion only if evidence has no project-specific files/configs AND the lesson recurred in ≥2 workspaces. Promotion is itself a `/retro` proposal.
 11. **Autonomy ladder L0–L3** (see README). v1 target is L1. Promotion between levels is to be driven by accept/reject stats, later.
 12. **Not a memory plugin.** We edit artifacts the harness already reads; we don't build a knowledge base the agent must remember to query.
-13. **Both prompts live in the user's project, not in the package.** The extraction prompt (log → lessons) and the application prompt (lesson → proposal) are the two places where this plugin's behaviour is actually decided, so they sit next to their inputs and outputs, in `.retro/prompts/`. The package ships defaults; on first run they are copied into the project if absent. Resolution order per prompt: project → global (`~/.config/opencode/retro/prompts/`) → packaged default. `options` in `opencode.json` can override the directory and the extractor model.
+13. **The extraction prompt lives in the user's project, not in the package.** It is the one place where this plugin's behaviour is actually decided, so it sits next to its inputs and outputs, in `.retro/prompts/extract.md`. The package ships a default; on first run it is copied into the project if absent. Resolution order: project → global (`~/.config/opencode/retro/prompts/`) → packaged default. `options` in `opencode.json` can override the directory and the extractor model. *Narrowed in M3: there was to be a second prompt for applying a lesson. Decision 9 as amended has no application step to drive — the agent in the session does the integrating.*
 14. **The prompt is editable; the output contract is compiled in.** The project file is entirely the user's — criteria, emphasis, project-specific wording. The output format the parser needs lives in the plugin's source and is wrapped around the prompt at call time. It is never written to disk, so it cannot be edited away by accident, and the prompt file has no "do not touch" region in it. `/retro check` prints the contract for anyone who wants to see it.
 15. **New defaults arrive as news, never as changes.** One live file per prompt, seeded from our default, carrying `base` (the default's version) in frontmatter. We never write to it again — not even when the user has not touched it. A newer default lands in `.retro/prompts/updates/extract.v3.md`, headed by a statement that *this file is not used*, that the live file is what runs, and that if they have their own version they should keep it and consider adapting it to what changed. Named in `selfcheck.md` so it is not just a file in a directory nobody opens. Updates accumulate like release notes; deleting them is the user's call. Rejected alternative: shipping a default file plus a user override file. It forces the user to know what the default said before they can write a meaningful override, makes partial overrides ambiguous, and gives two sources of truth for one prompt.
 16. **The plugin must prove it is alive, in a file.** `.retro/selfcheck.md`. Registration proves nothing (see "Gotchas": wrong hook names register happily), so the report asserts *liveness*, not setup. It carries three timestamps — `loaded`, `heartbeat`, `verified` — because they fail separately and the gaps between them name which half broke.
@@ -206,7 +206,11 @@ plugin needed — and it gets the `sessionID`, so it can drive the review conver
    OpenCode's free tier and fails with *"OpenCode's free tier can only be used from within
    OpenCode"*. So `options.model` is effectively required, and its absence has to be said
    out loud rather than discovered as an empty `lessons/`.
-11. **Nothing tells the user a plugin failed to load.** A bad path, a throwing `setup`, a
+11. **`session.synthetic` writes to the session's inbox, not to its messages.** Without
+   `resume: true` the message sits there until the user happens to type something, so they
+   never see what they asked for. With it, the session resumes, the agent receives the text
+   and answers — which for `/retro` is the point.
+12. **Nothing tells the user a plugin failed to load.** A bad path, a throwing `setup`, a
    module that does not import — the session just runs without us. Hence "if `selfcheck.md`
    is older than your last session, the plugin is not running".
 
@@ -309,6 +313,35 @@ is also the patch to propose back upstream.
 ```
 
 `ctx.options` is delivered verbatim (verified: arrives as `{}` when unset).
+
+## The command surface
+
+Two commands. Everything else happens without being asked.
+
+| | |
+|---|---|
+| `/retro` | Settles any extraction debt, then delivers the top undecided lesson into this session. One invocation, one lesson. |
+| `/retro check` (or `/retro-check`) | The active self-check: `ctx` surface, model connectivity, which prompt layer is live, and a round trip of the real output contract. Costs one model call. |
+
+The loop around them:
+
+```
+you work                →  sessions/<id>.jsonl         (no LLM, no attention)
+your next session starts →  lessons/<id>.md             (one clean-context model call)
+you run /retro           →  one proposal, in your session
+you and the agent decide →  the change lands, or does not
+                         →  retro_decide records it
+```
+
+`selfcheck.md` closes the loop by saying how much is waiting, so the stock is visible
+without running anything.
+
+What `/retro` sends is addressed to the agent first — relay this, change nothing until the
+human decides, then record it. Measured in the playground, the agent did better than the
+proposal: it checked the lesson's claims against the repo, found that deleting the skill
+would leave `AGENTS.md` pointing at a skill that no longer exists, named the sibling trap,
+changed nothing, and put the decision to the human. That is the argument for stopping at
+the proposal rather than patching: the agent has the files and the human; we have neither.
 
 ## Extraction has to run where a hook is running
 
@@ -486,11 +519,19 @@ understood is just a diagnostic that was written badly.
 - [x] Refuse extraction with a named remedy when no `options.model` is set, rather than
       hanging on the free tier (Gotcha 10).
 
-**M3 — `/retro` (L1)**
-- [ ] Packaged default `apply.md`, same seeding and resolution as `extract.md`.
-- [ ] Command via `cmds.add({ execute })` + decision tool; accept applies diff, reject/later recorded.
-- [ ] `/retro check` — the active self-check.
-- [ ] End-of-review summary + `git diff`.
+**M3 — `/retro` (L1) — done** (92 tests; both commands verified live)
+- [x] `/retro` via `cmds.add({ execute })`: drains the extraction queue, then delivers the
+      top undecided lesson with `ctx.session.synthetic({ resume: true })` (`src/review.js`).
+- [x] `retro_decide` tool — plain JSON Schema input, no dependency. Bookkeeping only;
+      a rejection also lands in `state.json` so the extractor stops proposing it.
+- [x] `/retro check` — the active self-check (`activeCheck` in `src/selfcheck.js`), including
+      the contract round trip that M2 deferred to here.
+- [ ] No `apply.md` after all. Decision 9 as amended has no application step for a prompt to
+      drive: the agent in the session does the integrating, with the human. Decision 13 drops
+      to one editable prompt; revisit only if the hand-off itself needs tuning.
+- [ ] End-of-review summary + `git diff`: nothing to summarise while one invocation shows one
+      lesson, and the change lands through the agent's normal edit flow, which already shows
+      a diff. Dropped unless the review ever becomes multi-lesson again.
 
 **M4 — first public release** (`v0.1.0` tag → CI publishes).
 

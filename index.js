@@ -6,17 +6,21 @@ import { createShadowLog, parseShadowLog } from "./src/shadowlog.js"
 import { createState } from "./src/state.js"
 import { createStore, score } from "./src/lessons.js"
 import { extract } from "./src/extract.js"
+import { DECIDE_INPUT, decide, pickLesson, renderNothing, renderProposal } from "./src/review.js"
+import { activeCheck } from "./src/selfcheck.js"
 import { resolveConfig } from "./src/config.js"
 
 const REPO = "github.com/dmitriisilin/opencode-retro"
 const VERSION = "0.0.2"
 
 /**
- * opencode-retro — M2: capture, then extract.
+ * opencode-retro — M3: capture, extract, review.
  *
  * Writes a shadow log of every prompt and tool call. When a session ends it is queued for
  * extraction, and the next session's first prompt pays that debt: one clean-context model
- * call turns the log into lessons. A self-check says whether any of it worked.
+ * call turns the log into lessons. `/retro` hands the highest-scoring one to the session
+ * you are in and stops there — you and the agent decide what to do with it. A self-check
+ * says whether any of it worked.
  *
  * The queue is not a scheduling preference. `ctx.generate.text` hangs when called from the
  * event stream or from setup, and returns only from inside a hook callback — measured, see
@@ -116,6 +120,48 @@ export default {
       beat()
     })
 
+    // Commands. A command's execute is a context where generate.text returns (Gotcha 9),
+    // so /retro settles the extraction debt before it looks for something to show.
+    try {
+      await ctx.command.transform((cmds) => {
+        cmds.add({
+          name: "retro",
+          description: "Review what the last sessions should have taught this project",
+          execute: async ({ sessionID, prompt }) => {
+            const text = String(prompt?.text ?? "").trim().toLowerCase()
+            if (text.startsWith("check")) return runCheck(sessionID)
+            return runReview(sessionID)
+          },
+        })
+        cmds.add({
+          name: "retro-check",
+          description: "Check that opencode-retro is actually working",
+          execute: async ({ sessionID }) => runCheck(sessionID),
+        })
+      })
+    } catch (err) {
+      onError("command.register", err)
+    }
+
+    try {
+      await ctx.tool.transform((tools) => {
+        tools.add({
+          name: "retro_decide",
+          description:
+            "Record the human's decision on a retro lesson. Call this once they have decided, " +
+            "after any change has been made. It only records — it never edits the harness itself.",
+          input: DECIDE_INPUT,
+          execute: async (input) => {
+            const result = decide(input, { store, state })
+            writeSelfCheck()
+            return { output: result, content: result.detail }
+          },
+        })
+      })
+    } catch (err) {
+      onError("tool.register", err)
+    }
+
     const controller = new AbortController()
     void (async () => {
       try {
@@ -176,6 +222,53 @@ export default {
     writeSelfCheck()
 
     return () => controller.abort()
+
+    async function say(sessionID, text) {
+      try {
+        // The synthetic goes to the session's inbox; without `resume` it sits there until
+        // the user happens to type something, and they never see what they asked for.
+        await ctx.session.synthetic({ sessionID, text, description: "opencode-retro", resume: true })
+      } catch (err) {
+        onError("session.synthetic", err)
+      }
+    }
+
+    async function runReview(sessionID) {
+      // One invocation, one lesson: the top of the list. Deciding is the user's business,
+      // in this session, with the agent that is already here.
+      let extracted = null
+      const owed = state.nextPending(sessionID)
+      if (owed) {
+        await runExtraction(owed.session)
+        extracted = state.pending.some((p) => p.session === owed.session) ? null : "done"
+      }
+
+      const lessons = store.list()
+      const lesson = pickLesson(lessons)
+      writeSelfCheck()
+
+      if (!lesson) {
+        return say(sessionID, renderNothing({ queued: state.pending.length, extracted }))
+      }
+      const open = lessons.filter((l) => ["new", "later", undefined, null].includes(l.status)).length
+      return say(sessionID, renderProposal(lesson, { total: open, remaining: open - 1 }))
+    }
+
+    async function runCheck(sessionID) {
+      const report = await activeCheck({
+        ctx,
+        config,
+        prompts,
+        store,
+        state,
+        log,
+        generate: (input) => ctx.generate.text(input),
+      })
+      for (const note of report.notes) check.note(note)
+      check.active(report.checks)
+      writeSelfCheck()
+      return say(sessionID, report.text)
+    }
 
     async function drainQueue(currentSession) {
       if (draining) return
