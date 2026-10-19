@@ -24,39 +24,38 @@ Motivating example: a project carries a `lint` skill borrowed from another harne
 10. **Project-scoped by default.** Global promotion only if evidence has no project-specific files/configs AND the lesson recurred in ≥2 workspaces. Promotion is itself a `/retro` proposal.
 11. **Autonomy ladder L0–L3** (see README). v1 target is L1. Promotion between levels is to be driven by accept/reject stats, later.
 12. **Not a memory plugin.** We edit artifacts the harness already reads; we don't build a knowledge base the agent must remember to query.
+13. **Both prompts live in the user's project, not in the package.** The extraction prompt (log → lessons) and the application prompt (lesson → proposal) are the two places where this plugin's behaviour is actually decided, so they sit next to their inputs and outputs, in `.retro/prompts/`. The package ships defaults; on first run they are copied into the project if absent. Resolution order per prompt: project → global (`~/.config/opencode/retro/prompts/`) → packaged default. `options` in `opencode.json` can override the directory and the extractor model.
+14. **The prompt is editable; the output contract is not.** The project file holds criteria, emphasis and project-specific wording. The plugin appends an output-format block it owns and the user does not edit. Reason: a free-form edit that breaks parsing would silently stop lessons from being created — the exact failure mode decision 16 exists to prevent.
+15. **Shipped prompts upgrade without clobbering local edits.** Each copied prompt records in frontmatter the hash of the default it came from. On load: unchanged copy + newer default → upgrade silently; locally edited + newer default → leave the local file alone and say so in the self-check report, with the diff available. Never overwrite an edited prompt.
+16. **The plugin must prove it is alive, in a file.** `.retro/selfcheck.md`, rewritten at the end of every session. Registration proves nothing (see "Gotchas": wrong hook names register happily), so the report asserts *liveness*, not setup. If the file is older than the user's last session, the plugin is not running — that is the one failure it cannot report itself, so the file's mtime carries it.
 
 ## On-disk layout (in the user's project, not this repo)
 
 ```
-.opencode/retro/
-├── sessions/<sessionID>.jsonl   # shadow log, one event per line
-├── lessons/<lessonID>.md        # YAML frontmatter + body, one per lesson
-├── archive/                     # evicted lessons
-└── state.json                   # rejected ids, last extraction per session, etc.
+.retro/
+├── prompts/
+│   ├── extract.md            # log → lessons        (user-editable, decision 13)
+│   └── apply.md              # lesson → proposal    (user-editable, decision 13)
+├── sessions/<sessionID>.jsonl # shadow log, one event per line
+├── lessons/<lessonID>.md      # YAML frontmatter + body, one per lesson
+├── archive/                   # evicted lessons
+├── selfcheck.md               # is the plugin actually working (decision 16)
+├── state.json                 # rejected ids, last extraction per session, etc.
+└── plugin.log                 # hook errors; never thrown at the user's session
 ```
 
-Lesson frontmatter: see README "Lesson format". Keep it human-editable — users will open these files.
+One directory holding, in order: the prompt that produces the lessons, the raw
+material, the lessons, and the evidence that any of it ran. That is the whole
+plugin, readable without us.
 
-> ⚠ **`.opencode/` does not survive M0.** Every write under `.opencode/` makes OpenCode
-> rescan skills and emit `skill.updated`, so a plugin that writes on events writes forever
-> (see "Gotchas" below, and `fixtures/payloads/event-feedback-loop.jsonl`). Even without the
-> loop, one shadow-log append per tool call means one skill rescan per tool call.
->
-> The layout has to move out of `.opencode/`. Measured: `<project>/.retro/` is clean —
-> 1 `skill.updated`, no loop — and keeps the files in the project, human-readable and
-> git-visible, which is the point of decision 3. Proposed:
->
-> ```
-> .retro/
-> ├── sessions/<sessionID>.jsonl
-> ├── lessons/<lessonID>.md
-> ├── archive/
-> └── state.json
-> ```
->
-> Owner's call: `.retro/` as above, or move the machine-local part (sessions, state) into
-> OpenCode's own data dir keyed by `location.project.id` and keep only `lessons/` in the
-> project. **Not decided — do not write the path into code until it is.**
+**Not `.opencode/retro/`.** Measured in M0: every write under `.opencode/` makes
+OpenCode rescan skills and emit `skill.updated`, so a plugin that writes on events
+writes forever — 416 events in one session and still climbing with no session running
+(`fixtures/payloads/event-feedback-loop.jsonl`). Even without the loop it would mean
+one skill rescan per shadow-log append. `<project>/.retro/` is clean: 1 `skill.updated`,
+no loop. (`.opencode-retro/` was the other candidate; same properties, longer to type.)
+
+Lesson frontmatter: see README "Lesson format". Keep it human-editable — users will open these files.
 
 ## OpenCode v2 plugin API — verified against 2.0.32
 
@@ -170,7 +169,8 @@ plugin needed — and it gets the `sessionID`, so it can drive the review conver
    `.interrupted` — they fire reliably and carry `{ sessionID }`. Decision 5 says
    "on `session.idle`"; read it as "on `session.execution.*`".
 3. **The plugin path must be absolute.** A relative `package` path hangs session startup
-   with no error message at all — not a load failure, a hang.
+   and the plugin never loads — no error, no log line, nothing in `/api/plugin`. Retested
+   against an absolute control that completed in seconds under the same service.
 4. **The background service caches the plugin**, including the environment it was started
    with. Use `--standalone` while iterating, or `opencode service restart`.
 5. **Never hook `session.hook("http.request"|"http.response")`** — they carry the provider
@@ -181,7 +181,18 @@ plugin needed — and it gets the `sessionID`, so it can drive the review conver
    session created in the wrong location makes a plugin-registered command 404 with
    `CommandNotFoundError` even though `/api/command` lists it.
 7. **Plugins load lazily per location.** The first command invocation right after service
-   start can 404 before the plugin has finished loading.
+   start can 404 before the plugin has finished loading, and `/api/plugin` does not list
+   the plugin until something in that location has triggered a load.
+8. **A wrong hook name registers happily.** `ctx.tool.hook("execute.nonsense")` and
+   `ctx.session.hook("promptz")` both return a normal `{ dispose }` registration
+   (`fixtures/payloads/api-drift.jsonl`). So a hook renamed in a future OpenCode means we
+   subscribe successfully and receive nothing, forever, silently. **This is the single
+   reason decision 16 exists.** What *is* detectable at load: a missing domain or method
+   reads as `undefined` (`ctx.tool.nosuch`, `ctx.nosuchdomain`), and `generate.text`
+   rejects a bad model loudly (`"Model unavailable: nope/nope"`).
+9. **Nothing tells the user a plugin failed to load.** A bad path, a throwing `setup`, a
+   module that does not import — the session just runs without us. Hence "if `selfcheck.md`
+   is older than your last session, the plugin is not running".
 
 ### Still unverified
 
@@ -196,6 +207,147 @@ plugin needed — and it gets the `sessionID`, so it can drive the review conver
 - Whether `/api/experimental/session/{id}/log` (the durable event log) makes the shadow log
   redundant. Decision 3 says keep our own; worth a look before M1 ships.
 
+## Customisation: the two prompts
+
+Decisions 13–15. Everything this plugin decides, it decides in two prompts, so both are
+files in the user's project.
+
+| File | Reads | Writes | Owns the question |
+|---|---|---|---|
+| `.retro/prompts/extract.md` | projection of the shadow log + anchors + existing lessons + rejected ids | lessons | *If this session ran again, what should change so it goes shorter and straighter?* |
+| `.retro/prompts/apply.md` | one lesson + the candidate target files | a proposed diff, or a written-up request | *Where does this lesson belong, and what is the smallest change that applies it?* |
+
+Resolution per prompt, first hit wins:
+
+1. `<project>/.retro/prompts/<name>.md`
+2. `~/.config/opencode/retro/prompts/<name>.md`
+3. the packaged default
+
+So a user can pin a prompt for one project, for all their projects, or neither. The
+packaged defaults are also the seed: on first run each missing prompt is copied into
+`.retro/prompts/` so there is something concrete to edit, rather than an empty directory
+and a doc telling you what you could have written.
+
+### Keeping the contract while letting the prose move
+
+The file is split: everything the user writes, then a block the plugin appends and owns.
+
+```markdown
+---
+retro: extract
+base: 9f2a1c4            # hash of the packaged default this was seeded from
+---
+
+<!-- Everything above the marker is yours. Edit freely. -->
+
+You are reviewing one coding session…
+
+<!-- retro:output-contract — appended by the plugin, do not edit -->
+```
+
+The appended block carries the output format the parser needs. Edits to it are discarded
+on load (and reported), because a prompt that no longer produces parseable lessons fails
+*silently* — the session ends, nothing appears in `lessons/`, and nobody finds out for a
+week. Keeping the contract out of reach is what makes the rest safe to edit.
+
+`base` is how an upgrade stays non-destructive. On load, compare the file against the
+default it was seeded from:
+
+| local file | packaged default | action |
+|---|---|---|
+| unchanged | unchanged | nothing |
+| unchanged | newer | replace silently, update `base` |
+| edited | unchanged | nothing |
+| edited | newer | **leave it alone**, note it in `selfcheck.md` with the diff |
+
+That last row is the one that matters: the user's work is never overwritten, and they
+still find out that a better default exists. It is also the path for contributing back —
+the diff between the local prompt and its `base` is exactly the patch to propose upstream.
+
+### Config
+
+```jsonc
+{
+  "plugins": [
+    {
+      "package": "opencode-retro",
+      "options": {
+        "dir": ".retro",                                  // where everything lives
+        "model": { "providerID": "deepseek", "id": "deepseek-flash" },  // extractor model
+        "prompts": "./prompts"                            // override the prompt directory
+      }
+    }
+  ]
+}
+```
+
+`ctx.options` is delivered verbatim (verified: arrives as `{}` when unset).
+
+## Self-check
+
+Decision 16. The failure this guards against is specific and measured: **a hook whose name
+the API changed still registers successfully and simply never fires** (Gotcha 8). A plugin
+that reports "setup complete" is reporting nothing.
+
+So `.retro/selfcheck.md` asserts liveness, and it does it by cross-checking two independent
+paths to the same fact. The event stream (`ctx.event.subscribe`) and the hooks
+(`ctx.tool.hook`) observe the same tool calls through different machinery. If the events say
+twelve tool calls happened and the hook fired zero times, the hook API moved — and we can
+say so, with numbers, instead of guessing.
+
+### Passive, every session
+
+Written at `session.execution.succeeded|failed|interrupted`:
+
+| Check | Assertion | What a failure means |
+|---|---|---|
+| prompt hook | a session that ran at all produced ≥1 `session.prompt` | the prompt hook is dead |
+| tool hook | `session.tool.called` events seen ⇒ equally many `tool.execute.after` with matching `id` | the tool hook is dead, or the payload shape moved |
+| shadow log | the session's `.jsonl` exists and is non-empty | writing is broken (permissions, path, the `.opencode/` loop) |
+| trigger | the end-of-session event arrived | our extraction trigger is gone (`session.idle` is already one such casualty) |
+| extraction | ran, and produced either lessons or an explicit "nothing to learn" | the model call or the output contract broke |
+
+### Active, on `/retro check`
+
+Costs a model call, so it is asked for, not automatic:
+
+- versions: `ctx.app.version`, the plugin's own, the resolved `@opencode/plugin`;
+- surface: every `ctx` domain and method we rely on is present, not `undefined` (this part
+  *is* detectable at load — Gotcha 8);
+- connectivity: `ctx.generate.text` with a trivial prompt against the configured model;
+- round-trip: run the real extraction prompt over a committed fixture session and check the
+  result parses into lessons. This is the only check that exercises the whole pipeline,
+  including a user-edited prompt, which is why the fixture ships with the package;
+- prompts: which of the three resolution layers each prompt came from, and whether a local
+  edit is sitting on a stale `base`.
+
+### What it looks like
+
+```markdown
+# retro self-check
+
+opencode 2.0.32 · opencode-retro 0.1.0 · checked 2026-10-19 20:31
+
+- ok        prompt hook          3 prompts
+- ok        tool hook            12 events / 12 hook calls
+- ok        shadow log           sessions/ses_eabb21.jsonl, 47 entries
+- ok        trigger              session.execution.succeeded
+- DEGRADED  extraction           model call failed: Model unavailable: foo/bar
+- note      prompts/extract.md   locally edited, base 9f2a1c4, default is now 2b71e08
+```
+
+Honest statuses only: `ok`, `DEGRADED`, `BROKEN`, and `not exercised` for anything this
+session could not test (a session with no tool calls does not prove the tool hook works, and
+must not claim to).
+
+### The one thing it cannot say
+
+If the plugin does not load at all — bad path, throwing `setup`, a module that will not
+import — nothing is written, because nothing is running, and OpenCode will not mention it
+either (Gotcha 9). The file's own staleness is therefore part of the contract, and the README
+has to say it plainly: **if `.retro/selfcheck.md` is older than your last session, the plugin
+is not running.**
+
 ## Plan
 
 **M0 — spikes — done** (OpenCode 2.0.32, `spike/`, `fixtures/payloads/`)
@@ -207,26 +359,36 @@ plugin needed — and it gets the `sessionID`, so it can drive the review conver
       building" reproduces on every source edit.
 
 **M1 — capture (L0, no LLM)**
-- [ ] Decide the on-disk path first (see the flag under "On-disk layout").
-- [ ] Shadow log writer. Pair `execute.before`/`after` by `id`; index steps by `durable.seq`.
+- [ ] Shadow log writer into `.retro/sessions/`. Pair `execute.before`/`after` by `id`;
+      index steps by `durable.seq`.
 - [ ] Fix `peerDependencies` to `@opencode/plugin`.
+- [ ] Passive self-check (decision 16): the five liveness assertions, written to
+      `.retro/selfcheck.md` at `session.execution.*`. Ship this *with* the shadow log, not
+      after it — an unverified capture layer is worse than none.
 - [ ] Projection: shadow log → compressed text for the extractor (deterministic, unit-tested on fixtures).
 - [ ] Anchor detectors: revert, repeat. (skill→failure, abandon, correction later.)
 
 **M2 — extraction**
-- [ ] Extractor prompt + `ctx.generate.text` on `session.execution.succeeded|failed|interrupted`.
+- [ ] Packaged default `extract.md` + seeding into `.retro/prompts/`, the three-layer
+      resolution, and the owned output-contract block (decisions 13–14).
+- [ ] Extractor runs it through `ctx.generate.text` on `session.execution.succeeded|failed|interrupted`.
 - [ ] Lesson store: create / merge (recurrence++) / score / cap / archive.
 - [ ] Rejected-ids fed back into the extractor prompt.
+- [ ] `base`-hash upgrade logic for shipped prompts (decision 15).
+- [ ] Bundled fixture session + the round-trip check that a prompt still parses, so
+      `/retro check` can exercise the whole pipeline.
 
 **M3 — `/retro` (L1)**
+- [ ] Packaged default `apply.md`, same seeding and resolution as `extract.md`.
 - [ ] Command via `cmds.add({ execute })` + decision tool; accept applies diff, reject/later recorded.
+- [ ] `/retro check` — the active self-check.
 - [ ] End-of-review summary + `git diff`.
 
 **M4 — first public release** (`v0.1.0` tag → CI publishes).
 
 ## Dev environment
 
-- Develop **outside** your everyday OpenCode config: load the plugin by absolute path in a dedicated playground project's `opencode.json`, not globally. The path must be absolute — a relative one hangs startup.
+- Develop **outside** your everyday OpenCode config: load the plugin by absolute path in a dedicated playground project's `opencode.json`, not globally. The path must be absolute — a relative one hangs startup and the plugin never loads.
 - The **playground with planted traps** lives in `spike/playground/` (`lint` skill with no linter, `AGENTS.md` pointing at a `npm run build` that does not exist). See `spike/README.md` for how to run it. Deterministic friction → reproducible test sessions.
 - Use `--standalone` while iterating; the background service caches the plugin and its environment.
 - Save real shadow logs from the playground into `fixtures/sessions/` — then projection, detectors and the extractor prompt can be iterated without running OpenCode. Raw hook/event captures (a layer below the shadow log) are in `fixtures/payloads/`.
@@ -236,8 +398,12 @@ plugin needed — and it gets the `sessionID`, so it can drive the review conver
 
 - Plain ESM, TypeScript source if build is trivial; otherwise JS + JSDoc. Keep runtime deps at zero if possible (OpenCode installs the package with Bun at startup).
 - Files written into user projects must be human-readable (JSONL / Markdown + YAML frontmatter). No binary DBs.
-- Never write outside `.opencode/retro/` except when the user accepts a proposal in `/retro`.
-- Fail silent in hooks: a broken plugin must never break the user's session. Log errors to `.opencode/retro/plugin.log`.
+- Never write outside `.retro/` except when the user accepts a proposal in `/retro`.
+- Fail silent in hooks: a broken plugin must never break the user's session. Log errors to
+  `.retro/plugin.log` — and record the failure in `selfcheck.md`, because silent-and-invisible
+  is the failure mode decision 16 exists to kill.
+- Anything a user may want to change is a file in `.retro/`, not a config key and not a
+  constant in our source.
 
 ## Release
 

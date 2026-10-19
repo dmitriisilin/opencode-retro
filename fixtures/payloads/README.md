@@ -24,6 +24,7 @@ projection and the detectors, not a byte-exact transcript.
 | `session-lint-trap.jsonl` | **The motivating example, live.** The agent edits `src/sum.js`, the project's `AGENTS.md` tells it to run the `lint` skill, the `lint` skill runs `npx eslint . --fix`, eslint exits 2 because the project has no config. Then it hits the second trap: `AGENTS.md` says `npm run build`, which does not exist. 12 tool calls. |
 | `event-feedback-loop.jsonl` | 40 consecutive `skill.updated` events from the write-amplification loop described in AGENTS.md ("Writes under `.opencode/`"). Captured with no session running. |
 | `command-and-generate.jsonl` | A plugin-registered command actually executing, plus `ctx.generate.text` and `ctx.session.create` returning. |
+| `api-drift.jsonl` | Produced by `spike/drift`, not the probe. Answers "can the plugin tell when the API moves under it?" — unknown hook names register happily, missing domains read `undefined`, a bad model rejects loudly. The evidence behind decision 16. |
 
 ## Trimming applied
 

@@ -46,3 +46,15 @@ whenever it was started. After editing the probe, either use `--standalone` or
 `opencode service restart`.
 
 Keep `src/` pristine in git — reset it between runs so the traps stay reproducible.
+
+## `drift/`
+
+A second one-file plugin that asks whether the plugin can detect the API moving under it:
+it registers deliberately wrong hook names, reads deliberately missing `ctx` paths, and
+calls `generate.text` with a bogus model. Result in `fixtures/payloads/api-drift.jsonl`;
+it is the evidence behind decision 16 (self-check).
+
+Load it the same way as the probe, one at a time, and remember that **the plugin runs in
+the server process** — `RETRO_PROBE_DIR` has to be in the environment of the service, not
+of `opencode run`. With the background service, that means restarting it with the variable
+set; this cost me three confused test runs.

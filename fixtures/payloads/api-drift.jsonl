@@ -1,0 +1,15 @@
+{"probe":"setup.entered"}
+{"probe":"hook","domain":"tool","name":"execute.after","result":"registered","hasDispose":"function"}
+{"probe":"hook","domain":"tool","name":"execute.nonsense","result":"registered","hasDispose":"function"}
+{"probe":"hook","domain":"tool","name":"before","result":"registered","hasDispose":"function"}
+{"probe":"hook","domain":"session","name":"prompt","result":"registered","hasDispose":"function"}
+{"probe":"hook","domain":"session","name":"promptz","result":"registered","hasDispose":"function"}
+{"probe":"hook","domain":"session","name":"idle","result":"registered","hasDispose":"function"}
+{"probe":"surface","path":"tool.hook","type":"function"}
+{"probe":"surface","path":"tool.nosuch","type":"undefined"}
+{"probe":"surface","path":"session.hook","type":"function"}
+{"probe":"surface","path":"nosuchdomain","type":"undefined"}
+{"probe":"surface","path":"generate.text","type":"function"}
+{"probe":"surface","path":"storage.set","type":"function"}
+{"probe":"generate","model":"bogus","result":"threw","error":"Model unavailable: nope/nope"}
+{"probe":"event.subscribe","result":"ok","type":"function"}
