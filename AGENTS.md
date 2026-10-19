@@ -118,6 +118,7 @@ Verify loaded plugins: `opencode2 api get /api/plugin` (or the equivalent for th
 
 ## Release
 
-- Name reserved on npm as `opencode-retro@0.0.0-stage` by `dmitriisilin`.
-- Publishing is via npm Trusted Publishing from `.github/workflows/publish.yml` on tags `v*`. Tag must match `package.json` version.
+- Package `opencode-retro` on npm, owner `dmitriisilin`. Published placeholders: 0.0.1, 0.0.2 (no functionality). `main` is already at 0.0.3 — the next real release.
+- Publishing is via npm Trusted Publishing (status: Valid) from `.github/workflows/publish.yml` on tags `v*`. Tag must match `package.json` version.
+- The workflow upgrades npm before publishing: Trusted Publishing needs npm ≥ 11.5.1, Node 22 ships npm 10, and old npm fails with a misleading `E404 Not Found - PUT`. Don't remove that step.
 - Release: `npm version <x.y.z> && git push --follow-tags`. No tokens anywhere.
