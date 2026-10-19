@@ -111,9 +111,19 @@ export function assess(session) {
     checks.push({
       status: SKIPPED,
       name: "extraction",
-      detail: "not implemented yet (M2)",
-      meaning: "capture only — no lessons are produced at this milestone.",
+      detail: "not run",
     })
+  } else if (x.queued) {
+    checks.push({
+      status: SKIPPED,
+      name: "extraction",
+      detail: "queued — runs at the start of your next session",
+      meaning:
+        "not a delay we chose: a model call never returns when made from the event stream, " +
+        "only from inside a hook. Run /retro to settle it now.",
+    })
+  } else if (x.ok && x.skipped) {
+    checks.push({ status: SKIPPED, name: "extraction", detail: x.detail })
   } else if (x.ok) {
     checks.push({ status: OK, name: "extraction", detail: x.detail })
   } else {

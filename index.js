@@ -1,17 +1,26 @@
-import { appendFileSync, mkdirSync, writeFileSync } from "node:fs"
+import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { createIngest } from "./src/ingest.js"
+import { createPrompts } from "./src/prompts.js"
 import { createSelfCheck } from "./src/selfcheck.js"
-import { createShadowLog } from "./src/shadowlog.js"
+import { createShadowLog, parseShadowLog } from "./src/shadowlog.js"
+import { createState } from "./src/state.js"
+import { createStore } from "./src/lessons.js"
+import { extract } from "./src/extract.js"
 import { resolveConfig } from "./src/config.js"
 
 const REPO = "github.com/dmitriisilin/opencode-retro"
 const VERSION = "0.0.2"
 
 /**
- * opencode-retro — M1: capture only.
+ * opencode-retro — M2: capture, then extract.
  *
- * Writes a shadow log of every prompt and tool call, and a self-check that says whether
- * it is actually doing so. No model is called at this milestone.
+ * Writes a shadow log of every prompt and tool call. When a session ends it is queued for
+ * extraction, and the next session's first prompt pays that debt: one clean-context model
+ * call turns the log into lessons. A self-check says whether any of it worked.
+ *
+ * The queue is not a scheduling preference. `ctx.generate.text` hangs when called from the
+ * event stream or from setup, and returns only from inside a hook callback — measured, see
+ * AGENTS.md "Gotchas". So extraction has to run where a hook is running.
  *
  * The API facts this relies on are all verified against OpenCode 2.0.32; see AGENTS.md
  * "OpenCode v2 plugin API" and fixtures/payloads/.
@@ -32,6 +41,9 @@ export default {
     }
 
     const log = createShadowLog({ dir: config.sessions, onError })
+    const state = createState({ path: config.state, onError })
+    const store = createStore({ dir: config.lessons, archive: config.archive, onError })
+    const prompts = createPrompts({ dir: config.prompts, updates: config.updates, onError })
     const check = createSelfCheck({
       versions: { opencode: ctx?.app?.version ?? null, plugin: VERSION },
       repo: REPO,
@@ -39,7 +51,10 @@ export default {
 
     /** Sessions we have seen an end event for, so a stray late event cannot re-verify. */
     const ended = new Set()
+    /** Evidence from each finished session, kept so a later extraction can complete its report. */
+    const lastVerified = new Map()
     let lastBeat = 0
+    let draining = false
 
     const writeSelfCheck = () => {
       try {
@@ -82,7 +97,12 @@ export default {
     await hook("session", "prompt", (p) => {
       ingest.prompt(p)
       beat()
+      // A hook callback is the one context where ctx.generate.text returns; from the event
+      // stream it hangs forever (AGENTS.md "Gotchas"). So the extraction owed by the last
+      // session is paid here, at the start of the next one, without blocking this prompt.
+      void drainQueue(p.sessionID)
     })
+
     await hook("tool", "execute.before", (p) => ingest.toolBefore(p))
     await hook("tool", "execute.after", (p) => {
       ingest.toolAfter(p)
@@ -119,18 +139,89 @@ export default {
       if (!sessionID || ended.has(sessionID)) return
       ended.add(sessionID)
 
-      check.verify({
+      const verified = {
         id: sessionID,
         counts: ingest.counts(sessionID),
         log: log.stat(sessionID),
         triggered: event.type,
-        extraction: null, // M2
-      })
+        extraction: null,
+      }
+      check.verify(verified)
       writeSelfCheck()
       ingest.forget(sessionID)
+
+      // Not extracted here: a model call from the event stream never returns. Queued, and
+      // drained from the next session's prompt hook.
+      state.queue(sessionID)
+      lastVerified.set(sessionID, verified)
+      check.verify({ ...verified, extraction: { queued: true } })
+      writeSelfCheck()
+    }
+
+    // Seed the editable prompts, then look for a newer default. Neither touches a file
+    // the user owns (AGENTS.md decisions 13 and 15).
+    for (const name of ["extract"]) {
+      prompts.seed(name)
+      const update = prompts.checkForUpdate(name)
+      if (update) check.note(update)
     }
 
     writeSelfCheck()
+
     return () => controller.abort()
+
+    async function drainQueue(currentSession) {
+      if (draining) return
+      const owed = state.nextPending(currentSession)
+      if (!owed) return
+      draining = true
+      try {
+        await runExtraction(owed.session)
+      } finally {
+        draining = false
+      }
+    }
+
+    async function runExtraction(sessionID) {
+      if (state.wasExtracted(sessionID)) return
+      state.attempt(sessionID)
+
+      let records
+      try {
+        records = parseShadowLog(readFileSync(log.path(sessionID), "utf8"))
+      } catch (err) {
+        onError("extract.read", err)
+        state.markExtracted(sessionID, { ok: false, detail: "shadow log could not be read" })
+        return
+      }
+
+      let result
+      try {
+        result = await extract({
+          records,
+          session: sessionID,
+          generate: (input) => ctx.generate.text(input),
+          model: config.model,
+          prompts,
+          store,
+          state,
+        })
+      } catch (err) {
+        onError("extract", err)
+        result = { ok: false, detail: `threw: ${String(err?.message ?? err)}` }
+      }
+
+      // A transient model failure is worth one more go on the next prompt; a third
+      // attempt would just keep charging for the same answer.
+      if (result.ok || state.pending.find((p) => p.session === sessionID)?.attempts >= 3) {
+        state.markExtracted(sessionID, { ok: result.ok, detail: result.detail })
+      }
+
+      const verified = lastVerified.get(sessionID)
+      if (verified) {
+        check.verify({ ...verified, extraction: result })
+        writeSelfCheck()
+      }
+    }
   },
 }

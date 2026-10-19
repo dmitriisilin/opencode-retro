@@ -12,13 +12,29 @@ const healthy = {
 
 const status = (checks, name) => checks.find((c) => c.name === name).status
 
-test("a healthy session reports ok, and extraction is honest about M1", () => {
+test("a healthy session reports ok, and a pending extraction says so", () => {
   const checks = assess(healthy)
   assert.equal(status(checks, "prompt hook"), STATUS.OK)
   assert.equal(status(checks, "tool hook"), STATUS.OK)
   assert.equal(status(checks, "shadow log"), STATUS.OK)
   assert.equal(status(checks, "trigger"), STATUS.OK)
   assert.equal(status(checks, "extraction"), STATUS.SKIPPED)
+})
+
+test("a queued extraction says why it is queued and how to force it", () => {
+  const checks = assess({ ...healthy, extraction: { queued: true } })
+  const x = checks.find((c) => c.name === "extraction")
+  assert.equal(x.status, STATUS.SKIPPED)
+  assert.match(x.detail, /next session/)
+  assert.match(x.meaning, /never returns when made from the event stream/)
+  assert.match(x.meaning, /\/retro/)
+})
+
+test("a skipped extraction is not dressed up as a success", () => {
+  const checks = assess({ ...healthy, extraction: { ok: true, skipped: true, detail: "nothing to extract (1 tool calls, no anchors)" } })
+  const x = checks.find((c) => c.name === "extraction")
+  assert.equal(x.status, STATUS.SKIPPED)
+  assert.match(x.detail, /nothing to extract/)
 })
 
 test("events without hook calls is the API-drift signature, and reads BROKEN", () => {

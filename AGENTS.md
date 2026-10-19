@@ -16,7 +16,7 @@ Motivating example: a project carries a `lint` skill borrowed from another harne
 2. **v2 only.** No v1 compatibility layer.
 3. **Shadow log.** Plugin writes its own append-only log of every tool call and prompt to `.opencode/retro/sessions/<sessionID>.jsonl` in real time. No LLM, no batching. We do *not* depend on session history surviving compaction.
 4. **Anchors, not a gate.** Cheap deterministic detectors (revert, repeat, skill→failure, abandon, correction) mark suspicious step ranges. They do not decide anything; they tell the extractor where to look and give precise evidence refs.
-5. **Extraction runs in a separate, clean-context session**, not the working agent (it would defend its own choices). Input: compressed projection of the shadow log (tool outputs trimmed to head/tail, prompts and assistant text in full) + anchors + existing lessons. Core question: *"If this session were run again, what should change so it goes shorter and straighter?"*
+5. **Extraction runs in a clean context**, not the working agent (it would defend its own choices) — one `ctx.generate.text` call, no session, no history. Input: compressed projection of the shadow log (tool outputs trimmed to head/tail, prompts and assistant text in full) + anchors + existing lessons + rejected ids. Core question: *"If this session were run again, what should change so it goes shorter and straighter?"* **When** it runs is forced by the API, not chosen: see "Extraction has to run where a hook is running".
 6. **No separate "incident" entity.** Log → lessons. Each lesson carries `evidence` (session id + step ranges).
 7. **Lesson ≠ proposal.** Extracting the lesson is mandatory; proposing where to apply it is optional. Targets `skill | instruction | tool | refactor | other` are prompt hints, not an enum the extractor must fit into. "Doesn't fit the ontology" is a normal outcome — the human decides.
 8. **Lessons are workspace-scoped** (git root), capped (default 30), ranked by `score = cost × recurrence × confidence`. When an extraction matches an existing lesson, increment `recurrence` instead of creating a duplicate. Overflow is archived, not deleted.
@@ -196,7 +196,17 @@ plugin needed — and it gets the `sessionID`, so it can drive the review conver
    reason decision 16 exists.** What *is* detectable at load: a missing domain or method
    reads as `undefined` (`ctx.tool.nosuch`, `ctx.nosuchdomain`), and `generate.text`
    rejects a bad model loudly (`"Model unavailable: nope/nope"`).
-9. **Nothing tells the user a plugin failed to load.** A bad path, a throwing `setup`, a
+9. **`ctx.generate.text` hangs unless a hook is running.** Measured four ways: from inside
+   a command's `execute`, 1.2 s; fire-and-forget from inside the `session.prompt` hook,
+   1.2 s; from plugin `setup`, never returns; from the `ctx.event.subscribe` loop, never
+   returns. No error, no timeout, no log line — it simply never settles. Awaiting one
+   *inside* a hook that OpenCode awaits deadlocks the session outright. This reshapes
+   decision 5; see "Extraction has to run where a hook is running" below.
+10. **`generate.text` needs an explicit model.** With `model` omitted it resolves to
+   OpenCode's free tier and fails with *"OpenCode's free tier can only be used from within
+   OpenCode"*. So `options.model` is effectively required, and its absence has to be said
+   out loud rather than discovered as an empty `lessons/`.
+11. **Nothing tells the user a plugin failed to load.** A bad path, a throwing `setup`, a
    module that does not import — the session just runs without us. Hence "if `selfcheck.md`
    is older than your last session, the plugin is not running".
 
@@ -299,6 +309,32 @@ is also the patch to propose back upstream.
 ```
 
 `ctx.options` is delivered verbatim (verified: arrives as `{}` when unset).
+
+## Extraction has to run where a hook is running
+
+`ctx.generate.text` only settles when the call originates inside a hook callback
+(Gotcha 9). From the event stream — which is where a session *ends* — it hangs for good.
+So the trigger and the work cannot be the same moment:
+
+```
+session ends   →  session.execution.succeeded  →  queued in state.json
+next session   →  session.prompt hook          →  queue drained, one model call
+```
+
+The drain is fire-and-forget, so the user's prompt is never held up. Three consequences
+worth stating plainly, because they are visible to the user:
+
+- **Lessons land one session late.** A session that is never followed by another in that
+  project never gets extracted, and costs nothing. `/retro` drains the queue on demand,
+  because a command is also a working context.
+- **Extraction outlives the session that triggered it.** A 20 KB projection takes longer
+  than a one-word session, so `selfcheck.md` can read `queued` for a few seconds after a
+  short session and then be rewritten. Measured, not theoretical.
+- **It is attempted at most three times.** A transient model failure deserves another go on
+  the next prompt; a third would just keep paying for the same answer.
+
+Rejected: awaiting the call inside a hook OpenCode awaits. That deadlocks the session —
+the server waits for the hook, the hook waits for the server.
 
 ## Self-check
 
@@ -426,17 +462,21 @@ understood is just a diagnostic that was written badly.
 - [ ] Left for M2, where they have something to be judged against: abandon and correction
       detectors (both need assistant text analysis, not tool shapes).
 
-**M2 — extraction**
-- [ ] Packaged default `extract.md` + seeding into `.retro/prompts/`, the three-layer
+**M2 — extraction — done** (79 tests; verified live, lesson in `fixtures/lessons/`)
+- [x] Packaged default `prompts/extract.md`, seeding into `.retro/prompts/`, three-layer
       resolution, and `OUTPUT_CONTRACT` as a source constant wrapped at call time
-      (decisions 13–14).
-- [ ] Extractor runs it through `ctx.generate.text` on `session.execution.succeeded|failed|interrupted`.
-- [ ] Lesson store: create / merge (recurrence++) / score / cap / archive.
-- [ ] Rejected-ids fed back into the extractor prompt.
-- [ ] `base`/`base_sha` logic: silent upgrade when untouched, `prompts/updates/<name>.v<n>.md`
-      when the user owns the file (decision 15).
-- [ ] Bundled fixture session + the round-trip check that a prompt still parses, so
-      `/retro check` can exercise the whole pipeline.
+      (`src/prompts.js`, `src/contract.js`).
+- [x] Extractor (`src/extract.js`). Queued at `session.execution.*`, drained from the next
+      `session.prompt` — forced by the API, see "Extraction has to run where a hook is running".
+- [x] Lesson store (`src/lessons.js`): create / merge (recurrence++) / score / cap / archive,
+      in the README format, via a zero-dependency YAML subset (`src/frontmatter.js`).
+- [x] Rejected ids fed back into the prompt and filtered out of the result (`src/state.js`).
+- [x] `base` logic: a newer default always lands in `prompts/updates/<name>.v<n>.md` and is
+      named in `selfcheck.md`; the live file is never written to twice (decision 15).
+- [x] `fixtures/sessions/` drives the whole pipeline offline in tests.
+- [ ] Wire that round-trip into `/retro check` itself (M3).
+- [x] Refuse extraction with a named remedy when no `options.model` is set, rather than
+      hanging on the free tier (Gotcha 10).
 
 **M3 — `/retro` (L1)**
 - [ ] Packaged default `apply.md`, same seeding and resolution as `extract.md`.
