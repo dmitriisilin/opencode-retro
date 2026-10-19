@@ -1,6 +1,6 @@
 {
   "name": "opencode-retro",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Retrospectives for coding agents: an OpenCode v2 plugin that turns session friction into changes to skills, instructions and tools",
   "type": "module",
   "main": "index.js",
