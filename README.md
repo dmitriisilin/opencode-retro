@@ -2,7 +2,7 @@
 
 **English** | [Русский](README.ru.md) | [简体中文](README.zh-CN.md) | [Español](README.es.md) | [日本語](README.ja.md)
 
-Retrospectives for coding agents. An [OpenCode](https://opencode.ai) v2 plugin that turns friction in a session into proposed changes to the project's own harness: its skills, its instructions, its tools.
+Retrospectives for coding agents. An [OpenCode](https://opencode.ai) v2 plugin that reads the dialogue of a finished session, finds what would make the agent work better, and turns that into proposed changes to the project's own harness: its skills, its instructions, its tools.
 
 An agent does not learn from its own sessions. The only record of where it struggled is the log, and logs go unread. This plugin reads the log and comes back with proposals.
 
@@ -100,7 +100,7 @@ The options:
 - Change the project's code, when the trap is in the code. Never applied without explicit agreement.
 - Leave it unplaced, when the right home is genuinely unclear.
 
-Lessons themselves are always local to one workspace. A fix may not be: friction about how a person works everywhere belongs in their global harness, because fixing it in one project leaves it broken in the rest. Nothing outside the project is edited without asking.
+Lessons themselves are always local to one workspace. A fix may not be: when the cause is how a person works everywhere, the fix belongs in their global harness, because fixing it in one project leaves it broken in the rest. Nothing outside the project is edited without asking.
 
 The procedure and this list live in [`prompts/review.md`](prompts/review.md), which is seeded into the project and can be edited there.
 

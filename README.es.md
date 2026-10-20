@@ -1,11 +1,11 @@
-<!-- translated-from: README.md@3e14bd21e8a5 -->
+<!-- translated-from: README.md@15b44fce461d -->
 # opencode-retro
 
 [English](README.md) | [Русский](README.ru.md) | [简体中文](README.zh-CN.md) | **Español** | [日本語](README.ja.md)
 
 > Traducción de `README.md`. La versión en inglés es la canónica (canonical); si discrepan, prevalece ella.
 
-Retrospectivas para agentes de programación. Un plugin de [OpenCode](https://opencode.ai) v2 que convierte la fricción de una sesión en cambios propuestos al propio entorno del proyecto: sus skills, sus instrucciones, sus herramientas.
+Retrospectivas para agentes de programación. Un plugin de [OpenCode](https://opencode.ai) v2 que lee el diálogo de una sesión terminada, encuentra en él lo que puede mejorar el trabajo del agente y lo convierte en cambios propuestos al propio entorno del proyecto: sus skills, sus instrucciones, sus herramientas.
 
 Un agente no aprende de sus propias sesiones. El único registro de dónde se atascó es el log, y los logs no se leen. Este plugin lee el log y vuelve con propuestas.
 
@@ -104,7 +104,7 @@ Las opciones:
 - Cambiar el código del proyecto, cuando la trampa está en el código. Nunca se aplica sin acuerdo explícito.
 - Dejarlo sin ubicar, cuando el sitio correcto no está realmente claro.
 
-Las lecciones en sí son siempre locales a un espacio de trabajo. El arreglo puede no serlo: la fricción relativa a cómo trabaja una persona en todas partes pertenece a su entorno global, porque arreglarla en un proyecto la deja rota en los demás. Nada fuera del proyecto se edita sin preguntar.
+Las lecciones en sí son siempre locales a un espacio de trabajo. El arreglo puede no serlo: si la causa está en cómo trabaja una persona en todas partes, el arreglo pertenece a su entorno global, porque arreglarla en un proyecto la deja rota en los demás. Nada fuera del proyecto se edita sin preguntar.
 
 El procedimiento y esta lista están en [`prompts/review.md`](prompts/review.md), que se siembra en el proyecto y se puede editar allí.
 
