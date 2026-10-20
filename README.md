@@ -32,15 +32,17 @@ independent of session compaction — the raw trajectory is always available. On
 has been extracted its log is deleted: the lesson carries the story, and a log per session
 forever is a hoard.
 
-Cheap deterministic **anchor detectors** mark suspicious windows in the trajectory:
+Cheap deterministic **anchor detectors** mark suspicious windows in the trajectory. An
+anchor earns its place only where it is cheaper and more reliable than a model — exit codes,
+patches, repeated arguments:
 
 | Anchor | Signal |
 |---|---|
 | revert | agent undid its own edits (`git checkout`, reverse edit) within N steps |
 | repeat | same command / same output with no file changes in between |
 | skill→failure | a skill prescribed a command, and that command failed later in the session |
-| abandon | a planned task marked skipped / "couldn't" — *not built yet* |
-| correction | user prompt contradicts the agent's previous action — *not built yet* |
+| abandon | a planned task marked skipped / "couldn't" — *left to the extractor* |
+| correction | user prompt contradicts the agent's previous action — *left to the extractor* |
 
 When a session ends it is queued, and the **next session's first prompt** pays that debt:
 one model call with a clean context (not the working agent — it would defend its own
@@ -48,6 +50,12 @@ decisions) gets a compressed projection of the log, tool outputs trimmed, prompt
 answers in full, plus the anchors. It answers one question:
 
 > *If this session were run again, what should change so it goes shorter and straighter?*
+
+The last two rows are *left to the extractor* because there is nothing structural to detect:
+OpenCode has no todo or plan entity, so an abandoned task exists only as a sentence, and a
+correction is a sentence too. The projection hands the extractor every prompt and every
+assistant message **in full** — only tool output is trimmed — so both are already in front of
+it. A keyword detector would be a guess wearing a detector's clothes.
 
 The output is a list of **lessons** in `.retro/lessons/`.
 
@@ -151,11 +159,21 @@ A cap (default 30) keeps the list short; overflow is archived too.
 - **Not a loop breaker.** Loop detectors stop the agent *now*. This plugin makes sure the loop doesn't happen *next time*. Use both.
 - **Not a golden-path harvester.** Most self-improving-skills tools capture what *worked*. This captures what *didn't*, which is where the cheap wins are.
 
-## Project vs global
+## Local lesson, local or global fix
 
-Everything is project-scoped by default. A lesson becomes a *candidate* for global scope only when its evidence has no project-specific files, configs or dependencies in it, and it has recurred in at least two different workspaces. Promotion is a separate `/retro` proposal showing evidence from both.
+Lessons are always local to the workspace. A lesson is evidence from sessions in one
+project, so it lives in that project and nowhere else — there is no global lesson store and
+no promotion of lessons between projects. That is by design.
 
-*Not implemented yet.* The rule is settled; the code is not. It matters most if you keep one session per workspace, where recurrence inside a single project accrues slowly and "I work this way everywhere" shows up across workspaces first.
+What can be global is the **fix**. Some friction is about this repository: a skill that does
+not fit it, an `AGENTS.md` claim that is not true here. Some is about how you work
+everywhere: how you deal with your tracker, how you want branches named, a convention you
+carry between projects. The first belongs in the project's harness; the second belongs in
+your global one — `~/.config/opencode/AGENTS.md`, a global skill.
+
+Which of the two a lesson calls for is decided when it is handed over, by you and the agent
+looking at what the lesson actually says. The plugin does not guess, and it never edits your
+global harness on its own.
 
 ## Roadmap
 
@@ -170,9 +188,8 @@ Everything is project-scoped by default. A lesson becomes a *candidate* for glob
 Promotion between levels is driven by the plugin's own accept/reject statistics — it earns
 autonomy, it isn't granted.
 
-Not built yet, in rough order: the `abandon` and `correction` anchors, promotion of a lesson
-from project to global scope (see above — the rule is settled, the code is not), and the
-levels above.
+Not built yet: the levels above. The `abandon` and `correction` rows in the anchor table are
+not coming either — see that table for why.
 
 ## Design decisions
 

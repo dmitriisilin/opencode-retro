@@ -1,6 +1,6 @@
 ---
 prompt: review-auto
-base: 1
+base: 2
 ---
 
 Every lesson this project has waiting is listed below, highest score first. The human wants
@@ -19,6 +19,10 @@ Then come back with **one plan**:
 - anything that touches the same file grouped together, so it is one edit and not three;
 - the ones you dropped, named, with one line each on why — if a lesson is simply done, say so
   and record it as accepted now rather than carrying it into the plan;
+- for each one, whether the fix belongs in this project or in the human's global harness
+  (`~/.config/opencode/AGENTS.md`, a global skill). The test: would the lesson still be true
+  in a different repository? If yes, it is not about this one. List those separately — they
+  affect every other project and need explicit approval of their own;
 - anything that needs a decision only the human can make, called out separately. Do not
   guess at those.
 

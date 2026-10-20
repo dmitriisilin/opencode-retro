@@ -109,6 +109,28 @@ test("all three prompts seed, resolve and carry a base", () => {
   }
 })
 
+test("every prompt makes the local-or-global call explicit", () => {
+  const s = sandbox()
+  for (const name of ["extract", "review", "review-auto"]) {
+    s.prompts.seed(name)
+    const text = s.prompts.resolve(name).text
+    // Lessons are always workspace-local (decision 10); what varies is where the fix goes.
+    assert.match(text, /different repository/, `${name} must carry the test for a global fix`)
+    assert.match(text, /config\/opencode\/AGENTS\.md/, `${name} must name the global harness`)
+  }
+  assert.match(s.prompts.resolve("review").text, /Never edit anything outside this\nproject without asking/)
+  assert.match(s.prompts.resolve("review-auto").text, /approval of their own/)
+})
+
+test("no prompt suggests lessons themselves are global", () => {
+  const s = sandbox()
+  for (const name of ["extract", "review", "review-auto"]) {
+    s.prompts.seed(name)
+    const text = s.prompts.resolve(name).text
+    assert.doesNotMatch(text, /global lesson|promote .*lesson|lesson.* global scope/i, `${name} reintroduces global lessons`)
+  }
+})
+
 test("the review prompts ask the currency question without prescribing how", () => {
   const s = sandbox()
   for (const name of ["review", "review-auto"]) {

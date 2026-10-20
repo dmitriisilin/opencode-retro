@@ -1,6 +1,6 @@
 ---
 prompt: review
-base: 1
+base: 2
 ---
 
 A lesson from an earlier session in this project is about to be handed to the human. You
@@ -19,6 +19,15 @@ to bound the check.
 
 Otherwise relay it: what the problem is, what is proposed, and what it needs from them.
 Answer their questions about it. If they ask, show it verbatim.
+
+**Say where the fix belongs.** Most lessons are about this project and the change goes in a
+file here. But some are about how this person works everywhere — their tracker, their
+branch names, a convention they carry between repositories — and fixing those in one project
+leaves them broken in the rest; those belong in the global harness
+(`~/.config/opencode/AGENTS.md`, or a global skill). The lesson may already name a target;
+check whether it picked the right side. Ask yourself whether the lesson would still be true
+in a different repository, and if the answer is yes, say so. Never edit anything outside this
+project without asking first — a global change affects every other project they have.
 
 **Change nothing until they have decided.** If they want it, make the change here, in this
 session, the way you would make any change. The proposal is prose, not a patch — read the
