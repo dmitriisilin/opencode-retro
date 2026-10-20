@@ -257,14 +257,19 @@ export const STATUS = { OK, DEGRADED, BROKEN, SKIPPED }
 /* ------------------------------------------------------- the active check */
 
 /**
- * `/retro check` (AGENTS.md decision 16, "the active version").
+ * The checks a passing session cannot make (AGENTS.md decision 19).
  *
- * Costs a model call, so it is asked for. It checks the things a passing session cannot:
+ * Run on every `/retro`, which is why the two that cost a model call — does it answer, and
+ * does the output contract still round-trip — are behind `probe`. Those are asked only when
+ * an analysis has just failed, because that is when the answer is worth paying for; the
+ * rest is a few property reads.
+ *
+ * It checks:
  * that the `ctx` surface we depend on is still there, that the model answers, that the
  * prompts resolve, and that a real extraction prompt still round-trips into a parseable
  * lesson — which is the only check that exercises a user-edited prompt end to end.
  */
-export async function activeCheck({ ctx, config, prompts, store, state, log, generate, model }) {
+export async function activeCheck({ ctx, config, prompts, store, state, log, generate, model, probe = true }) {
   const checks = []
   const notes = []
 
@@ -291,7 +296,10 @@ export async function activeCheck({ ctx, config, prompts, store, state, log, gen
   )
 
   // 2. Connectivity.
-  if (!model?.providerID || !model?.id) {
+  if (!probe) {
+    // Free checks only. Asking the model whether it answers costs a call, and that answer
+    // arrives on its own the moment an analysis is attempted.
+  } else if (!model?.providerID || !model?.id) {
     checks.push({
       status: DEGRADED,
       name: "model",
@@ -335,7 +343,7 @@ export async function activeCheck({ ctx, config, prompts, store, state, log, gen
   }
 
   // 4. Round trip: does the contract still produce something we can parse?
-  if (prompt && model?.providerID) {
+  if (probe && prompt && model?.providerID) {
     const { parseLessons, OUTPUT_CONTRACT } = await import("./contract.js")
     try {
       const reply = await generate({

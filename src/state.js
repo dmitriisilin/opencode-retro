@@ -70,9 +70,20 @@ export function createState({ path, onError }) {
     get pending() {
       return data.pending.map((p) => ({ ...p }))
     },
-    /** The oldest owed session that is not the one currently running. */
-    nextPending(exclude) {
-      return data.pending.find((p) => p.session !== exclude && p.attempts < 3) ?? null
+    /**
+     * The oldest owed session that is not the one currently running.
+     *
+     * `skip` is for one run: a log that has just failed must not be picked again in the
+     * same command, or one broken log is retried until it hits the attempt cap while the
+     * logs behind it are never read.
+     */
+    nextPending(exclude, skip = []) {
+      const skipped = skip instanceof Set ? skip : new Set(skip)
+      return (
+        data.pending.find(
+          (p) => p.session !== exclude && !skipped.has(p.session) && p.attempts < 3,
+        ) ?? null
+      )
     },
     attempt(session) {
       const entry = data.pending.find((p) => p.session === session)

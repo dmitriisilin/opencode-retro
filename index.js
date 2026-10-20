@@ -379,15 +379,18 @@ export default {
     async function processQueue(sessionID) {
       const done = []
       const failures = []
+      // A log that fails is set aside for this run rather than ending it. Stopping at the
+      // first failure meant one unreadable reply hid every log behind it, and the message
+      // said to run `/retro` again — which would fail on the same log.
+      const skip = new Set()
       while (done.length < config.extractLimit) {
-        const owed = state.nextPending(sessionID)
+        const owed = state.nextPending(sessionID, skip)
         if (!owed) break
         const result = await runExtraction(owed.session)
         if (state.pending.some((p) => p.session === owed.session)) {
-          // Still queued means the analysis failed. Say why: it used to vanish, leaving
-          // only an incremented attempt count in state.json for anyone who went looking.
           failures.push({ session: owed.session, detail: result?.detail ?? "unknown failure" })
-          break
+          skip.add(owed.session)
+          continue
         }
         done.push(owed.session)
       }
@@ -510,6 +513,12 @@ export default {
 
       // A transient model failure is worth one more go on the next prompt; a third
       // attempt would just keep charging for the same answer.
+      // The whole reply goes to plugin.log on a failure: the message carries an excerpt, and
+      // the difference between prose and truncated JSON is only visible in the rest of it.
+      if (!result.ok) {
+        onError(`extract.${sessionID}`, result.reply ? `${result.detail}\n--- reply ---\n${result.reply}` : result.detail)
+      }
+
       if (result.ok || state.pending.find((p) => p.session === sessionID)?.attempts >= 3) {
         state.markExtracted(sessionID, { ok: result.ok, detail: result.detail })
         if (result.ok) pruneLogs()

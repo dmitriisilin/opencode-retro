@@ -193,6 +193,32 @@ test("an unparseable reply is reported, not treated as nothing to learn", async 
   assert.match(result.detail, /unparseable reply/)
 })
 
+test("a reply that cannot be parsed is quoted, so the human can see what the model said", async () => {
+  // "unparseable reply" on its own tells nobody anything: a model that answered in prose
+  // and a model that stopped half way through a JSON object need different remedies.
+  const r = rig({ reply: "Sure — here are the two problems I found:\n\n1. the lint skill" })
+  const result = await extract({ records: live(), session: "ses_live", ...r })
+
+  assert.equal(result.ok, false)
+  assert.match(result.detail, /the model answered \(60 chars\)/)
+  assert.match(result.detail, /the lint skill/)
+})
+
+test("a model that said nothing is reported as having said nothing", async () => {
+  const r = rig({ reply: "" })
+  const result = await extract({ records: live(), session: "ses_live", ...r })
+
+  assert.equal(result.ok, false)
+  assert.match(result.detail, /the model returned nothing at all/)
+})
+
+test("the reply itself is kept, because the analysis session is transient", async () => {
+  const r = rig({ reply: "not json" })
+  const result = await extract({ records: live(), session: "ses_live", ...r })
+
+  assert.equal(result.reply, "not json", "the caller can put it somewhere that lasts")
+})
+
 test("an empty lesson list is a clean result with nothing written", async () => {
   const r = rig({ reply: '```json\n{"lessons": []}\n```' })
   const result = await extract({ records: live(), session: "ses_live", ...r })

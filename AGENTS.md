@@ -659,6 +659,15 @@ Shipping with these known, listed so nobody discovers them as surprises:
   restarting the service.
 - Save real shadow logs from the playground into `fixtures/sessions/` — then projection, detectors and the extractor prompt can be iterated without running OpenCode. Raw hook/event captures (a layer below the shadow log) are in `fixtures/payloads/`.
 - Dogfooding: once M1 works, keep the plugin enabled while developing the plugin itself.
+- **A live test can edit the plugin.** `/retro` delivers its message into a session and
+  resumes it, so the agent there acts on what it was told — and if that message says the
+  analysis failed, and this repository is reachable and writable, the agent will go and fix
+  the plugin. That happened: an agent read "unparseable reply", went into `src/` and `test/`,
+  wrote the queue-skip fix and the reply excerpt, ran the suite, and left the work
+  uncommitted. Good work, and a hazard: those edits arrive with no author, no commit and no
+  warning, and a `git checkout` in the middle of them loses what is not yet staged — which
+  is how the `index.js` half of that fix was destroyed and had to be rebuilt from its tests.
+  When running live tests, commit first, and check `git status` before and after.
 
 ## Conventions
 

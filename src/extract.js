@@ -81,7 +81,7 @@ export async function extract({
   }
 
   const parsed = parseLessons(reply)
-  if (!parsed.ok) return { ok: false, detail: `unparseable reply: ${parsed.error}`, reply }
+  if (!parsed.ok) return { ok: false, detail: `unparseable reply: ${parsed.error}${excerpt(reply)}`, reply }
 
   const rejected = new Set(state.rejected.map((r) => r.id))
   const lessons = parsed.lessons.filter((l) => !rejected.has(l.id) && !rejected.has(l.matches))
@@ -93,6 +93,21 @@ export async function extract({
     recorded,
     detail: summarise(recorded, lessons.length),
   }
+}
+
+/**
+ * What the model actually said, in one line.
+ *
+ * "unparseable reply" alone tells the human nothing: they cannot tell a model that
+ * answered in prose from one that stopped half way through a JSON object, and those
+ * have different remedies. The whole reply is kept for the plugin log; this is the part
+ * that fits in a message.
+ */
+function excerpt(reply) {
+  const text = String(reply ?? "").trim()
+  if (!text) return " — the model returned nothing at all"
+  const flat = text.replace(/\s+/g, " ")
+  return ` — the model answered (${text.length} chars): ${flat.slice(0, 200)}${flat.length > 200 ? "…" : ""}`
 }
 
 /**

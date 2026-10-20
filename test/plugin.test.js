@@ -1,6 +1,6 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import plugin from "../index.js"
@@ -13,7 +13,7 @@ import plugin from "../index.js"
  * defined" — registered, listed, and broken. Nothing short of running the command catches
  * that.
  */
-function fakeOpenCode({ options = {}, directory } = {}) {
+function fakeOpenCode({ options = {}, directory, reply } = {}) {
   const commands = new Map()
   const tools = new Map()
   const hooks = new Map()
@@ -44,7 +44,8 @@ function fakeOpenCode({ options = {}, directory } = {}) {
       },
       generate: async (input) => {
         generated.push(input)
-        return { text: REPLY }
+        // `reply` may be a function, so a test can answer one log badly and another well.
+        return { text: typeof reply === "function" ? reply(input) : (reply ?? REPLY) }
       },
       remove: async ({ sessionID }) => void live.delete(sessionID),
     },
@@ -65,6 +66,42 @@ const sandbox = () => {
   writeFileSync(join(directory, "AGENTS.md"), "always run the lint skill\n")
   return directory
 }
+
+/** A session that did some work, so its shadow log has something to extract. */
+async function workSession(fake, session) {
+  await fake.hooks.get("session.prompt")({ sessionID: session, messageID: "m1", prompt: { text: "do a thing" } })
+  for (const id of ["c1", "c2", "c3"]) {
+    await fake.hooks.get("tool.execute.before")({
+      sessionID: session,
+      id,
+      tool: "shell",
+      input: { command: "npx eslint ." },
+    })
+    await fake.hooks.get("tool.execute.after")({
+      sessionID: session,
+      id,
+      tool: "shell",
+      input: { command: "npx eslint ." },
+      status: "completed",
+      result: { output: { exit: 2, output: "no config" }, metadata: { exit: 2 } },
+    })
+  }
+}
+
+/** The sessions whose logs a command was asked to analyse, in order. */
+const analysed = (fake) => fake.generated.map((g) => (g.prompt.match(/id: (ses_\w+)/) ?? [])[1])
+
+const queue = (directory, sessions) =>
+  writeFileSync(
+    join(directory, ".retro", "state.json"),
+    JSON.stringify({
+      version: 1,
+      rejected: [],
+      extracted: {},
+      sessions: sessions.length,
+      pending: sessions.map((session) => ({ session, queuedAt: "now", attempts: 0 })),
+    }),
+  )
 
 const MODEL = { providerID: "deepseek", id: "deepseek-flash" }
 
@@ -331,5 +368,89 @@ test("/retro auto delivers every waiting lesson as one plan", async () => {
   assert.match(delivered.text, /## 1\. `a`/, "highest score first")
   assert.match(delivered.text, /## 2\. `b`/)
   assert.match(delivered.text, /one plan/)
+  await cleanup?.()
+})
+
+test("a log the model could not answer does not hold up the logs behind it", async () => {
+  // This is what a live run hit: one log came back as prose, and the queue stopped there.
+  // The other logs were never read, and the message said to run `/retro` again — which
+  // would have failed on the same log again.
+  const directory = sandbox()
+  const fake = fakeOpenCode({ directory, options: { model: MODEL } })
+  const cleanup = await plugin.setup(fake.ctx)
+
+  await workSession(fake, "ses_bad")
+  await workSession(fake, "ses_good")
+  queue(directory, ["ses_bad", "ses_good"])
+
+  const fresh = fakeOpenCode({
+    directory,
+    options: { model: MODEL },
+    reply: (input) => (input.prompt.includes("id: ses_bad") ? "I could not do this one." : REPLY),
+  })
+  const cleanup2 = await plugin.setup(fresh.ctx)
+  await fresh.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
+
+  assert.deepEqual(analysed(fresh), ["ses_bad", "ses_good"], "the log behind the failure was read too")
+  assert.equal(analysed(fresh).filter((s) => s === "ses_bad").length, 1, "and the failed one is not retried in the same command")
+
+  const [delivered] = fresh.synthetic
+  assert.match(delivered.text, /could not analyse `ses_bad`/)
+  assert.match(delivered.text, /the model answered/, "the message says what the model said")
+  assert.match(delivered.text, /lint-skill-no-config/, "and the lesson from the log that worked is still delivered")
+
+  await cleanup?.()
+  await cleanup2?.()
+})
+
+test("a reply that could not be read is kept, because the analysis session is transient", async () => {
+  const directory = sandbox()
+  const fake = fakeOpenCode({ directory, options: { model: MODEL } })
+  const cleanup = await plugin.setup(fake.ctx)
+
+  await workSession(fake, "ses_bad")
+  queue(directory, ["ses_bad"])
+
+  const fresh = fakeOpenCode({
+    directory,
+    options: { model: MODEL },
+    reply: "Sure! Here are the two problems I found:\n\n1. the lint skill",
+  })
+  const cleanup2 = await plugin.setup(fresh.ctx)
+  await fresh.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
+
+  const pluginLog = readFileSync(join(directory, ".retro", "plugin.log"), "utf8")
+  assert.match(pluginLog, /extract\.ses_bad/, "the failure names the log")
+  assert.match(pluginLog, /the lint skill/, "and the model's own words are in it")
+
+  await cleanup?.()
+  await cleanup2?.()
+})
+
+test("a log that failed stays queued, and is tried again on the next command", async () => {
+  const directory = sandbox()
+  const fake = fakeOpenCode({ directory, options: { model: MODEL } })
+  const cleanup = await plugin.setup(fake.ctx)
+
+  await workSession(fake, "ses_bad")
+  queue(directory, ["ses_bad"])
+
+  const broken = fakeOpenCode({ directory, options: { model: MODEL }, reply: "not json at all" })
+  const cleanup2 = await plugin.setup(broken.ctx)
+  await broken.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
+  await cleanup2?.()
+
+  const state = JSON.parse(readFileSync(join(directory, ".retro", "state.json"), "utf8"))
+  assert.equal(state.pending.length, 1, "still owed")
+  assert.equal(state.pending[0].attempts, 1, "and counted")
+
+  const again = fakeOpenCode({ directory, options: { model: MODEL }, reply: "not json at all" })
+  const cleanup3 = await plugin.setup(again.ctx)
+  await again.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
+  await cleanup3?.()
+
+  const after = JSON.parse(readFileSync(join(directory, ".retro", "state.json"), "utf8"))
+  assert.equal(after.pending[0].attempts, 2, "one more go, then it is given up on")
+
   await cleanup?.()
 })
