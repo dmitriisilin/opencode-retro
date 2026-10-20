@@ -22,17 +22,6 @@ export function pickOpen(lessons, ctx = {}) {
   return lessons.filter((l) => OPEN.has(l.status)).sort((a, b) => score(b, ctx) - score(a, ctx))
 }
 
-/** Addressed to the agent: one plan over everything, still nothing applied unasked. */
-export const AUTO_LEAD_IN =
-  "_opencode-retro: below is every lesson this project has waiting, highest score first. For " +
-  "each one, first answer: **is it already resolved in this workspace as it is now?** You know " +
-  "this project; check however you normally would. Then come back with **one plan** covering " +
-  "only the ones that still stand, in the order you would do them, saying what you would change " +
-  "in each file and grouping anything that touches the same file. Name the ones you dropped and " +
-  "why — record those as accepted if they are simply done. Change nothing until the human " +
-  "approves the plan; once they do, work through it and record each lesson with `retro_decide` " +
-  "as you go._"
-
 export function renderBatch(
   lessons,
   { sessions = null, halfLife, currencies = new Map(), limit = AUTO_LIMIT, leadIn = null } = {},

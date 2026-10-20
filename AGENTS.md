@@ -590,7 +590,7 @@ understood is just a diagnostic that was written badly.
 - [x] `base` logic: a newer default always lands in `prompts/updates/<name>.v<n>.md` and is
       named in `selfcheck.md`; the live file is never written to twice (decision 15).
 - [x] `fixtures/sessions/` drives the whole pipeline offline in tests.
-- [ ] Wire that round-trip into `/retro check` itself (M3).
+- [x] Round-trip wired into `/retro check` (M3): verified live reporting "contract parsed".
 - [x] Refuse extraction with a named remedy when no `options.model` is set, rather than
       hanging on the free tier (Gotcha 10).
 
@@ -605,9 +605,9 @@ understood is just a diagnostic that was written badly.
       drives the application itself — but the hand-over texts were hardcoded in `src/review.js`,
       which put the semantics of "what is your job when a lesson arrives" out of the user's
       reach. Now seeded and resolved like `extract.md`.
-- [ ] End-of-review summary + `git diff`: nothing to summarise while one invocation shows one
-      lesson, and the change lands through the agent's normal edit flow, which already shows
-      a diff. Dropped unless the review ever becomes multi-lesson again.
+- Dropped: end-of-review summary + `git diff`. One invocation shows one lesson, and the
+  change lands through the agent's normal edit flow, which already shows a diff. Revisit only
+  if the review becomes multi-lesson again.
 
 **M3.5 — the life of a lesson — done** (107 tests; verified live)
 - [x] Detectors removed; their guidance is prose in `prompts/extract.md` (decision 4).
@@ -639,9 +639,15 @@ understood is just a diagnostic that was written badly.
 - [ ] `npm version 0.1.0` bumps `package.json`; `VERSION` in `index.js` must move with it
       (a test enforces this, so a forgotten bump fails the suite rather than shipping a
       self-check that misreports its own version).
-- [ ] Known and shipping anyway, listed so nobody discovers them as surprises: subagent
-      sessions are unverified (see "Still unverified"), the `compaction` payload is unknown
-      and undepended-on, and extraction lands one session late by API constraint.
+Shipping with these known, listed so nobody discovers them as surprises:
+
+- Subagent sessions are unverified — see "Still unverified".
+- The `compaction` payload is unknown, and nothing depends on it.
+- On a free-tier model the analysis sometimes returns a reply the output contract cannot
+  parse. It fails visibly and retries; pinning a model in `options.model` avoids it.
+- Whether the agent records a decision is prompted, not enforced. If it does not, the lesson
+  stays open and comes back next time with the currency check noting that its target has
+  changed — recoverable, but it is the one step the plugin cannot do for itself.
 
 ## Dev environment
 

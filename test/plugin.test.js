@@ -271,3 +271,65 @@ test("a log survives while a lesson cites it, and goes once that lesson is decid
   await cleanup?.()
   await cleanup2?.()
 })
+
+test("autoExtract analyses at the start of the next session, and is off by default", async () => {
+  const directory = sandbox()
+  const session = "ses_auto"
+
+  const work = async (fake) => {
+    await fake.hooks.get("session.prompt")({ sessionID: session, messageID: "m1", prompt: { text: "do it" } })
+    await fake.hooks.get("tool.execute.before")({ sessionID: session, id: "c1", tool: "shell", input: { command: "x" } })
+    await fake.hooks.get("tool.execute.after")({
+      sessionID: session,
+      id: "c1",
+      tool: "shell",
+      input: { command: "x" },
+      status: "completed",
+      result: { output: { exit: 1, output: "no" }, metadata: { exit: 1 } },
+    })
+    writeFileSync(
+      join(directory, ".retro", "state.json"),
+      JSON.stringify({ version: 1, rejected: [], extracted: {}, sessions: 1, pending: [{ session, queuedAt: "now", attempts: 0 }] }),
+    )
+  }
+
+  const off = fakeOpenCode({ directory, options: { model: MODEL } })
+  const stop = await plugin.setup(off.ctx)
+  await work(off)
+  const quiet = fakeOpenCode({ directory, options: { model: MODEL } })
+  const stop2 = await plugin.setup(quiet.ctx)
+  await quiet.hooks.get("session.prompt")({ sessionID: "ses_later", messageID: "m2", prompt: { text: "next" } })
+  assert.equal(quiet.generated.length, 0, "by default a new session analyses nothing")
+
+  const on = fakeOpenCode({ directory, options: { model: MODEL, autoExtract: true } })
+  const stop3 = await plugin.setup(on.ctx)
+  await on.hooks.get("session.prompt")({ sessionID: "ses_later2", messageID: "m3", prompt: { text: "next" } })
+  await new Promise((r) => setTimeout(r, 50)) // the drain is deliberately not awaited
+  assert.equal(on.generated.length, 1, "with autoExtract the queue is analysed unprompted")
+
+  await stop?.()
+  await stop2?.()
+  await stop3?.()
+})
+
+test("/retro auto delivers every waiting lesson as one plan", async () => {
+  const directory = sandbox()
+  mkdirSync(join(directory, ".retro", "lessons"), { recursive: true })
+  for (const [id, cost] of [["a", 20], ["b", 5]]) {
+    writeFileSync(
+      join(directory, ".retro", "lessons", `${id}.md`),
+      `---\nid: ${id}\nstatement: problem ${id}\ncost: ${cost}\nrecurrence: 1\nconfidence: 1\nstatus: new\n---\n\nbody\n`,
+    )
+  }
+
+  const fake = fakeOpenCode({ directory, options: { model: MODEL } })
+  const cleanup = await plugin.setup(fake.ctx)
+  await fake.commands.get("retro-auto").execute({ sessionID: "ses_x", prompt: { text: "" } })
+
+  const [delivered] = fake.synthetic
+  assert.match(delivered.text, /2 lessons waiting/)
+  assert.match(delivered.text, /## 1\. `a`/, "highest score first")
+  assert.match(delivered.text, /## 2\. `b`/)
+  assert.match(delivered.text, /one plan/)
+  await cleanup?.()
+})
