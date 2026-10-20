@@ -55,8 +55,9 @@ test("the proposal says what it is, what it would change, and that nothing was c
   assert.match(text, /sessions\/ses_a\.jsonl` steps 9–18/)
   assert.match(text, /This is a proposal, not a change — nothing has been edited/)
   assert.match(text, /2 more lessons waiting of 3/)
-  assert.match(text, /^_opencode-retro: relay the proposal below/, "the agent reads it first")
-  assert.match(text, /change nothing until they have decided/)
+  assert.match(text, /^_opencode-retro: check the proposal below against the repository/, "the agent reads it first")
+  assert.match(text, /may already be fixed/)
+  assert.match(text, /change nothing until the human has/)
 })
 
 test("a lesson with no proposal is still worth showing, and says why", () => {
@@ -73,13 +74,27 @@ test("an empty store explains itself rather than looking broken", () => {
   assert.match(text, /selfcheck\.md/)
 })
 
-test("a decision is recorded on the lesson", () => {
+test("deciding closes the lesson: out of the open set, into the archive", () => {
   const r = rig()
   r.store.record([{ ...lesson(), steps: [9, 18], matches: null, why: "b" }], { session: "ses_a" })
 
   const result = decide({ id: "lint-skill-no-config", status: "accepted" }, r)
   assert.ok(result.ok)
-  assert.equal(r.store.list()[0].status, "accepted")
+  assert.match(result.detail, /moved to archive/)
+  assert.deepEqual(r.store.list(), [], "lessons/ holds open questions only")
+
+  const [archived] = r.store.listArchive()
+  assert.equal(archived.status, "accepted")
+  assert.ok(archived.closedAt, "and when it was closed")
+})
+
+test("later keeps the lesson open rather than closing it", () => {
+  const r = rig()
+  r.store.record([{ ...lesson(), steps: [9, 18], matches: null, why: "b" }], { session: "ses_a" })
+
+  decide({ id: "lint-skill-no-config", status: "later" }, r)
+  assert.equal(r.store.list()[0].status, "later")
+  assert.deepEqual(r.store.listArchive(), [])
 })
 
 test("a rejection outlives the lesson file, or it comes back", () => {
@@ -87,7 +102,7 @@ test("a rejection outlives the lesson file, or it comes back", () => {
   r.store.record([{ ...lesson(), steps: [9, 18], matches: null, why: "b" }], { session: "ses_a" })
 
   decide({ id: "lint-skill-no-config", status: "rejected", note: "we want eslint eventually" }, r)
-  assert.equal(r.store.list()[0].status, "rejected")
+  assert.equal(r.store.listArchive()[0].status, "rejected")
   assert.deepEqual(
     r.state.rejected.map((x) => x.id),
     ["lint-skill-no-config"],

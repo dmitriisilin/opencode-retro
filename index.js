@@ -1,10 +1,11 @@
-import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
+import { appendFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { createIngest } from "./src/ingest.js"
 import { createPrompts } from "./src/prompts.js"
 import { createSelfCheck } from "./src/selfcheck.js"
 import { createShadowLog, parseShadowLog } from "./src/shadowlog.js"
 import { createState } from "./src/state.js"
 import { createStore, score } from "./src/lessons.js"
+import { assessCurrency, fingerprintOf } from "./src/currency.js"
 import { extract } from "./src/extract.js"
 import { DECIDE_INPUT, decide, pickLesson, renderNothing, renderProposal } from "./src/review.js"
 import { activeCheck } from "./src/selfcheck.js"
@@ -46,7 +47,14 @@ export default {
 
     const log = createShadowLog({ dir: config.sessions, onError })
     const state = createState({ path: config.state, onError })
-    const store = createStore({ dir: config.lessons, archive: config.archive, onError })
+    const store = createStore({
+      dir: config.lessons,
+      archive: config.archive,
+      halfLife: config.halfLife,
+      sessions: () => state.sessions,
+      onError,
+    })
+    const fingerprint = fingerprintOf(config.directory)
     const prompts = createPrompts({ dir: config.prompts, updates: config.updates, onError })
     const check = createSelfCheck({
       versions: { opencode: ctx?.app?.version ?? null, plugin: VERSION },
@@ -66,7 +74,7 @@ export default {
         check.stock({
           lessons: lessons.length,
           top: lessons[0]?.id ?? null,
-          topScore: lessons.length ? score(lessons[0]) : null,
+          topScore: lessons.length ? store.score(lessons[0]) : null,
           queued: state.pending.length,
         })
         mkdirSync(config.dir, { recursive: true })
@@ -205,6 +213,7 @@ export default {
 
       // Not extracted here: a model call from the event stream never returns. Queued, and
       // drained from the next session's prompt hook.
+      state.countSession()
       state.queue(sessionID)
       lastVerified.set(sessionID, verified)
       check.verify({ ...verified, extraction: { queued: true } })
@@ -251,7 +260,16 @@ export default {
         return say(sessionID, renderNothing({ queued: state.pending.length, extracted }))
       }
       const open = lessons.filter((l) => ["new", "later", undefined, null].includes(l.status)).length
-      return say(sessionID, renderProposal(lesson, { total: open, remaining: open - 1 }))
+      return say(
+        sessionID,
+        renderProposal(lesson, {
+          total: open,
+          remaining: open - 1,
+          currency: assessCurrency(lesson, { directory: config.directory, fingerprint }),
+          sessions: state.sessions,
+          halfLife: config.halfLife,
+        }),
+      )
     }
 
     async function runCheck(sessionID) {
@@ -277,6 +295,8 @@ export default {
       draining = true
       try {
         await runExtraction(owed.session)
+      } catch (err) {
+        onError("drain", err)
       } finally {
         draining = false
       }
@@ -305,6 +325,8 @@ export default {
           prompts,
           store,
           state,
+          fingerprint,
+          timeoutMs: config.extractTimeoutMs,
         })
       } catch (err) {
         onError("extract", err)
@@ -315,6 +337,15 @@ export default {
       // attempt would just keep charging for the same answer.
       if (result.ok || state.pending.find((p) => p.session === sessionID)?.attempts >= 3) {
         state.markExtracted(sessionID, { ok: result.ok, detail: result.detail })
+        // The lesson carries the story; the raw log has nothing left to give. Keeping it
+        // would mean a project accumulating ~28 KB a session forever.
+        if (result.ok && !config.keepSessions) {
+          try {
+            rmSync(log.path(sessionID))
+          } catch (err) {
+            if (err?.code !== "ENOENT") onError("sessions.prune", err)
+          }
+        }
       }
 
       const verified = lastVerified.get(sessionID)

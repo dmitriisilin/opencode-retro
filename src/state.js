@@ -7,7 +7,7 @@ import { dirname } from "node:path"
  * sessions have already been extracted (so a restart does not pay twice).
  */
 export function createState({ path, onError }) {
-  let data = { version: 1, rejected: [], extracted: {}, pending: [] }
+  let data = { version: 1, rejected: [], extracted: {}, pending: [], sessions: 0 }
 
   try {
     const parsed = JSON.parse(readFileSync(path, "utf8"))
@@ -16,6 +16,7 @@ export function createState({ path, onError }) {
       if (!Array.isArray(data.rejected)) data.rejected = []
       if (!Array.isArray(data.pending)) data.pending = []
       if (!data.extracted || typeof data.extracted !== "object") data.extracted = {}
+      if (typeof data.sessions !== "number") data.sessions = 0
     }
   } catch {
     /* absent or hand-broken: start clean rather than refuse to run */
@@ -47,6 +48,19 @@ export function createState({ path, onError }) {
      * the event stream, and only returns from inside a hook callback (AGENTS.md
      * "Gotchas"). So a finished session is queued here and drained from the next prompt.
      */
+    /**
+     * Sessions seen in this workspace. Freshness is measured against this rather than the
+     * clock: at one session a day, a wall-clock decay would bury everything.
+     */
+    get sessions() {
+      return data.sessions
+    },
+    countSession() {
+      data.sessions++
+      save()
+      return data.sessions
+    },
+
     queue(session) {
       if (!data.extracted[session] && !data.pending.some((p) => p.session === session)) {
         data.pending.push({ session, queuedAt: new Date().toISOString(), attempts: 0 })

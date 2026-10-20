@@ -188,3 +188,24 @@ test("a session is given up on after three attempts rather than billed forever",
   for (let i = 0; i < 3; i++) r.state.attempt("ses_a")
   assert.equal(r.state.nextPending(null), null)
 })
+
+test("a model call that never settles is given up on, not waited on forever", async () => {
+  const r = rig()
+  const result = await extract({
+    records: live(),
+    session: "ses_hang",
+    ...r,
+    generate: () => new Promise(() => {}),
+    timeoutMs: 50,
+  })
+
+  assert.equal(result.ok, false)
+  assert.match(result.detail, /no reply after/)
+})
+
+test("a slow but finite call still succeeds", async () => {
+  const r = rig({ reply: REPLY() })
+  const slow = (input) => new Promise((res) => setTimeout(() => res({ text: REPLY() }), 10)).then((x) => (r.calls.push(input), x))
+  const result = await extract({ records: live(), session: "ses_slow", ...r, generate: slow, timeoutMs: 2000 })
+  assert.ok(result.ok, result.detail)
+})

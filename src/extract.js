@@ -8,7 +8,19 @@ import { project } from "./projection.js"
  * Runs with a clean context — a single `ctx.generate.text` call, no session, no history —
  * because the agent that did the work would defend its own choices.
  */
-export async function extract({ records, session, generate, model, prompts, store, state }) {
+export const DEFAULT_TIMEOUT_MS = 90_000
+
+export async function extract({
+  records,
+  session,
+  generate,
+  model,
+  prompts,
+  store,
+  state,
+  fingerprint,
+  timeoutMs = DEFAULT_TIMEOUT_MS,
+}) {
   const anchors = detectAnchors(records)
 
   // No model call when there is demonstrably nothing to look at. Cheap, honest, and the
@@ -45,7 +57,7 @@ export async function extract({ records, session, generate, model, prompts, stor
 
   let reply
   try {
-    const result = await generate({ prompt: input, model })
+    const result = await withTimeout(generate({ prompt: input, model }), timeoutMs)
     reply = result?.text ?? ""
   } catch (err) {
     return { ok: false, detail: `model call failed: ${String(err?.message ?? err)}` }
@@ -56,7 +68,7 @@ export async function extract({ records, session, generate, model, prompts, stor
 
   const rejected = new Set(state.rejected.map((r) => r.id))
   const lessons = parsed.lessons.filter((l) => !rejected.has(l.id) && !rejected.has(l.matches))
-  const recorded = store.record(lessons, { session })
+  const recorded = store.record(lessons, { session, fingerprint })
 
   return {
     ok: true,
@@ -65,6 +77,22 @@ export async function extract({ records, session, generate, model, prompts, stor
     recorded,
     detail: summarise(recorded, lessons.length, anchors.length),
   }
+}
+
+/**
+ * A generate call that never settles is not hypothetical — it is how `generate.text`
+ * behaves outside a hook, and it has been seen from inside one too. Without a bound, one
+ * hung call wedges the drain for the rest of the process and nothing says so.
+ */
+function withTimeout(promise, ms) {
+  if (!ms || ms <= 0) return promise
+  let timer
+  return Promise.race([
+    promise.finally(() => clearTimeout(timer)),
+    new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`no reply after ${Math.round(ms / 1000)}s`)), ms)
+    }),
+  ])
 }
 
 const section = (title, body) => (body?.trim() ? `## ${title}\n\n${body.trim()}` : null)
@@ -90,6 +118,7 @@ function summarise(recorded, lessons, anchors) {
   if (!lessons) return `nothing to learn (${anchors} anchor${anchors === 1 ? "" : "s"} looked at)`
   const parts = []
   if (recorded.created?.length) parts.push(`${recorded.created.length} new (${recorded.created.join(", ")})`)
+  if (recorded.reopened?.length) parts.push(`${recorded.reopened.length} came back (${recorded.reopened.join(", ")})`)
   if (recorded.merged?.length) parts.push(`${recorded.merged.length} recurring (${recorded.merged.join(", ")})`)
   if (recorded.archived?.length) parts.push(`${recorded.archived.length} archived`)
   return parts.join(", ") || "no change"

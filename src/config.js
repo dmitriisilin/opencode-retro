@@ -8,6 +8,15 @@ export const DEFAULTS = {
   maxOutput: 8000,
   /** Lower bound between heartbeat writes. See AGENTS.md "Three timestamps". */
   heartbeatMs: 60_000,
+  /**
+   * Sessions without a recurrence after which a lesson's score halves. Counted in sessions,
+   * not days: one session a day would otherwise bury everything.
+   */
+  halfLife: 10,
+  /** Keep the shadow log after a successful extraction. Off — the lesson carries the story. */
+  keepSessions: false,
+  /** Give up on a silent model call rather than wedging the queue behind it. */
+  extractTimeoutMs: 90_000,
 }
 
 /**
@@ -33,6 +42,9 @@ export function resolveConfig(ctx) {
     model: options.model ?? null,
     maxOutput: options.maxOutput ?? DEFAULTS.maxOutput,
     heartbeatMs: options.heartbeatMs ?? DEFAULTS.heartbeatMs,
+    halfLife: options.halfLife ?? DEFAULTS.halfLife,
+    keepSessions: options.keepSessions ?? DEFAULTS.keepSessions,
+    extractTimeoutMs: options.extractTimeoutMs ?? DEFAULTS.extractTimeoutMs,
   }
 }
 

@@ -19,7 +19,7 @@ Motivating example: a project carries a `lint` skill borrowed from another harne
 5. **Extraction runs in a clean context**, not the working agent (it would defend its own choices) — one `ctx.generate.text` call, no session, no history. Input: compressed projection of the shadow log (tool outputs trimmed to head/tail, prompts and assistant text in full) + anchors + existing lessons + rejected ids. Core question: *"If this session were run again, what should change so it goes shorter and straighter?"* **When** it runs is forced by the API, not chosen: see "Extraction has to run where a hook is running".
 6. **No separate "incident" entity.** Log → lessons. Each lesson carries `evidence` (session id + step ranges).
 7. **Lesson ≠ proposal.** Extracting the lesson is mandatory; proposing where to apply it is optional. Targets `skill | instruction | tool | refactor | other` are prompt hints, not an enum the extractor must fit into. "Doesn't fit the ontology" is a normal outcome — the human decides.
-8. **Lessons are workspace-scoped** (git root), capped (default 30), ranked by `score = cost × recurrence × confidence`. When an extraction matches an existing lesson, increment `recurrence` instead of creating a duplicate. Overflow is archived, not deleted.
+8. **Lessons are workspace-scoped and keyed by problem, not by session.** One file per lesson, `lessons/<id>.md`, scoped to `location.project.id`. Sessions appear only as evidence refs, and a second session hitting the same problem increments `recurrence` and appends evidence rather than creating a second file. Score = `cost × recurrence × confidence × freshness`, where freshness halves every `halfLife` sessions (default 10) since the problem was last seen — counted in **sessions, not days**, because at one session a day a wall-clock decay buries everything. Recurrence matters more than one expensive incident: a lesson that shows up in three sessions *will* show up in the fourth. Overflow past the cap (default 30) is archived, never deleted.
 9. **Integration loop is human-triggered, and the plugin stops at the proposal.** `/retro` delivers **one** lesson — the highest-scoring one still undecided — into the session the user ran it in, and stops. The human and the agent already in that session work out whether they like it and how to integrate it; the plugin does not patch files and does not drive the conversation. One invocation, one lesson: deciding is not a wizard to be stepped through. The outcome comes back through a `retro_decide` tool, which is bookkeeping only — a rejection is remembered and fed to the extractor so it is not proposed again. *Amended after M2: the earlier "accept applies the diff" could not work. The extractor's `proposal.change` comes out as prose — "add a precondition as step 1: ..." — because the model has not carefully read the target file and the file may have moved since. The agent in the session has both the file and the human; we have neither.*
 10. **Project-scoped by default.** Global promotion only if evidence has no project-specific files/configs AND the lesson recurred in ≥2 workspaces. Promotion is itself a `/retro` proposal.
 11. **Autonomy ladder L0–L3** (see README). v1 target is L1. Promotion between levels is to be driven by accept/reject stats, later.
@@ -27,8 +27,11 @@ Motivating example: a project carries a `lint` skill borrowed from another harne
 13. **The extraction prompt lives in the user's project, not in the package.** It is the one place where this plugin's behaviour is actually decided, so it sits next to its inputs and outputs, in `.retro/prompts/extract.md`. The package ships a default; on first run it is copied into the project if absent. Resolution order: project → global (`~/.config/opencode/retro/prompts/`) → packaged default. `options` in `opencode.json` can override the directory and the extractor model. *Narrowed in M3: there was to be a second prompt for applying a lesson. Decision 9 as amended has no application step to drive — the agent in the session does the integrating.*
 14. **The prompt is editable; the output contract is compiled in.** The project file is entirely the user's — criteria, emphasis, project-specific wording. The output format the parser needs lives in the plugin's source and is wrapped around the prompt at call time. It is never written to disk, so it cannot be edited away by accident, and the prompt file has no "do not touch" region in it. `/retro check` prints the contract for anyone who wants to see it.
 15. **New defaults arrive as news, never as changes.** One live file per prompt, seeded from our default, carrying `base` (the default's version) in frontmatter. We never write to it again — not even when the user has not touched it. A newer default lands in `.retro/prompts/updates/extract.v3.md`, headed by a statement that *this file is not used*, that the live file is what runs, and that if they have their own version they should keep it and consider adapting it to what changed. Named in `selfcheck.md` so it is not just a file in a directory nobody opens. Updates accumulate like release notes; deleting them is the user's call. Rejected alternative: shipping a default file plus a user override file. It forces the user to know what the default said before they can write a meaningful override, makes partial overrides ambiguous, and gives two sources of truth for one prompt.
-16. **The plugin must prove it is alive, in a file.** `.retro/selfcheck.md`. Registration proves nothing (see "Gotchas": wrong hook names register happily), so the report asserts *liveness*, not setup. It carries three timestamps — `loaded`, `heartbeat`, `verified` — because they fail separately and the gaps between them name which half broke.
-17. **Everything the file needs to be understood is in the file.** `selfcheck.md` states its own cadence, its own staleness threshold, what each failing line means, what to run next, and the version and repo it came from. Nobody reads documentation to interpret a diagnostic, and a diagnostic that needs documentation is not one. Same rule for `.retro/prompts/updates/`: each update file explains in its own header what it is and that nothing was changed on the user's behalf.
+16. **A lesson is checked for currency before it is proposed.** A lesson can sit for weeks, and by the time anyone looks the thing it complains about may be fixed, moved or gone. Proposing a fix for a problem that no longer exists wastes the attention this plugin exists to save. So `/retro` runs a cheap deterministic check first — is the target file gone, or changed since the lesson was recorded (a content fingerprint taken at extraction time) — and when it has, the proposal carries that warning at the top. It never decides on its own: a changed file is a reason to look, not proof. The other half is the agent receiving the proposal, which is told to verify the claims against the repository before relaying them, and does it well.
+17. **Decided means closed, and closed means archived.** `lessons/` holds open questions only; accepting or rejecting moves the file to `archive/`. Nothing is deleted, because recurrence consults the archive: a problem that comes back after being closed is the same problem *plus* the news that the fix did not hold, so it is reopened with its history and a `reopenedFrom` marker rather than started over at recurrence 1. `later` stays open.
+18. **Shadow logs are deleted once extracted.** The lesson carries the story — its body is the narrative, its evidence the step range — so the raw log has nothing left to give, and keeping it would mean ~28 KB per session forever. `keepSessions: true` holds them for plugin development. A log whose extraction failed is kept, because it may still be retried.
+19. **The plugin must prove it is alive, in a file.** `.retro/selfcheck.md`. Registration proves nothing (see "Gotchas": wrong hook names register happily), so the report asserts *liveness*, not setup. It carries three timestamps — `loaded`, `heartbeat`, `verified` — because they fail separately and the gaps between them name which half broke.
+20. **Everything the file needs to be understood is in the file.** `selfcheck.md` states its own cadence, its own staleness threshold, what each failing line means, what to run next, and the version and repo it came from. Nobody reads documentation to interpret a diagnostic, and a diagnostic that needs documentation is not one. Same rule for `.retro/prompts/updates/`: each update file explains in its own header what it is and that nothing was changed on the user's behalf.
 
 ## On-disk layout (in the user's project, not this repo)
 
@@ -40,7 +43,7 @@ Motivating example: a project carries a `lint` skill borrowed from another harne
 ├── sessions/<sessionID>.jsonl # shadow log, one event per line
 ├── lessons/<lessonID>.md      # YAML frontmatter + body, one per lesson
 ├── archive/                   # evicted lessons
-├── selfcheck.md               # is the plugin actually working (decision 16)
+├── selfcheck.md               # is the plugin actually working (decision 19)
 ├── state.json                 # rejected ids, last extraction per session, etc.
 └── plugin.log                 # hook errors; never thrown at the user's session
 ```
@@ -193,7 +196,7 @@ plugin needed — and it gets the `sessionID`, so it can drive the review conver
    `ctx.session.hook("promptz")` both return a normal `{ dispose }` registration
    (`fixtures/payloads/api-drift.jsonl`). So a hook renamed in a future OpenCode means we
    subscribe successfully and receive nothing, forever, silently. **This is the single
-   reason decision 16 exists.** What *is* detectable at load: a missing domain or method
+   reason decision 19 exists.** What *is* detectable at load: a missing domain or method
    reads as `undefined` (`ctx.tool.nosuch`, `ctx.nosuchdomain`), and `generate.text`
    rejects a bad model loudly (`"Model unavailable: nope/nope"`).
 9. **`ctx.generate.text` hangs unless a hook is running.** Measured four ways: from inside
@@ -206,11 +209,16 @@ plugin needed — and it gets the `sessionID`, so it can drive the review conver
    OpenCode's free tier and fails with *"OpenCode's free tier can only be used from within
    OpenCode"*. So `options.model` is effectively required, and its absence has to be said
    out loud rather than discovered as an empty `lessons/`.
-11. **`session.synthetic` writes to the session's inbox, not to its messages.** Without
+11. **A hung `generate.text` wedges whatever guards it.** My own bug, and worth keeping as a
+   warning: the drain had a `draining` flag released in a `finally`, so one call that never
+   settled blocked every later drain for the life of the process — silently. Every model
+   call is now bounded (`extractTimeoutMs`, default 90 s) so a hang becomes a reported
+   failure and a retry instead of a stall.
+12. **`session.synthetic` writes to the session's inbox, not to its messages.** Without
    `resume: true` the message sits there until the user happens to type something, so they
    never see what they asked for. With it, the session resumes, the agent receives the text
    and answers — which for `/retro` is the point.
-12. **Nothing tells the user a plugin failed to load.** A bad path, a throwing `setup`, a
+13. **Nothing tells the user a plugin failed to load.** A bad path, a throwing `setup`, a
    module that does not import — the session just runs without us. Hence "if `selfcheck.md`
    is older than your last session, the plugin is not running".
 
@@ -314,6 +322,46 @@ is also the patch to propose back upstream.
 
 `ctx.options` is delivered verbatim (verified: arrives as `{}` when unset).
 
+## The life of a lesson
+
+Lessons are keyed by problem, not by session, and this is the part of the design that has
+to answer "what happens in a month".
+
+```
+extracted   →  lessons/<id>.md         recurrence 1, lastSeen = session N
+recurs      →  same file               recurrence++, evidence appended, lastSeen = now
+ignored     →  same file               score decays: halves every 10 sessions unseen
+decided     →  archive/<id>.md         out of the open set
+comes back  →  lessons/<id>.md         reopened with its history + reopenedFrom
+```
+
+**Freshness is counted in sessions, not days.** One session a day — which is how this
+project's owner works — would make any wall-clock decay bury everything overnight. Measured
+against a session counter, a lesson keeps full weight until the workspace has actually moved
+on without it. The effect is the one that matters: a 100-step one-off from forty sessions ago
+loses to a 6-step problem that recurred three times this week, where the raw score has it the
+other way round.
+
+**Currency is checked at proposal time, not at extraction time.** At extraction we only
+record a fingerprint of the target file. At `/retro` we compare — gone, changed, unchanged —
+and a changed or missing target puts a warning at the top of the proposal. We do not try to
+detect the moment a fix happened; that would mean watching for something we cannot
+recognise. We check when it matters, which is the moment before we spend someone's attention.
+
+The deterministic check is deliberately only half of it. The other half is the agent that
+receives the proposal, which is told to read the repository as it is now and say plainly if
+the lesson is out of date. In the playground it did that unprompted and better than asked.
+
+**Closed is archived, not deleted,** because recurrence consults the archive. A problem that
+returns after being closed is not a new problem: it is the old one plus the news that the fix
+did not hold, which is worth more than either fact alone. It comes back with its recurrence
+intact and a marker saying what it was closed as.
+
+**Shadow logs are deleted once extracted.** The lesson body carries the narrative and the
+evidence carries the step range, so the log has nothing left to give; keeping it would cost
+~28 KB a session forever. A log whose extraction failed is kept, because it may be retried.
+`keepSessions: true` holds them, which is how `fixtures/sessions/` gets filled.
+
 ## The command surface
 
 Two commands. Everything else happens without being asked.
@@ -371,7 +419,7 @@ the server waits for the hook, the hook waits for the server.
 
 ## Self-check
 
-Decisions 16–17. The failure this guards against is specific and measured: **a hook whose
+Decisions 19–20. The failure this guards against is specific and measured: **a hook whose
 name the API changed still registers successfully and simply never fires** (Gotcha 8). A
 plugin that reports "setup complete" is reporting nothing.
 
@@ -432,7 +480,7 @@ and `lessons/` holds what was learned from them; the self-check holds neither.
 
 ### The file explains itself
 
-Decision 17. This is the whole file, not an excerpt — the prose is part of the artifact:
+Decision 20. This is the whole file, not an excerpt — the prose is part of the artifact:
 
 ```markdown
 # retro self-check
@@ -533,7 +581,19 @@ understood is just a diagnostic that was written badly.
       lesson, and the change lands through the agent's normal edit flow, which already shows
       a diff. Dropped unless the review ever becomes multi-lesson again.
 
+**M3.5 — the life of a lesson — done** (107 tests; verified live)
+- [x] Freshness in the score, counted in sessions (`src/lessons.js`, `state.sessions`).
+- [x] Currency check before a proposal, by target fingerprint (`src/currency.js`).
+- [x] Closing archives; recurrence reopens from the archive with history.
+- [x] Shadow logs deleted after a successful extraction.
+- [x] Every model call bounded, so a hang is reported rather than wedging the queue.
+- [ ] Cross-workspace promotion (decision 10) now matters more than it looked: at one
+      session per workspace, recurrence inside a workspace accrues slowly, and "I work this
+      way everywhere" is caught faster across two workspaces than across ten sessions.
+
 **M4 — first public release** (`v0.1.0` tag → CI publishes).
+- [ ] README still describes the concept, including `.opencode/retro/` and "accept applies
+      the diff". Both are wrong now.
 
 ## Dev environment
 
@@ -553,7 +613,7 @@ understood is just a diagnostic that was written badly.
 - Never write outside `.retro/` except when the user accepts a proposal in `/retro`.
 - Fail silent in hooks: a broken plugin must never break the user's session. Log errors to
   `.retro/plugin.log` — and record the failure in `selfcheck.md`, because silent-and-invisible
-  is the failure mode decision 16 exists to kill.
+  is the failure mode decision 19 exists to kill.
 - Anything a user may want to change is a file in `.retro/`, not a config key and not a
   constant in our source.
 

@@ -3,7 +3,7 @@ import assert from "node:assert/strict"
 import { mkdtempSync, readFileSync, readdirSync, writeFileSync, mkdirSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { createStore, score } from "../src/lessons.js"
+import { createStore, freshness, score, staleSessions } from "../src/lessons.js"
 import { parseFrontmatter } from "../src/frontmatter.js"
 
 const sandbox = () => {
@@ -156,4 +156,63 @@ test("list returns highest score first", () => {
 test("an empty store is not an error on first run", () => {
   const s = sandbox()
   assert.deepEqual(s.store().list(), [])
+})
+
+test("freshness halves the score every half-life of sessions without a recurrence", () => {
+  const l = { cost: 10, recurrence: 2, confidence: 1, lastSeen: 0 }
+  assert.equal(score(l), 20, "raw score when no session count is given")
+  assert.equal(score(l, { sessions: 0, halfLife: 10 }), 20)
+  assert.equal(score(l, { sessions: 10, halfLife: 10 }), 10)
+  assert.equal(score(l, { sessions: 20, halfLife: 10 }), 5)
+})
+
+test("freshness is measured in sessions, so a lesson seen this session is at full weight", () => {
+  assert.equal(freshness({ lastSeen: 7 }, { sessions: 7, halfLife: 10 }), 1)
+  assert.equal(freshness({}, { sessions: 7 }), 1, "a lesson with no lastSeen is not punished for it")
+  assert.equal(staleSessions({ lastSeen: 3 }, 9), 6)
+})
+
+test("a stale high-cost one-off loses to a fresh recurring problem", () => {
+  const sessions = 40
+  const old = { cost: 100, recurrence: 1, confidence: 1, lastSeen: 0 }
+  const fresh = { cost: 6, recurrence: 3, confidence: 0.9, lastSeen: 39 }
+  assert.ok(score(old) > score(fresh), "and would have won on the raw score")
+  assert.ok(score(fresh, { sessions, halfLife: 10 }) > score(old, { sessions, halfLife: 10 }))
+})
+
+test("record stamps lastSeen with the current session count", () => {
+  const root = mkdtempSync(join(tmpdir(), "retro-fresh-"))
+  const store = createStore({ dir: join(root, "lessons"), archive: join(root, "archive"), sessions: () => 12 })
+  store.record([lesson()], { session: "ses_a" })
+  assert.equal(store.list()[0].lastSeen, 12)
+})
+
+test("a closed lesson that recurs is reopened with its history, not started over", () => {
+  const root = mkdtempSync(join(tmpdir(), "retro-reopen-"))
+  let seen = 1
+  const store = createStore({ dir: join(root, "lessons"), archive: join(root, "archive"), sessions: () => seen })
+
+  store.record([lesson()], { session: "ses_a" })
+  store.close("lint-skill-no-config", "accepted")
+  assert.deepEqual(store.list(), [])
+
+  seen = 5
+  const result = store.record([lesson()], { session: "ses_b" })
+  assert.deepEqual(result.reopened, ["lint-skill-no-config"])
+  assert.deepEqual(result.created, [])
+
+  const [back] = store.list()
+  assert.equal(back.recurrence, 2, "the history is carried over")
+  assert.equal(back.evidence.length, 2)
+  assert.equal(back.status, "new")
+  assert.equal(back.reopenedFrom, "accepted", "and it says the fix did not hold")
+  assert.equal(back.lastSeen, 5)
+  assert.deepEqual(store.listArchive(), [], "it is no longer in two places at once")
+})
+
+test("record keeps a fingerprint of the target so currency can be checked later", () => {
+  const root = mkdtempSync(join(tmpdir(), "retro-fp-"))
+  const store = createStore({ dir: join(root, "lessons"), archive: join(root, "archive") })
+  store.record([lesson()], { session: "ses_a", fingerprint: (t) => (t ? "abc123" : undefined) })
+  assert.equal(store.list()[0].targetFingerprint, "abc123")
 })

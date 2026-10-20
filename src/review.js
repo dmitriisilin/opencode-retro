@@ -1,4 +1,4 @@
-import { score } from "./lessons.js"
+import { score, staleSessions } from "./lessons.js"
 
 /**
  * `/retro` (AGENTS.md decision 9, as amended).
@@ -17,10 +17,12 @@ export function pickLesson(lessons) {
 
 /** Addressed to the agent in the session, because that is who reads it first. */
 export const LEAD_IN =
-  "_opencode-retro: relay the proposal below to the human, answer questions about it, and " +
-  "change nothing until they have decided. When they have, record it with `retro_decide`._"
+  "_opencode-retro: check the proposal below against the repository as it is now — a lesson " +
+  "can sit for weeks and the thing it complains about may already be fixed. Say plainly if it " +
+  "is out of date. Then relay it, answer questions, and change nothing until the human has " +
+  "decided. When they have, record it with `retro_decide`._"
 
-export function renderProposal(lesson, { total = 0, remaining = 0 } = {}) {
+export function renderProposal(lesson, { total = 0, remaining = 0, currency = null, sessions = null, halfLife } = {}) {
   const lines = [
     LEAD_IN,
     "",
@@ -30,9 +32,22 @@ export function renderProposal(lesson, { total = 0, remaining = 0 } = {}) {
     "",
     `Seen in ${lesson.recurrence ?? 1} session${(lesson.recurrence ?? 1) === 1 ? "" : "s"}` +
       `, ${lesson.cost ?? 0} step${(lesson.cost ?? 0) === 1 ? "" : "s"} spent on it` +
-      `, confidence ${lesson.confidence ?? "?"} → score ${round(score(lesson))}.`,
+      `, confidence ${lesson.confidence ?? "?"} → score ${round(score(lesson, { sessions, halfLife }))}.`,
     "",
   ]
+
+  const stale = staleSessions(lesson, sessions)
+  if (stale != null && stale > 0) {
+    lines.push(`Last seen ${stale} session${stale === 1 ? "" : "s"} ago.`, "")
+  }
+  if (lesson.reopenedFrom) {
+    lines.push(
+      `**This came back.** It was closed as ${lesson.reopenedFrom} and the problem recurred, so` +
+        " whatever was done about it did not hold.",
+      "",
+    )
+  }
+  if (currency?.warning) lines.push(currency.warning, "")
 
   if (lesson.proposal?.change) {
     lines.push("## Proposed change", "")
@@ -114,10 +129,19 @@ export function decide({ id, status, note }, { store, state }) {
   const lesson = store.list().find((l) => l.id === id)
   if (!lesson) return { ok: false, detail: `no lesson \`${id}\`` }
 
-  store.write({ ...lesson, status, note: note ?? lesson.note })
   // A rejection has to outlive the lesson file, or the extractor proposes it again.
   if (status === "rejected") state.reject(id, note)
-  return { ok: true, detail: `\`${id}\` is now ${status}` }
+
+  if (status === "later") {
+    store.write({ ...lesson, status, note: note ?? lesson.note })
+    return { ok: true, detail: `\`${id}\` kept for later` }
+  }
+
+  // Decided means closed: `lessons/` holds open questions, and nothing is deleted — a
+  // closed lesson moves to `archive/`, where recurrence will find it if it comes back.
+  const closed = store.close(id, status, note)
+  if (!closed) return { ok: false, detail: `\`${id}\` could not be closed` }
+  return { ok: true, detail: `\`${id}\` is ${status} and moved to archive/` }
 }
 
 const round = (n) => (Number.isInteger(n) ? n : Number(n.toFixed(1)))
