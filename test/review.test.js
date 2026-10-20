@@ -55,8 +55,10 @@ test("the proposal says what it is, what it would change, and that nothing was c
   assert.match(text, /sessions\/ses_a\.jsonl` steps 9–18/)
   assert.match(text, /This is a proposal, not a change — nothing has been edited/)
   assert.match(text, /2 more lessons waiting of 3/)
-  assert.match(text, /^_opencode-retro: check the proposal below against the repository/, "the agent reads it first")
-  assert.match(text, /may already be fixed/)
+  assert.match(text, /^_opencode-retro: first answer one question/, "the agent reads it first")
+  assert.match(text, /is this already resolved in this workspace/)
+  assert.match(text, /check it however you normally would/, "the question, not the mechanism")
+  assert.doesNotMatch(text, /git log/, "we do not prescribe how to look")
   assert.match(text, /change nothing until the human has/)
 })
 
@@ -127,20 +129,22 @@ test("auto carries every waiting lesson and asks for one plan", () => {
     lesson({ id: "c", cost: 5, reopenedFrom: "accepted" }),
   ]
   const text = renderBatch(lessons, {
-    currencies: new Map([["a", { warning: "**`x.md` has changed.**" }]]),
+    currencies: new Map([["a", { hint: "`x.md` has changed." }]]),
   })
 
   assert.match(text, /^_opencode-retro: below is every lesson/)
+  assert.match(text, /is it already resolved in this workspace/)
   assert.match(text, /come back with \*\*one plan\*\*/, "a plan, not a stream of questions")
-  assert.match(text, /Group anything that touches the same file/)
+  assert.match(text, /grouping anything that touches the same file/)
   assert.match(text, /Change nothing until the human approves/)
+  assert.doesNotMatch(text, /git log/)
   assert.match(text, /# retro — 3 lessons waiting/)
   assert.match(text, /## 1\. `a` — score 36/)
   assert.match(text, /## 2\. `b`/)
   assert.match(text, /\*\*No proposal\*\*/)
   assert.match(text, /## 3\. `c`/)
   assert.match(text, /\*\*Came back\*\* after being closed as accepted/)
-  assert.match(text, /\*\*`x\.md` has changed\.\*\*/, "a stale one is labelled, not hidden")
+  assert.match(text, /Worth knowing before you check: `x\.md` has changed\./, "a hint, not a verdict")
   assert.match(text, /Nothing has been changed\. The plan comes first\./)
 })
 

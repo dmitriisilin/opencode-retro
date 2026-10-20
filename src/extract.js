@@ -19,7 +19,6 @@ export async function extract({
   store,
   state,
   fingerprint,
-  baseCommit = null,
   timeoutMs = DEFAULT_TIMEOUT_MS,
 }) {
   const anchors = detectAnchors(records)
@@ -69,7 +68,7 @@ export async function extract({
 
   const rejected = new Set(state.rejected.map((r) => r.id))
   const lessons = parsed.lessons.filter((l) => !rejected.has(l.id) && !rejected.has(l.matches))
-  const recorded = store.record(lessons, { session, fingerprint, baseCommit })
+  const recorded = store.record(lessons, { session, fingerprint })
 
   return {
     ok: true,

@@ -24,12 +24,14 @@ export function pickOpen(lessons, ctx = {}) {
 
 /** Addressed to the agent: one plan over everything, still nothing applied unasked. */
 export const AUTO_LEAD_IN =
-  "_opencode-retro: below is every lesson this project has waiting, highest score first. " +
-  "Check each one against the repository as it is now — some will already be fixed — then " +
-  "come back with **one plan** that covers the ones that still stand, in the order you would " +
-  "do them, saying what you would change in each file. Group anything that touches the same " +
-  "file. Say which ones you are dropping and why. Change nothing until the human approves the " +
-  "plan; once they do, work through it and record each lesson with `retro_decide` as you go._"
+  "_opencode-retro: below is every lesson this project has waiting, highest score first. For " +
+  "each one, first answer: **is it already resolved in this workspace as it is now?** You know " +
+  "this project; check however you normally would. Then come back with **one plan** covering " +
+  "only the ones that still stand, in the order you would do them, saying what you would change " +
+  "in each file and grouping anything that touches the same file. Name the ones you dropped and " +
+  "why — record those as accepted if they are simply done. Change nothing until the human " +
+  "approves the plan; once they do, work through it and record each lesson with `retro_decide` " +
+  "as you go._"
 
 export function renderBatch(lessons, { sessions = null, halfLife, currencies = new Map(), limit = AUTO_LIMIT } = {}) {
   const shown = lessons.slice(0, limit)
@@ -60,7 +62,7 @@ export function renderBatch(lessons, { sessions = null, halfLife, currencies = n
       lines.push(`**Came back** after being closed as ${lesson.reopenedFrom}.`, "")
     }
     const currency = currencies.get(lesson.id)
-    if (currency?.warning) lines.push(currency.warning, "")
+    for (const line of hintLines(lesson, currency)) lines.push(line, "")
     if (lesson.proposal?.change) {
       lines.push(
         `**Target:** ${lesson.proposal.target ?? "not named"}`,
@@ -80,9 +82,10 @@ export function renderBatch(lessons, { sessions = null, halfLife, currencies = n
 
 /** Addressed to the agent in the session, because that is who reads it first. */
 export const LEAD_IN =
-  "_opencode-retro: check the proposal below against the repository as it is now — a lesson " +
-  "can sit for weeks and the thing it complains about may already be fixed. Say plainly if it " +
-  "is out of date. Then relay it, answer questions, and change nothing until the human has " +
+  "_opencode-retro: first answer one question — **is this already resolved in this workspace " +
+  "as it is now?** A lesson can sit for weeks, and you know this project; check it however " +
+  "you normally would. If it is resolved, say so plainly and record it as accepted. " +
+  "Otherwise relay the proposal, answer questions, and change nothing until the human has " +
   "decided. When they have, record it with `retro_decide`._"
 
 export function renderProposal(lesson, { total = 0, remaining = 0, currency = null, sessions = null, halfLife } = {}) {
@@ -110,7 +113,7 @@ export function renderProposal(lesson, { total = 0, remaining = 0, currency = nu
       "",
     )
   }
-  if (currency?.warning) lines.push(currency.warning, "")
+  for (const line of hintLines(lesson, currency)) lines.push(line, "")
 
   if (lesson.proposal?.change) {
     lines.push("## Proposed change", "")
@@ -156,6 +159,19 @@ export function renderProposal(lesson, { total = 0, remaining = 0, currency = nu
   }
 
   return lines.join("\n")
+}
+
+/**
+ * What we can say about currency without doing the agent's job: when the lesson was
+ * recorded, and whether its target has moved since. Both are facts to bound a check with,
+ * not conclusions.
+ */
+export function hintLines(lesson, currency) {
+  const facts = []
+  if (lesson?.recordedAt) facts.push(`recorded ${String(lesson.recordedAt).slice(0, 10)}`)
+  if (currency?.hint) facts.push(currency.hint)
+  if (!facts.length) return []
+  return [`_Worth knowing before you check: ${facts.join("; ")}_`]
 }
 
 export function renderNothing({ queued = 0, extracted = null } = {}) {

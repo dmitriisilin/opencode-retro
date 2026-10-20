@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto"
 import { existsSync, readFileSync } from "node:fs"
 import { isAbsolute, resolve } from "node:path"
-import { commitsTouching } from "./git.js"
 
 /**
  * Is a lesson still true?
@@ -10,10 +9,16 @@ import { commitsTouching } from "./git.js"
  * complains about may have been fixed, moved or deleted. Proposing a fix for a problem
  * that no longer exists wastes the one resource this plugin is supposed to save.
  *
- * This is the cheap deterministic half: has the target file gone, or changed since we
- * recorded the lesson? It never decides on its own — a changed file is a reason to look,
- * not proof. The other half is the agent receiving the proposal, which is told to verify
- * the claims against the repository before relaying them.
+ * All this file does is notice that the target moved — a local file read and a hash, no
+ * git, no subprocess, works in a project that is not a repository at all. It is a hint
+ * that raises the question, never an answer.
+ *
+ * Answering is the agent's job, and the question is put to it plainly: *is this already
+ * resolved in the workspace as it is now?* It has the repository, the harness, the history
+ * and whatever skills this project carries; prescribing how to check would be us guessing
+ * at a job it does better. We used to run `git log` here and paste commit lines in. That
+ * was the plugin second-guessing the agent, with a subprocess and three failure modes
+ * attached.
  */
 
 export function fingerprintOf(directory) {
@@ -40,9 +45,7 @@ export function assessCurrency(lesson, { directory, fingerprint = fingerprintOf(
     return {
       state: "target-gone",
       detail: `\`${target}\` no longer exists`,
-      warning:
-        `**\`${target}\` no longer exists.** This lesson may already be settled — the file it ` +
-        "is about is gone. Check before acting on it; if it is settled, say so and it will be closed.",
+      hint: `\`${target}\` no longer exists.`,
     }
   }
 
@@ -57,30 +60,10 @@ export function assessCurrency(lesson, { directory, fingerprint = fingerprintOf(
       state: "target-changed",
       target,
       detail: `\`${target}\` changed since the lesson was recorded`,
-      warning:
-        `**\`${target}\` has changed since this lesson was recorded.** It may already be ` +
-        "fixed. Read it as it is now before relaying the proposal, and say so if the problem is gone.",
+      hint: `\`${target}\` has changed since this lesson was recorded.`,
     }
   }
   return { state: "unchanged", detail: `\`${target}\` is unchanged since the lesson was recorded` }
-}
-
-/**
- * Names the commits that touched the target since the lesson was recorded. A commit
- * message is the cheapest explanation of why a file changed, and often settles the
- * question outright — "make lint conditional on a config" is the fix, visibly.
- */
-export async function explainChange(currency, lesson, { directory }) {
-  if (!currency?.target || !lesson?.baseCommit || !directory) return currency
-  const commits = await commitsTouching(directory, currency.target, lesson.baseCommit)
-  if (!commits.length) return currency
-  return {
-    ...currency,
-    commits,
-    warning:
-      `${currency.warning}\n\nCommitted since the lesson was recorded:\n` +
-      commits.map((c) => `- \`${c}\``).join("\n"),
-  }
 }
 
 function resolveTarget(directory, target) {

@@ -5,8 +5,7 @@ import { createSelfCheck } from "./src/selfcheck.js"
 import { createShadowLog, parseShadowLog } from "./src/shadowlog.js"
 import { createState } from "./src/state.js"
 import { createStore, score } from "./src/lessons.js"
-import { assessCurrency, explainChange, fingerprintOf } from "./src/currency.js"
-import { headCommit } from "./src/git.js"
+import { assessCurrency, fingerprintOf } from "./src/currency.js"
 import { extract } from "./src/extract.js"
 import { AUTO_LIMIT, DECIDE_INPUT, decide, pickLesson, pickOpen, renderBatch, renderNothing, renderProposal } from "./src/review.js"
 import { activeCheck } from "./src/selfcheck.js"
@@ -249,16 +248,8 @@ export default {
       }
     }
 
-    /** The currency check, with commit evidence when git can supply it. */
-    async function currencyOf(lesson) {
-      const base = assessCurrency(lesson, { directory: config.directory, fingerprint })
-      try {
-        return await explainChange(base, lesson, { directory: config.directory })
-      } catch (err) {
-        onError("currency.explain", err)
-        return base
-      }
-    }
+    /** A hint for the agent's own check, not a verdict. */
+    const currencyOf = (lesson) => assessCurrency(lesson, { directory: config.directory, fingerprint })
 
     async function runAuto(sessionID) {
       await settleDebt(sessionID)
@@ -269,7 +260,7 @@ export default {
 
       const shown = open.slice(0, config.autoLimit)
       const currencies = new Map()
-      for (const lesson of shown) currencies.set(lesson.id, await currencyOf(lesson))
+      for (const lesson of shown) currencies.set(lesson.id, currencyOf(lesson))
 
       return say(
         sessionID,
@@ -308,7 +299,7 @@ export default {
         renderProposal(lesson, {
           total: open,
           remaining: open - 1,
-          currency: await currencyOf(lesson),
+          currency: currencyOf(lesson),
           sessions: state.sessions,
           halfLife: config.halfLife,
         }),
@@ -369,7 +360,6 @@ export default {
           store,
           state,
           fingerprint,
-          baseCommit: await headCommit(config.directory),
           timeoutMs: config.extractTimeoutMs,
         })
       } catch (err) {

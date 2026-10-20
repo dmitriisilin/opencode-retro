@@ -23,7 +23,7 @@ test("an unchanged target reads as unchanged", () => {
   const s = sandbox()
   const got = assessCurrency(lesson({ targetFingerprint: s.fingerprint(s.target) }), { directory: s.root })
   assert.equal(got.state, "unchanged")
-  assert.equal(got.warning, undefined, "nothing to warn about")
+  assert.equal(got.hint, undefined, "nothing to point at")
 })
 
 test("a target that changed since the lesson was written is flagged, not dropped", () => {
@@ -33,8 +33,8 @@ test("a target that changed since the lesson was written is flagged, not dropped
 
   const got = assessCurrency(lesson({ targetFingerprint: before }), { directory: s.root })
   assert.equal(got.state, "target-changed")
-  assert.match(got.warning, /has changed since this lesson was recorded/)
-  assert.match(got.warning, /may already be fixed/)
+  assert.match(got.hint, /has changed since this lesson was recorded/)
+  assert.doesNotMatch(got.hint, /read it|check it/i, "it states a fact; deciding is the agent's job")
 })
 
 test("a target that is gone probably means the problem was settled", () => {
@@ -43,7 +43,7 @@ test("a target that is gone probably means the problem was settled", () => {
     directory: s.root,
   })
   assert.equal(got.state, "target-gone")
-  assert.match(got.warning, /no longer exists/)
+  assert.match(got.hint, /no longer exists/)
 })
 
 test("a lesson with no target cannot be checked this way, and says so", () => {
@@ -55,7 +55,7 @@ test("a lesson recorded before fingerprints existed is unknown, not stale", () =
   const s = sandbox()
   const got = assessCurrency(lesson(), { directory: s.root })
   assert.equal(got.state, "unknown")
-  assert.equal(got.warning, undefined, "absence of evidence is not evidence")
+  assert.equal(got.hint, undefined, "absence of evidence is not evidence")
 })
 
 test("the fingerprint is stable and content-addressed", () => {
