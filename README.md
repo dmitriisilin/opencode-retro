@@ -32,36 +32,24 @@ independent of session compaction — the raw trajectory is always available. On
 has been extracted its log is deleted: the lesson carries the story, and a log per session
 forever is a hoard.
 
-Cheap deterministic **anchor detectors** mark windows in the trajectory and attach a precise
-reason to them. They involve no model and read no prose — only exit codes, patches and
-repeated arguments:
-
-| Anchor | Signal |
-|---|---|
-| revert | agent undid its own edits (`git checkout`, reverse edit) within N steps |
-| repeat | same command / same output with no file changes in between |
-| skill→failure | a skill prescribed a command, and that command failed later in the session |
-| abandon | a planned task marked skipped / "couldn't" — *left to the extractor* |
-| correction | user prompt contradicts the agent's previous action — *left to the extractor* |
+There are no detectors in front of the model and no rules about what counts as friction. We
+tried three — a command repeated with nothing changed between attempts, an edit undone, a
+skill whose prescribed command failed — and measured whether they changed the outcome. They
+did not: given the same log, the model found the same lessons with them and without
+(`fixtures/ab-anchors/`). What they really encoded was guidance about what to look for, and
+guidance belongs in a prompt you can read and argue with, not in code that decides in
+advance what the model may notice. So that is where it is: `.retro/prompts/extract.md`
+describes the shapes worth finding — work repeated for nothing, an edit undone, a skill
+followed into a dead end, a non-zero exit hiding behind a "completed" status, a task quietly
+dropped, a correction you had to make twice — and says explicitly that it is a place to
+start and not a checklist.
 
 When a session ends it is queued, and the **next session's first prompt** pays that debt:
 one model call with a clean context (not the working agent — it would defend its own
 decisions) gets a compressed projection of the log, tool outputs trimmed, prompts and
-answers in full, plus the anchors. It answers one question:
+answers in full. It answers one question:
 
 > *If this session were run again, what should change so it goes shorter and straighter?*
-
-The last two rows are *left to the extractor* because there is nothing structural to detect:
-OpenCode has no todo or plan entity, so an abandoned task exists only as a sentence, and a
-correction is a sentence too. The projection hands the extractor every prompt and every
-assistant message **in full** — only tool output is trimmed — so both are already in front of
-it. A keyword detector would be a guess wearing a detector's clothes.
-
-Anchors are not what finds a lesson, and we measured that rather than assuming it
-(`fixtures/ab-anchors/`): given the same log, the model found the same two lessons with the
-anchor section and without it. What the anchor changed was the evidence range and the step
-cost — which feed the score, and so decide what you are shown first. They also let a short
-session skip the model call entirely.
 
 The output is a list of **lessons** in `.retro/lessons/`.
 
@@ -194,8 +182,7 @@ global harness on its own.
 Promotion between levels is driven by the plugin's own accept/reject statistics — it earns
 autonomy, it isn't granted.
 
-Not built yet: the levels above. The `abandon` and `correction` rows in the anchor table are
-not coming either — see that table for why.
+Not built yet: the levels above.
 
 ## Design decisions
 

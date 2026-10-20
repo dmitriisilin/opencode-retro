@@ -15,8 +15,8 @@ Motivating example: a project carries a `lint` skill borrowed from another harne
 1. **Name:** `opencode-retro` (retrospective). npm name reserved by `dmitriisilin`. "loop" was rejected: in the OpenCode ecosystem `/loop` already means recurring prompts / Ralph loops.
 2. **v2 only.** No v1 compatibility layer.
 3. **Shadow log.** Plugin writes its own append-only log of every tool call and prompt to `.opencode/retro/sessions/<sessionID>.jsonl` in real time. No LLM, no batching. We do *not* depend on session history surviving compaction.
-4. **Anchors ground the numbers; they are not how a lesson gets found.** An anchor is a pure function over the shadow log returning `{kind, from, to, reason}` — no model, no language. Three exist: `repeat` (same tool, same normalised input, no file change between), `revert` (every line a patch added removed again, or a git discard after edits in this session), `skill-failure` (a skill prescribed a command — taken from the backticked spans in its own `SKILL.md` — and that command failed later). They are consumed twice: as a section of the extraction prompt, and as a gate that skips the model call entirely on a session with no anchors and fewer than three tool calls. *Measured and corrected (`fixtures/ab-anchors/`): this decision used to claim they "tell the extractor where to look". On the lint-trap fixture the model found both lessons with the anchors section and without it, same targets, equivalent statements. What the anchor changed was the evidence range and the `cost` — and since cost feeds the score, that is a ranking input. So their job is grounding and gating, not discovery. The test was n=1 on the easiest case, where the skill and its failing command sit two lines apart in the projection; it says nothing about a revert spread over forty steps.*
-5. **Extraction runs in a clean context**, not the working agent (it would defend its own choices) — one `ctx.generate.text` call, no session, no history. Input: compressed projection of the shadow log (tool outputs trimmed to head/tail, prompts and assistant text in full) + anchors + existing lessons + rejected ids. Core question: *"If this session were run again, what should change so it goes shorter and straighter?"* **When** it runs is forced by the API, not chosen: see "Extraction has to run where a hook is running".
+4. **No detectors in front of the model.** There were three — `repeat`, `revert`, `skill-failure` — marking suspicious step ranges in the prompt. They are gone, and `fixtures/ab-anchors/` is why: given the same log, the model found the same lessons with them and without. What they encoded was never really detection, it was *guidance about what to look for*, and guidance belongs in `prompts/extract.md`, where the user can read it, disagree with it and change it — not in 196 lines of JavaScript that decide in advance what the model is allowed to notice. So the signals the detectors knew are now prose in that prompt: a call repeated with nothing changed between attempts, an edit undone, a skill followed into a dead end, a non-zero exit hiding behind a "completed" status, a task quietly dropped, a correction the user had to repeat. Stated as a place to start, explicitly not a checklist. The one mechanical thing left is a cost guard: fewer than three tool calls and the model is not called at all — which claims nothing about the session, only that there is too little in it to read.
+5. **Extraction runs in a clean context**, not the working agent (it would defend its own choices) — one `ctx.generate.text` call, no session, no history. Input: compressed projection of the shadow log (tool outputs trimmed to head/tail, prompts and assistant text in full) + existing lessons + rejected ids. Core question: *"If this session were run again, what should change so it goes shorter and straighter?"* **When** it runs is forced by the API, not chosen: see "Extraction has to run where a hook is running".
 6. **No separate "incident" entity.** Log → lessons. Each lesson carries `evidence` (session id + step ranges).
 7. **Lesson ≠ proposal.** Extracting the lesson is mandatory; proposing where to apply it is optional. Targets `skill | instruction | tool | refactor | other` are prompt hints, not an enum the extractor must fit into. "Doesn't fit the ontology" is a normal outcome — the human decides.
 8. **Lessons are workspace-scoped and keyed by problem, not by session.** One file per lesson, `lessons/<id>.md`, scoped to `location.project.id`. Sessions appear only as evidence refs, and a second session hitting the same problem increments `recurrence` and appends evidence rather than creating a second file. Score = `cost × recurrence × confidence × freshness`, where freshness halves every `halfLife` sessions (default 10) since the problem was last seen — counted in **sessions, not days**, because at one session a day a wall-clock decay buries everything. Recurrence matters more than one expensive incident: a lesson that shows up in three sessions *will* show up in the fourth. Overflow past the cap (default 30) is archived, never deleted.
@@ -131,7 +131,8 @@ Observed tool names: `read`, `glob`, `edit`, `shell`, `skill`. Not `bash` — `s
 
 - **A skill invocation is an ordinary tool call**: `tool: "skill"`, `input: { id: "lint" }`,
   and the result's `metadata` gives `{ name, directory }` — the exact `SKILL.md` to
-  propose a change to. The skill→failure anchor needs nothing but the shadow log.
+  propose a change to — so "the skill told it to run a thing that failed" is readable
+  straight from the shadow log, which is why the extraction prompt can ask for it in prose.
 - **`edit` returns a unified patch** per file in `result.metadata.files[]` with
   `{ file, patch, additions, deletions, status }`. Revert detection can compare patches
   instead of guessing from paths.
@@ -251,7 +252,7 @@ them: the output contract the parser needs, the order of a lesson's fields, the
 
 | File | Reads | Writes | Owns the question |
 |---|---|---|---|
-| `.retro/prompts/extract.md` | projection of the shadow log + anchors + existing lessons + rejected ids | lessons | *If this session ran again, what should change so it goes shorter and straighter?* |
+| `.retro/prompts/extract.md` | projection of the shadow log + existing lessons + rejected ids | lessons | *If this session ran again, what should change so it goes shorter and straighter?* |
 | `.retro/prompts/review.md` | one lesson, handed to the agent in the user's session | a hand-over | *Is this still true, and how do I put it to the human?* |
 | `.retro/prompts/review-auto.md` | every waiting lesson | one plan | *Which of these still stand, and in what order?* |
 
@@ -565,12 +566,12 @@ understood is just a diagnostic that was written badly.
       throttled heartbeat, self-explaining prose. Shipped *with* the shadow log — an
       unverified capture layer is worse than none.
 - [x] Projection (`src/projection.js`): deterministic, 26 KB of log → 9.5 KB of text.
-- [x] Anchor detectors (`src/anchors.js`): repeat, revert, and skill→failure. The last one
-      matches on *what the skill prescribes*, because a live session put the skill at step 9
-      and its failing command at step 18 — any fixed proximity window is arbitrary.
+- [x] Anchor detectors (`src/anchors.js`): repeat, revert, and skill→failure. **Deleted
+      after M3.5** — see decision 4 and `fixtures/ab-anchors/`. Their guidance moved into
+      `prompts/extract.md`.
 - [x] Real shadow log saved to `fixtures/sessions/lint-trap-live.jsonl`.
-- [ ] Left for M2, where they have something to be judged against: abandon and correction
-      detectors (both need assistant text analysis, not tool shapes).
+- [x] The abandon and correction detectors were never built, and now never will be: they
+      are two more lines of guidance in the extraction prompt.
 
 **M2 — extraction — done** (79 tests; verified live, lesson in `fixtures/lessons/`)
 - [x] Packaged default `prompts/extract.md`, seeding into `.retro/prompts/`, three-layer
@@ -604,6 +605,7 @@ understood is just a diagnostic that was written badly.
       a diff. Dropped unless the review ever becomes multi-lesson again.
 
 **M3.5 — the life of a lesson — done** (107 tests; verified live)
+- [x] Detectors removed; their guidance is prose in `prompts/extract.md` (decision 4).
 - [x] Freshness in the score, counted in sessions (`src/lessons.js`, `state.sessions`).
 - [x] Currency check before a proposal, by target fingerprint (`src/currency.js`).
 - [x] Closing archives; recurrence reopens from the archive with history.

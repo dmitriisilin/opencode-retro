@@ -1,4 +1,3 @@
-import { detectAnchors } from "./anchors.js"
 import { OUTPUT_CONTRACT, parseLessons } from "./contract.js"
 import { project } from "./projection.js"
 
@@ -7,6 +6,11 @@ import { project } from "./projection.js"
  *
  * Runs with a clean context — a single `ctx.generate.text` call, no session, no history —
  * because the agent that did the work would defend its own choices.
+ *
+ * There are no detectors in front of it. There used to be three, marking suspicious step
+ * ranges; `fixtures/ab-anchors/` is the measurement that retired them — the model found the
+ * same lessons without them. What they knew now lives as prose in `prompts/extract.md`,
+ * where the user can read it and change it.
  */
 export const DEFAULT_TIMEOUT_MS = 90_000
 
@@ -21,13 +25,11 @@ export async function extract({
   fingerprint,
   timeoutMs = DEFAULT_TIMEOUT_MS,
 }) {
-  const anchors = detectAnchors(records)
-
-  // No model call when there is demonstrably nothing to look at. Cheap, honest, and the
-  // common case for short sessions.
+  // No model call when there is demonstrably nothing to look at — not a judgement that
+  // the session went well, just that there is too little in it to read.
   const toolCalls = records.filter((r) => r.k === "tool").length
-  if (!anchors.length && toolCalls < 3) {
-    return { ok: true, skipped: true, detail: `nothing to extract (${toolCalls} tool calls, no anchors)`, lessons: [] }
+  if (toolCalls < 3) {
+    return { ok: true, skipped: true, detail: `nothing to extract (${toolCalls} tool calls)`, lessons: [] }
   }
 
   // Without an explicit model, generate.text resolves to OpenCode's free tier and fails
@@ -47,7 +49,6 @@ export async function extract({
     prompt.text,
     section("Session", `id: ${session}`),
     section("Log", project(records)),
-    section("Anchors", renderAnchors(anchors)),
     section("Lessons already recorded", renderExisting(existing)),
     section("Rejected — do not propose these again", renderRejected(state.rejected)),
     OUTPUT_CONTRACT,
@@ -73,9 +74,8 @@ export async function extract({
   return {
     ok: true,
     lessons,
-    anchors,
     recorded,
-    detail: summarise(recorded, lessons.length, anchors.length),
+    detail: summarise(recorded, lessons.length),
   }
 }
 
@@ -97,11 +97,6 @@ function withTimeout(promise, ms) {
 
 const section = (title, body) => (body?.trim() ? `## ${title}\n\n${body.trim()}` : null)
 
-function renderAnchors(anchors) {
-  if (!anchors.length) return "None. A cheap detector found nothing; look anyway."
-  return anchors.map((a) => `- **${a.kind}** steps ${a.from}–${a.to}: ${a.reason}`).join("\n")
-}
-
 function renderExisting(lessons) {
   if (!lessons.length) return "None yet."
   return lessons
@@ -114,8 +109,8 @@ function renderRejected(rejected) {
   return rejected.map((r) => `- \`${r.id}\`${r.reason ? ` — ${r.reason}` : ""}`).join("\n")
 }
 
-function summarise(recorded, lessons, anchors) {
-  if (!lessons) return `nothing to learn (${anchors} anchor${anchors === 1 ? "" : "s"} looked at)`
+function summarise(recorded, lessons) {
+  if (!lessons) return "nothing to learn"
   const parts = []
   if (recorded.created?.length) parts.push(`${recorded.created.length} new (${recorded.created.join(", ")})`)
   if (recorded.reopened?.length) parts.push(`${recorded.reopened.length} came back (${recorded.reopened.join(", ")})`)

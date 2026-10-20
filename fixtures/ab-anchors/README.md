@@ -1,6 +1,7 @@
 # fixtures/ab-anchors
 
-One measurement, kept because it contradicts part of the design.
+The measurement that retired the anchor detectors. Kept because the code it argues about no
+longer exists, and this is the whole argument.
 
 Same shadow log (`../sessions/lint-trap-live.jsonl`), same extraction prompt, same model
 (`deepseek/deepseek-flash`). The only difference between the two runs is whether the
@@ -31,5 +32,10 @@ are defensible readings of "steps consumed by the problem".
 n = 1, one model, and the easiest possible case for reading unaided: the skill invocation
 and its failing command are two lines apart in the projection, with `-> exit 2` right
 there. It says nothing about `revert` spread over forty steps, or `repeat` separated by a
-dozen calls, which is where a detector plausibly beats reading. Do not generalise it into
-"anchors are unnecessary" — generalise it into "anchors are not how the lesson gets found".
+dozen calls, which is where a detector plausibly beats reading. It does not prove detectors can never help.
+
+What decided it was not the measurement alone but what the measurement revealed about them:
+the three detectors were not really detecting, they were encoding *an opinion about what
+friction looks like* — and that belongs in a prompt the user can read and disagree with, not
+in 196 lines of JavaScript that decide in advance what the model may notice. The signals they
+knew are now prose in `prompts/extract.md`. Nothing was lost except the code.

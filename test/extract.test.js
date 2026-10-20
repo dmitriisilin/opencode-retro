@@ -67,7 +67,7 @@ test("the live lint-trap session extracts into a lesson on disk", async () => {
   assert.deepEqual(data.evidence, [{ session: "ses_live", steps: [9, 18] }])
 })
 
-test("the prompt handed to the model carries log, anchors and the contract", async () => {
+test("the prompt handed to the model carries the log and the contract, and nothing else", async () => {
   const r = rig({ reply: REPLY() })
   await extract({ records: live(), session: "ses_live", ...r })
 
@@ -75,9 +75,27 @@ test("the prompt handed to the model carries log, anchors and the contract", asy
   assert.match(input.prompt, /shorter and straighter/, "the user-editable prompt")
   assert.match(input.prompt, /## Log/)
   assert.match(input.prompt, /\[9\] skill: lint/, "the projection, addressable by step")
-  assert.match(input.prompt, /## Anchors/)
-  assert.match(input.prompt, /skill-failure.*steps 9–18/, "anchors arrive with evidence attached")
   assert.match(input.prompt, /fenced `json` block/, "the contract is appended, not stored")
+
+  // Retired, with the measurement in fixtures/ab-anchors/: no detector decides what the
+  // model is allowed to notice. What they knew is prose in the prompt now.
+  assert.doesNotMatch(input.prompt, /## Anchors/)
+  assert.doesNotMatch(input.prompt, /skill-failure/)
+})
+
+test("the guidance the detectors used to encode is in the prompt the user can edit", async () => {
+  const r = rig({ reply: REPLY() })
+  await extract({ records: live(), session: "ses_live", ...r })
+  const [input] = r.calls
+
+  // Each of these was a detector. None of them is code any more.
+  assert.match(input.prompt, /nothing changed in between/, "what `repeat` knew")
+  assert.match(input.prompt, /made and then undone/, "what `revert` knew")
+  assert.match(input.prompt, /followed into a dead end/, "what `skill-failure` knew")
+  assert.match(input.prompt, /exit codes, not the statuses/, "the trap that made all three necessary")
+  assert.match(input.prompt, /quietly dropped/, "and the two that were never built")
+  assert.match(input.prompt, /correction the user had to make/)
+  assert.match(input.prompt, /a place to start, not a checklist/, "stated as guidance, not rules")
 })
 
 test("a session with nothing in it costs no model call", async () => {
@@ -91,7 +109,7 @@ test("a session with nothing in it costs no model call", async () => {
   assert.ok(result.ok)
   assert.ok(result.skipped)
   assert.equal(r.calls.length, 0, "no model call means no bill")
-  assert.match(result.detail, /nothing to extract/)
+  assert.match(result.detail, /nothing to extract \(0 tool calls\)/)
 })
 
 test("a recurring lesson increments rather than duplicating", async () => {
