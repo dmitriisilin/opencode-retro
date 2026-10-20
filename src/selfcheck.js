@@ -225,7 +225,7 @@ export function render(state) {
   return lines.join("\n")
 }
 
-function renderStock({ lessons = 0, topScore = null, top = null, queued = 0 } = {}) {
+function renderStock({ lessons = 0, topScore = null, top = null, queued = 0, cited = 0 } = {}) {
   const lines = []
   if (lessons === 0) lines.push("- no lessons recorded yet")
   else {
@@ -235,9 +235,16 @@ function renderStock({ lessons = 0, topScore = null, top = null, queued = 0 } = 
     )
   }
   if (queued) {
+    lines.push(`- ${queued} log${queued === 1 ? "" : "s"} not analysed yet — \`/retro\` analyses them`)
+  }
+  // Counted, not inferred. An earlier version derived this by subtracting the queue from
+  // the logs on disk and announced that open lessons cited them — while there were no
+  // lessons at all. A diagnostic that states something it has not checked is the failure
+  // this file exists to prevent.
+  if (cited) {
     lines.push(
-      `- ${queued} session${queued === 1 ? "" : "s"} queued for extraction, which runs at the start of` +
-        " your next session",
+      `- ${cited} log${cited === 1 ? "" : "s"} kept in \`sessions/\` because open lessons cite` +
+        ` ${cited === 1 ? "it" : "them"}; deciding those lessons releases ${cited === 1 ? "it" : "them"}`,
     )
   }
   return lines

@@ -214,3 +214,41 @@ test("an unknown id says what is actually open", () => {
   assert.match(got.detail, /no lesson `typo-in-the-id` is open or archived/)
   assert.match(got.detail, /lint-skill-no-config/, "and names what it could have meant")
 })
+
+test("the decision records what was actually done, not what was proposed", () => {
+  const r = rig()
+  r.store.record([{ ...lesson(), steps: [9, 18], matches: null, why: "b" }], { session: "ses_a" })
+
+  decide(
+    {
+      id: "lint-skill-no-config",
+      status: "accepted",
+      note: "the skill was unfixable here, so it went",
+      changed: ["AGENTS.md", ".opencode/skills/lint/SKILL.md"],
+      discovered: "AGENTS.md still pointed at the skill, so removing it alone would have broken that line",
+    },
+    r,
+  )
+
+  const [archived] = r.store.listArchive()
+  assert.equal(archived.status, "accepted")
+  assert.deepEqual(archived.changed, ["AGENTS.md", ".opencode/skills/lint/SKILL.md"], "the real targets")
+  assert.match(archived.discovered, /still pointed at the skill/, "and what only the work could reveal")
+  assert.ok(archived.closedAt)
+})
+
+test("an outcome with nothing to add does not litter the record", () => {
+  const r = rig()
+  r.store.record([{ ...lesson(), steps: [9, 18], matches: null, why: "b" }], { session: "ses_a" })
+  decide({ id: "lint-skill-no-config", status: "rejected", note: "we want eslint eventually" }, r)
+
+  const [archived] = r.store.listArchive()
+  assert.equal(archived.changed, undefined)
+  assert.equal(archived.discovered, undefined)
+  assert.match(archived.note, /eslint eventually/)
+})
+
+test("the decision tool asks for both, since only the work can produce them", () => {
+  assert.match(DECIDE_INPUT.properties.changed.description, /not what the proposal named/)
+  assert.match(DECIDE_INPUT.properties.discovered.description, /only exists because the work happened/)
+})

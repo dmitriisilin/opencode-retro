@@ -194,17 +194,9 @@ Everything the plugin writes stays under `.retro/` in the project, and nowhere e
 
 A log stays on disk as long as an open lesson cites it. A lesson's evidence names a session and a range of steps, and during review the question "what actually happened there?" has to have an answer that is not a summary. Once every lesson citing a log has been decided, the log is removed. Growth is bounded by the number of open lessons, which is capped, rather than by the age of the project.
 
-Of this, `lessons/` and `archive/` are knowledge about the project and are worth committing: they are readable, they show up in review, and they travel with the repository. The rest is machine state. A reasonable `.gitignore`:
+There is nothing to add to the project's `.gitignore`. On first run the plugin writes `.retro/.gitignore` and git applies it to everything below: sessions, state, the self-check and the plugin log are ignored, while `lessons/`, `archive/` and the prompts are not. That file is seeded once and is the project's own from then on.
 
-```
-.retro/sessions/
-.retro/prompts/
-.retro/selfcheck.md
-.retro/state.json
-.retro/plugin.log
-```
-
-Prompts are listed there only because a project that wants to pin its own would commit them deliberately; the seeded copies are just the packaged defaults.
+The split is the design rather than a convenience. Lessons and the archive are knowledge about the project: readable, visible in review, and they travel with the repository. The prompts are its configuration, worth sharing with whoever else works here. The rest would only make noise in a diff.
 
 ### Prompts
 

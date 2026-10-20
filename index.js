@@ -10,6 +10,7 @@ import { extract } from "./src/extract.js"
 import { DECIDE_INPUT, decide, pickLesson, pickOpen, renderBatch, renderFailures, renderNothing, renderProposal } from "./src/review.js"
 import { activeCheck } from "./src/selfcheck.js"
 import { resolveConfig } from "./src/config.js"
+import { seedGitignore } from "./src/gitignore.js"
 
 const REPO = "github.com/dmitriisilin/opencode-retro"
 const VERSION = "0.0.3"
@@ -78,6 +79,7 @@ export default {
           top: lessons[0]?.id ?? null,
           topScore: lessons.length ? store.score(lessons[0]) : null,
           queued: state.pending.length,
+          cited: log.list().filter((id) => citedSessions().has(id)).length,
         })
         mkdirSync(config.dir, { recursive: true })
         writeFileSync(config.selfcheck, check.render())
@@ -251,6 +253,10 @@ export default {
       writeSelfCheck()
     }
 
+    // Decide what git sees from inside our own directory, so the user never has to edit
+    // theirs. Seeded once; after that the file is theirs.
+    seedGitignore({ dir: config.dir, onError })
+
     // Seed the editable prompts, then look for a newer default. Neither touches a file
     // the user owns (AGENTS.md decisions 13 and 15).
     for (const name of ["extract", "review", "review-auto"]) {
@@ -316,15 +322,21 @@ export default {
      */
     function pruneLogs() {
       if (config.keepSessions) return
+      const cited = citedSessions()
+      const owed = new Set(state.pending.map((p) => p.session))
+      for (const id of log.list()) {
+        if (!cited.has(id) && !owed.has(id)) log.remove(id)
+      }
+    }
+
+    /** Sessions an open lesson points at. The reason a log is still on disk. */
+    function citedSessions() {
       const cited = new Set()
       for (const lesson of store.list()) {
         const evidence = Array.isArray(lesson.evidence) ? lesson.evidence : [lesson.evidence].filter(Boolean)
         for (const e of evidence) if (e?.session) cited.add(e.session)
       }
-      const owed = new Set(state.pending.map((p) => p.session))
-      for (const id of log.list()) {
-        if (!cited.has(id) && !owed.has(id)) log.remove(id)
-      }
+      return cited
     }
 
     /**

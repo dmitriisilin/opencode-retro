@@ -1,4 +1,4 @@
-<!-- translated-from: README.md@5e2e666dbca3 -->
+<!-- translated-from: README.md@aebd3ab102d7 -->
 # opencode-retro
 
 [English](README.md) | [Русский](README.ru.md) | **简体中文** | [Español](README.es.md) | [日本語](README.ja.md)
@@ -197,17 +197,9 @@ npm 包目前仍是占位，因此 `opencode.json` 应指向一份检出。该�
 
 只要还有未裁决的教训引用某份日志，它就留在磁盘上。教训的证据会指明某次会话及其中的步数区间，而在复核时，“那里到底发生了什么”这个问题必须有一个不是概述的答案。当引用该日志的所有教训都已裁决后，日志即被删除。增长由未裁决教训的数量决定（而该数量有上限），而不是由项目的存续时间决定。
 
-其中 `lessons/` 与 `archive/` 属于关于项目的知识，值得提交到版本库：它们可读、会出现在代码评审里，并且随仓库一同流转。其余属于机器状态。一份合理的 `.gitignore`：
+无需在项目的 `.gitignore` 中添加任何内容。插件在首次运行时写入 `.retro/.gitignore`，git 会将其应用于其下的一切：会话、状态、自检与插件日志被忽略，而 `lessons/`、`archive/` 与提示文件不会。该文件只写入一次，此后即归项目所有。
 
-```
-.retro/sessions/
-.retro/prompts/
-.retro/selfcheck.md
-.retro/state.json
-.retro/plugin.log
-```
-
-提示文件列在其中，只是因为想固定自己提示的项目会有意识地提交它们；播种出来的副本不过是随包的默认值。
+这种划分是设计而非便利。教训与归档属于关于项目的知识：可读、出现在评审中、随仓库流转。提示文件是项目的配置，值得与在此工作的其他人共享。其余内容只会在 diff 中制造噪音。
 
 ### 提示文件
 

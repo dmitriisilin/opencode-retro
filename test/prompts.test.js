@@ -152,6 +152,8 @@ test("the review prompts ask the currency question without prescribing how", () 
     assert.match(text, /already resolved in this workspace/, `${name} must put the question`)
     assert.match(text, /however you normally would/, `${name} must leave the method open`)
     assert.match(text, /retro_decide/, `${name} must say how to record the outcome`)
+    assert.match(text, /discovered/, `${name} must ask for what the work turned up`)
+    assert.match(text, /proposed again/, `${name} must say what happens if nothing is recorded`)
     assert.match(
       text,
       /already available in\s+this session|already available in this session/,

@@ -70,19 +70,33 @@ test("the file says it is about the plugin, not about the session", () => {
 test("the stock of lessons is reported separately from health", () => {
   const check = createSelfCheck({ versions: {}, repo: "r" })
   check.verify(healthy)
-  check.stock({ lessons: 3, top: "lint-skill-no-config", topScore: 27, queued: 1 })
+  check.stock({ lessons: 3, top: "lint-skill-no-config", topScore: 27, queued: 1, cited: 3 })
   const text = check.render()
 
   assert.match(text, /## What is waiting for you/)
   assert.match(text, /3 lessons in `lessons\/` — run `\/retro` to review/)
   assert.match(text, /`lint-skill-no-config` \(score 27\)/)
-  assert.match(text, /1 session queued for extraction/)
+  assert.match(text, /1 log not analysed yet/)
+  // Why an analysed log is still on disk, stated rather than inferred from state.json.
+  assert.match(text, /3 logs kept in `sessions\/` because open lessons cite them/)
+  assert.match(text, /deciding those lessons releases them/)
 })
 
 test("an empty store says so rather than staying silent", () => {
   const check = createSelfCheck({ versions: {}, repo: "r" })
   check.stock({ lessons: 0, queued: 0 })
   assert.match(check.render(), /no lessons recorded yet/)
+})
+
+test("with no lessons, nothing claims that lessons are holding logs", () => {
+  // A live run printed "2 analysed logs kept because open lessons still cite them" while
+  // there were no lessons at all: the count was logs minus queue, not a count of citations.
+  const check = createSelfCheck({ versions: {}, repo: "r" })
+  check.stock({ lessons: 0, queued: 2, cited: 0 })
+  const text = check.render()
+
+  assert.match(text, /2 logs not analysed yet/)
+  assert.doesNotMatch(text, /open lessons cite/, "there are none to cite anything")
 })
 
 test("the rendered file carries its own cadence, threshold and remedy", () => {

@@ -108,10 +108,24 @@ export function createStore({ dir, archive, cap = DEFAULT_CAP, halfLife = DEFAUL
     staleSessions: (lesson) => staleSessions(lesson, sessions()),
 
     /** Closing a lesson moves it out of the open set; nothing is ever deleted. */
-    close(id, status, note) {
+    /**
+     * `outcome` is what the work produced, which is not what the lesson said and not what
+     * the proposal suggested: the files actually touched and anything discovered while
+     * doing it. It only exists because the review happened, so it is recorded here or
+     * nowhere.
+     */
+    close(id, status, outcome = {}) {
       const lesson = list().find((l) => l.id === id)
       if (!lesson) return null
-      const closed = { ...lesson, status, note: note ?? lesson.note, closedAt: new Date().toISOString() }
+      const { note, changed, discovered } = typeof outcome === "string" ? { note: outcome } : outcome
+      const closed = {
+        ...lesson,
+        status,
+        note: note ?? lesson.note,
+        ...(changed?.length ? { changed } : {}),
+        ...(discovered ? { discovered } : {}),
+        closedAt: new Date().toISOString(),
+      }
       if (!ensure(archive)) return null
       const { body, file, ...data } = closed
       try {

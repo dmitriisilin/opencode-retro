@@ -1,6 +1,6 @@
 ---
 prompt: review-auto
-base: 4
+base: 5
 ---
 
 Every lesson this project has waiting is listed below, highest score first. The human wants
@@ -39,3 +39,7 @@ so rather than picking one quietly.
 record each lesson with the `retro_decide` tool as you go, so an interrupted run does not
 lose what was already settled. The tool is already available in this session — nothing to
 install or look for — and recording the same decision twice is harmless.
+
+For each one record what actually happened: `changed` for the files you really touched, and
+`discovered` for anything the work turned up that is not in the lesson. A lesson left
+unrecorded is proposed again next time as if nothing had been done.

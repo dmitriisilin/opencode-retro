@@ -1,6 +1,6 @@
 ---
 prompt: review
-base: 5
+base: 6
 ---
 
 A lesson from an earlier session in this project is about to be handed to the human. You
@@ -77,3 +77,15 @@ Use `accepted` if the change was made or the problem was already settled, `rejec
 is wrong for this project — give the reason, and it will not be proposed again — or `later`
 to be asked another time. Recording the same decision twice is harmless; the tool will say
 it was already recorded.
+
+Record what actually happened, not what was proposed:
+
+- `changed`: the files you really touched. These are often not the ones the lesson named.
+- `discovered`: anything that came out of doing the work and is not in the lesson — a
+  consequence the proposal missed, a second place needing the same fix, a reason the obvious
+  fix was wrong. This only exists because the work happened; if it is not recorded here it
+  is lost when this session ends.
+
+Do this as the last step, before you move on. It is the only part of the review the plugin
+cannot do for itself: if the decision is not recorded, the same lesson is proposed again
+next time, as if nothing had been done.
