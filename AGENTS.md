@@ -342,29 +342,25 @@ on without it. The effect is the one that matters: a 100-step one-off from forty
 loses to a 6-step problem that recurred three times this week, where the raw score has it the
 other way round.
 
-**Currency is checked when the human asks, in their session.** At extraction we only record
-two things about the target: a content fingerprint and the workspace's `HEAD`. The check
-itself runs inside `/retro` and `/retro auto` — not in the background, not at extraction —
-because that is the moment before someone's attention gets spent, and because by then the
-answer may have changed. Order is: take the lesson, then ask whether it still holds.
+**Currency is checked when the human asks, in their session** — not in the background, not
+at extraction. That is the moment before someone's attention gets spent, and by then the
+answer may have changed. Order: take the lesson, then ask whether it still holds.
 
-Two signals, and the second is the one that usually settles it:
+**And we ask, rather than prescribe how to look.** The agent in that session has the
+repository, the history, the harness and whatever skills this project carries. So the
+lead-in puts one question to it — *is this already resolved in this workspace as it is
+now? check however you normally would* — and nothing about mechanism. Earlier this ran
+`git log <baseCommit>..HEAD -- <target>` inside the plugin and pasted the commit lines in.
+It worked, and it was still wrong: a subprocess, a timeout, three failure modes and a git
+dependency, all to do worse what the agent does as a matter of course. Removed.
 
-- the fingerprint, which also catches uncommitted edits;
-- `git log <baseCommit>..HEAD -- <target>`, which names *why* the file changed. A commit
-  message is the cheapest explanation there is, and often answers the question outright.
-  Measured in the playground: a lesson asking for a note that `.retro/` is runtime state came
-  back with "Committed since the lesson was recorded: `119c4b4 say that .retro is
-  intentionally untracked`" — the fix, visibly, in one line.
+What stays on our side is cheap, local and offered as fact rather than verdict: a content
+hash of the target (which also catches uncommitted edits, and needs no git at all) and the
+date the lesson was recorded. They reach the agent as one line — *Worth knowing before you
+check: recorded 2026-10-19; `AGENTS.md` has changed since* — to bound its own check with.
 
-`ctx.vcs` has info/base/branches/status/diff but no history, and `ctx.shell` is a hook with
-no way to execute, so this shells out to git itself through `node:child_process` — read-only,
-3-second timeout, fails silent. Still no runtime dependencies. We do not try to detect the
-*moment* a fix happens; that would mean watching for something we cannot recognise.
-
-The deterministic check is deliberately only half of it. The other half is the agent that
-receives the proposal, which is told to read the repository as it is now and say plainly if
-the lesson is out of date. In the playground it did that unprompted and better than asked.
+We do not try to detect the *moment* a fix happens; that would mean watching for something
+we cannot recognise.
 
 **Closed is archived, not deleted,** because recurrence consults the archive. A problem that
 returns after being closed is not a new problem: it is the old one plus the news that the fix
@@ -603,14 +599,16 @@ understood is just a diagnostic that was written badly.
 - [x] Shadow logs deleted after a successful extraction.
 - [x] Every model call bounded, so a hang is reported rather than wedging the queue.
 - [x] `/retro auto` — every waiting lesson, one plan, approved once (`renderBatch`).
-- [x] Commit evidence in the currency check (`src/git.js`), computed when the command runs.
+- [x] Currency as a question to the agent, with a local fingerprint and the record date as
+      hints. `src/git.js` existed briefly and was deleted; see above for why.
 - [ ] Cross-workspace promotion (decision 10) now matters more than it looked: at one
       session per workspace, recurrence inside a workspace accrues slowly, and "I work this
       way everywhere" is caught faster across two workspaces than across ten sessions.
 
 **M4 — first public release** (`v0.1.0` tag → CI publishes).
-- [ ] README still describes the concept, including `.opencode/retro/` and "accept applies
-      the diff". Both are wrong now.
+- [x] README rewritten against what was built: install, the real layout, the self-check,
+      and a roadmap that says what is missing.
+- [ ] Decide whether promotion to global scope (decision 10) blocks `v0.1.0`.
 
 ## Dev environment
 
