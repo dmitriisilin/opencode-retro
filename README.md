@@ -31,9 +31,11 @@ Every tool call and every prompt is appended to a shadow log at `.retro/sessions
 
 ### Extraction
 
-When a session ends it is queued for analysis. The queue is settled at the first prompt of the next session in that workspace, and `/retro` settles it on demand.
+When a session ends its log is queued for analysis. The queue is processed at the first prompt of the next session in that workspace, and `/retro` processes it on demand.
 
-The analysis is a single call to the model named in `options.model`. Nothing else is used: no agent, no session, no history, no tools. The working agent is deliberately excluded, since it would defend its own decisions.
+The analysis runs outside any session: a single model call with the log as its input, no agent, no history and no tools. It does not touch the session that triggers it, and it does not hold up that session's first prompt. The agent that did the work is deliberately excluded, since it would defend its own decisions.
+
+By default the analysis uses the model your own sessions run on. `options.model` pins a different one, which is worth doing if your default is one of OpenCode's free-tier models: a plugin may not call those.
 
 That call receives a compressed view of the session. Tool output is trimmed; prompts and replies are kept whole. It answers one question:
 
@@ -163,7 +165,7 @@ The npm package is a placeholder for now, so `opencode.json` should point at a c
 }
 ```
 
-`options.model` is required. Without it OpenCode resolves its own free tier, which a plugin may not use.
+`options.model` is optional. Without it the plugin uses the model your sessions run on, falling back to the workspace default. Pin one explicitly if that default is an OpenCode free-tier model, since a plugin may not call those; `/retro check` reports which model was used and where it came from.
 
 Everything else is optional: `dir` for the directory, default `.retro`; `prompts` for the prompt directory; `halfLife` in sessions, default ten; `autoLimit`, the number of lessons in one `/retro auto`, default ten; `maxOutput`, `extractTimeoutMs`, `keepSessions`.
 
@@ -221,7 +223,7 @@ A registered hook proves nothing. A hook registered under a name the API no long
 ## Requirements
 
 - OpenCode v2, `@opencode/plugin` 2.0 or newer. Verified against 2.0.32.
-- A model for extraction, named explicitly in `options.model`. An inexpensive one is enough.
+- A model that a plugin may call. Your own session model is used by default; an inexpensive one is enough.
 - No runtime dependencies.
 
 ## License

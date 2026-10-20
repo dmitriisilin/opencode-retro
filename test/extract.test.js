@@ -174,14 +174,30 @@ test("the configured model is passed through", async () => {
   assert.deepEqual(r.calls[0].model, MODEL)
 })
 
-test("no configured model refuses up front instead of hanging on the free tier", async () => {
+test("no resolvable model refuses up front instead of hanging on the free tier", async () => {
   const r = rig({ reply: REPLY() })
   const result = await extract({ records: live(), session: "s", ...r, model: null })
 
   assert.equal(result.ok, false)
-  assert.match(result.detail, /no model configured/)
+  assert.match(result.detail, /no model could be resolved/)
   assert.match(result.detail, /options\.model/, "and says exactly what to set")
   assert.equal(r.calls.length, 0)
+})
+
+test("the free-tier refusal is explained, since a plugin may not use it", async () => {
+  const r = rig({ fail: "OpenCode's free tier can only be used from within OpenCode." })
+  const result = await extract({ records: live(), session: "s", ...r })
+
+  assert.equal(result.ok, false)
+  assert.match(result.detail, /free tier/)
+  assert.match(result.detail, /pin a different model in options\.model/, "a remedy, not just the error")
+})
+
+test("where the model came from is not passed to the model call itself", async () => {
+  const r = rig({ reply: REPLY() })
+  await extract({ records: live(), session: "s", ...r, model: { ...MODEL, from: "your session's model" } })
+
+  assert.deepEqual(r.calls[0].model, MODEL, "`from` is for the report, not for the API")
 })
 
 test("the queue survives a restart and does not re-extract a finished session", () => {

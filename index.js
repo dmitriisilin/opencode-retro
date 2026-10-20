@@ -67,6 +67,8 @@ export default {
     const lastVerified = new Map()
     let lastBeat = 0
     let draining = false
+    /** Learned from session.model.request; see resolveModel. */
+    let lastSessionModel = null
 
     const writeSelfCheck = () => {
       try {
@@ -120,6 +122,15 @@ export default {
       // stream it hangs forever (AGENTS.md "Gotchas"). So the extraction owed by the last
       // session is paid here, at the start of the next one, without blocking this prompt.
       void drainQueue(p.sessionID)
+    })
+
+    // The model the user actually works with, so extraction can default to it instead of
+    // demanding configuration. `model.request` carries only session and telemetry headers;
+    // never hook http.request, which carries the provider credential (AGENTS.md Gotcha 5).
+    await hook("session", "model.request", (p) => {
+      if (p?.kind === "primary" && p.model?.providerID && p.model?.id) {
+        lastSessionModel = { providerID: p.model.providerID, id: p.model.id }
+      }
     })
 
     await hook("tool", "execute.before", (p) => ingest.toolBefore(p))
@@ -336,6 +347,7 @@ export default {
         state,
         log,
         generate: (input) => ctx.generate.text(input),
+        model: await resolveModel(),
       })
       for (const note of report.notes) check.note(note)
       check.active(report.checks)
@@ -355,6 +367,29 @@ export default {
       } finally {
         draining = false
       }
+    }
+
+    /**
+     * Which model analyses the logs, in order of preference:
+     *   1. `options.model`, when the user has pinned one;
+     *   2. the model their own sessions run on, learned from `session.model.request`;
+     *   3. this workspace's default, from `ctx.model.default()`.
+     *
+     * Measured: a plugin may not call OpenCode's own free tier, and both 2 and 3 can hand
+     * one back. That failure is reported with its remedy rather than swallowed.
+     */
+    async function resolveModel() {
+      if (config.model?.providerID && config.model?.id) return { ...config.model, from: "options.model" }
+      if (lastSessionModel) return { ...lastSessionModel, from: "your session's model" }
+      try {
+        const fallback = (await ctx.model.default())?.data
+        if (fallback?.providerID && fallback?.modelID) {
+          return { providerID: fallback.providerID, id: fallback.modelID, from: "this workspace's default model" }
+        }
+      } catch (err) {
+        onError("model.default", err)
+      }
+      return null
     }
 
     async function runExtraction(sessionID) {

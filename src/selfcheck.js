@@ -256,7 +256,7 @@ export const STATUS = { OK, DEGRADED, BROKEN, SKIPPED }
  * prompts resolve, and that a real extraction prompt still round-trips into a parseable
  * lesson — which is the only check that exercises a user-edited prompt end to end.
  */
-export async function activeCheck({ ctx, config, prompts, store, state, log, generate }) {
+export async function activeCheck({ ctx, config, prompts, store, state, log, generate, model }) {
   const checks = []
   const notes = []
 
@@ -283,30 +283,34 @@ export async function activeCheck({ ctx, config, prompts, store, state, log, gen
   )
 
   // 2. Connectivity.
-  if (!config.model?.providerID || !config.model?.id) {
+  if (!model?.providerID || !model?.id) {
     checks.push({
       status: DEGRADED,
       name: "model",
-      detail: "none configured",
+      detail: "none could be resolved",
       meaning:
-        'extraction cannot run. Set options.model, e.g. { "providerID": "deepseek", "id": "deepseek-flash" } ' +
-        "— without it OpenCode resolves the free tier, which a plugin may not use.",
+        'extraction cannot run. Set options.model, e.g. { "providerID": "deepseek", "id": "deepseek-flash" }.',
     })
   } else {
     const started = Date.now()
+    const name = `${model.providerID}/${model.id}`
+    const source = model.from ? ` (${model.from})` : ""
     try {
-      const reply = await generate({ prompt: "Reply with one word: ok", model: config.model })
+      const reply = await generate({ prompt: "Reply with one word: ok", model })
       checks.push({
         status: reply?.text ? OK : DEGRADED,
         name: "model",
-        detail: `${config.model.providerID}/${config.model.id} answered in ${Date.now() - started} ms`,
+        detail: `${name}${source} answered in ${Date.now() - started} ms`,
       })
     } catch (err) {
+      const message = String(err?.message ?? err)
       checks.push({
         status: BROKEN,
         name: "model",
-        detail: `${config.model.providerID}/${config.model.id}: ${String(err?.message ?? err).slice(0, 120)}`,
-        meaning: "extraction will keep failing until this resolves.",
+        detail: `${name}${source}: ${message.slice(0, 120)}`,
+        meaning: /free tier/i.test(message)
+          ? "a plugin may not use OpenCode's own free tier. Pin a different model in options.model."
+          : "extraction will keep failing until this resolves.",
       })
     }
   }
@@ -323,7 +327,7 @@ export async function activeCheck({ ctx, config, prompts, store, state, log, gen
   }
 
   // 4. Round trip: does the contract still produce something we can parse?
-  if (prompt && config.model?.providerID) {
+  if (prompt && model?.providerID) {
     const { parseLessons, OUTPUT_CONTRACT } = await import("./contract.js")
     try {
       const reply = await generate({
@@ -331,7 +335,7 @@ export async function activeCheck({ ctx, config, prompts, store, state, log, gen
           "A session edited one file and then reverted it, achieving nothing.\n\n" +
           OUTPUT_CONTRACT +
           "\n\nReturn exactly one lesson about that, with steps [1, 2].",
-        model: config.model,
+        model,
       })
       const parsed = parseLessons(reply?.text)
       checks.push(

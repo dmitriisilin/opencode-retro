@@ -37,7 +37,7 @@ export async function extract({
   if (!model?.providerID || !model?.id) {
     return {
       ok: false,
-      detail: 'no model configured — set options.model, e.g. { "providerID": "deepseek", "id": "deepseek-flash" }',
+      detail: 'no model could be resolved — set options.model, e.g. { "providerID": "deepseek", "id": "deepseek-flash" }',
     }
   }
 
@@ -58,10 +58,15 @@ export async function extract({
 
   let reply
   try {
-    const result = await withTimeout(generate({ prompt: input, model }), timeoutMs)
+    const { from, ...ref } = model
+    const result = await withTimeout(generate({ prompt: input, model: ref }), timeoutMs)
     reply = result?.text ?? ""
   } catch (err) {
-    return { ok: false, detail: `model call failed: ${String(err?.message ?? err)}` }
+    const message = String(err?.message ?? err)
+    const hint = /free tier/i.test(message)
+      ? ". A plugin may not use OpenCode's own free tier; pin a different model in options.model."
+      : ""
+    return { ok: false, detail: `model call failed: ${message}${hint}` }
   }
 
   const parsed = parseLessons(reply)
