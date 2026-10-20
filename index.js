@@ -160,20 +160,13 @@ export default {
           description: "Review what the last sessions should have taught this project",
           execute: command("retro", ({ sessionID, prompt }) => {
             const text = String(prompt?.text ?? "").trim().toLowerCase()
-            if (text.startsWith("check")) return runCheck(sessionID)
-            if (text.startsWith("auto") || text.startsWith("all")) return runAuto(sessionID)
-            return runReview(sessionID)
+            return text.startsWith("all") ? runAll(sessionID) : runReview(sessionID)
           }),
         })
         cmds.add({
-          name: "retro-auto",
-          description: "Plan every waiting lesson at once, for approval in one go",
-          execute: command("retro-auto", ({ sessionID }) => runAuto(sessionID)),
-        })
-        cmds.add({
-          name: "retro-check",
-          description: "Check that opencode-retro is actually working",
-          execute: command("retro-check", ({ sessionID }) => runCheck(sessionID)),
+          name: "retro-all",
+          description: "Review everything waiting at once, as one plan",
+          execute: command("retro-all", ({ sessionID }) => runAll(sessionID)),
         })
       })
     } catch (err) {
@@ -348,10 +341,11 @@ export default {
       return assessCurrency(lesson, { directory: config.directory, fingerprint })
     }
 
-    async function runAuto(sessionID) {
+    async function runAll(sessionID) {
       const extracted = await processQueue(sessionID)
 
       const open = pickOpen(store.list(), { sessions: state.sessions, halfLife: config.halfLife })
+      await diagnose()
       writeSelfCheck()
       if (!open.length) return say(sessionID, renderNothing({ queued: extracted.left, extracted }))
 
@@ -405,6 +399,7 @@ export default {
 
       const lessons = store.list()
       const lesson = pickLesson(lessons, { sessions: state.sessions, halfLife: config.halfLife })
+      await diagnose()
       writeSelfCheck()
 
       if (!lesson) {
@@ -425,21 +420,30 @@ export default {
       )
     }
 
-    async function runCheck(sessionID) {
-      const report = await activeCheck({
-        ctx,
-        config,
-        prompts,
-        store,
-        state,
-        log,
-        generate: analyse,
-        model: await resolveModel(),
-      })
-      for (const note of report.notes) check.note(note)
-      check.active(report.checks)
-      writeSelfCheck()
-      return say(sessionID, report.text)
+    /**
+     * The checks a session cannot make for itself, folded into every review instead of
+     * hiding behind a command of its own.
+     *
+     * Free: a few property reads. It used to also ask the model whether it answers, which
+     * was a call nobody requested, and which the analysis itself answers every time.
+     */
+    async function diagnose() {
+      try {
+        const report = await activeCheck({
+          ctx,
+          config,
+          prompts,
+          store,
+          state,
+          log,
+        })
+        for (const note of report.notes) check.note(note)
+        check.active(report.checks)
+        return report
+      } catch (err) {
+        onError("diagnose", err)
+        return null
+      }
     }
 
     async function drainQueue(currentSession) {

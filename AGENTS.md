@@ -384,20 +384,26 @@ open lessons, not by the age of the project.
 
 ## The command surface
 
-Two commands. Everything else happens without being asked.
+Two commands. Everything else happens without being asked, or does not happen.
 
 | | |
 |---|---|
-| `/retro` | Settles any extraction debt, then delivers the top undecided lesson into this session. One invocation, one lesson. |
-| `/retro auto` (or `/retro-auto`) | Delivers **every** waiting lesson, ranked, and asks for one plan covering the ones that still stand. Meant for plan mode: read the plan, approve once, go. Capped at `autoLimit` (default 10) — past that a plan stops being a plan. |
-| `/retro check` (or `/retro-check`) | The active self-check: `ctx` surface, model connectivity, which prompt layer is live, and a round trip of the real output contract. Costs one model call. |
+| `/retro` | Analyses the logs that have accumulated, then delivers the top undecided lesson into this session. One invocation, one lesson. |
+| `/retro all` (or `/retro-all`) | The same analysis, then **every** waiting lesson as one plan, approved in one pass. Meant for plan mode. |
+
+There was a third, `/retro check`, and it is gone. Its free checks — the `ctx` surface, which
+prompt layer is live, what is waiting — now run on every review and land in `selfcheck.md`.
+Its paid checks asked whether the model answers and whether the output contract still
+parses, and both questions are answered by the analysis itself, every time, with the model's
+own words when either fails. A command that charges to ask what the next command answers for
+free is a command that should not exist.
 
 The loop around them:
 
 ```
 you work                →  sessions/<id>.jsonl         (no LLM, no attention)
 your next session starts →  lessons/<id>.md             (one clean-context model call)
-you run /retro           →  one proposal, in your session
+you run /retro           →  analysis, then one proposal, in your session
 you and the agent decide →  the change lands, or does not
                          →  retro_decide records it
 ```

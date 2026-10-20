@@ -124,7 +124,8 @@ test("setup registers the commands and the decision tool, and seeds the prompts"
   const fake = fakeOpenCode({ directory, options: { model: MODEL } })
   const cleanup = await plugin.setup(fake.ctx)
 
-  assert.deepEqual([...fake.commands.keys()].sort(), ["retro", "retro-auto", "retro-check"])
+  // Two commands, and that is the whole surface: one lesson, or all of them.
+  assert.deepEqual([...fake.commands.keys()].sort(), ["retro", "retro-all"])
   assert.deepEqual([...fake.tools.keys()], ["retro_decide"])
   assert.ok(fake.hooks.has("session.prompt"))
   assert.ok(fake.hooks.has("tool.execute.before"))
@@ -349,7 +350,7 @@ test("autoExtract analyses at the start of the next session, and is off by defau
   await stop3?.()
 })
 
-test("/retro auto delivers every waiting lesson as one plan", async () => {
+test("/retro all delivers every waiting lesson as one plan", async () => {
   const directory = sandbox()
   mkdirSync(join(directory, ".retro", "lessons"), { recursive: true })
   for (const [id, cost] of [["a", 20], ["b", 5]]) {
@@ -361,7 +362,7 @@ test("/retro auto delivers every waiting lesson as one plan", async () => {
 
   const fake = fakeOpenCode({ directory, options: { model: MODEL } })
   const cleanup = await plugin.setup(fake.ctx)
-  await fake.commands.get("retro-auto").execute({ sessionID: "ses_x", prompt: { text: "" } })
+  await fake.commands.get("retro-all").execute({ sessionID: "ses_x", prompt: { text: "" } })
 
   const [delivered] = fake.synthetic
   assert.match(delivered.text, /2 lessons waiting/)
@@ -452,5 +453,36 @@ test("a log that failed stays queued, and is tried again on the next command", a
   const after = JSON.parse(readFileSync(join(directory, ".retro", "state.json"), "utf8"))
   assert.equal(after.pending[0].attempts, 2, "one more go, then it is given up on")
 
+  await cleanup?.()
+})
+
+test("`/retro all` is reachable as an argument to the one command", async () => {
+  const directory = sandbox()
+  mkdirSync(join(directory, ".retro", "lessons"), { recursive: true })
+  writeFileSync(
+    join(directory, ".retro", "lessons", "a.md"),
+    "---\nid: a\nstatement: problem a\ncost: 5\nrecurrence: 1\nconfidence: 1\nstatus: new\n---\n\nbody\n",
+  )
+
+  const fake = fakeOpenCode({ directory, options: { model: MODEL } })
+  const cleanup = await plugin.setup(fake.ctx)
+  await fake.commands.get("retro").execute({ sessionID: "ses_x", prompt: { text: "all" } })
+
+  assert.match(fake.synthetic[0].text, /lesson waiting/, "typing `/retro all` reviews everything")
+  await cleanup?.()
+})
+
+test("a review costs nothing beyond the analysis itself", async () => {
+  // The free checks run every time; asking the model whether it answers is a call nobody
+  // requested, and the analysis answers that question on its own.
+  const directory = sandbox()
+  const fake = fakeOpenCode({ directory, options: { model: MODEL } })
+  const cleanup = await plugin.setup(fake.ctx)
+
+  await fake.commands.get("retro").execute({ sessionID: "ses_x", prompt: { text: "" } })
+  assert.equal(fake.generated.length, 0, "nothing queued, nothing to analyse, nothing spent")
+
+  const text = readFileSync(join(directory, ".retro", "selfcheck.md"), "utf8")
+  assert.match(text, /ctx surface/, "and the free diagnostic still ran")
   await cleanup?.()
 })

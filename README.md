@@ -70,9 +70,10 @@ The plugin reads the log. The human reads proposals. It stops at the proposal an
 
 | Command | What it does |
 |---|---|
-| `/retro` | Delivers one lesson, the highest scoring one still undecided. |
-| `/retro auto` | Delivers every waiting lesson as a single plan, to be approved in one pass. |
-| `/retro check` | Reports whether the plugin is working. |
+| `/retro` | Analyses what has accumulated, then delivers one lesson: the highest scoring one still undecided. |
+| `/retro all` | The same analysis, then every waiting lesson as a single plan, to be approved in one pass. |
+
+There is no third command. Whether the plugin is working is reported in `.retro/selfcheck.md`, rewritten on every review.
 
 A lesson is delivered into the session the command was run in, addressed to the agent already there. The agent is asked first whether the lesson still holds, then to relay it, and to change nothing until a decision has been made.
 
@@ -93,7 +94,7 @@ Needs a decision
 
 The decision belongs to the human and the agent in that session. The agent has the files, the history and the project's own skills, which makes it a better judge of whether a lesson still applies than the plugin can be. Once a decision is made, the agent records it through a `retro_decide` tool. That tool only keeps books: a rejection is remembered, and the lesson is not proposed again.
 
-`/retro auto` is the same hand-over for everything at once. Waiting lessons are ranked, the ones that still hold are gathered into one plan grouped by file, and the plan is approved once.
+`/retro all` is the same hand-over for everything at once. Waiting lessons are ranked, the ones that still hold are gathered into one plan grouped by file, and the plan is approved once.
 
 ### Where a fix belongs
 
@@ -216,7 +217,7 @@ A registered hook proves nothing. A hook registered under a name the API no long
 
 > If work is in progress and `heartbeat` is more than a few minutes old, the plugin is not running.
 
-`/retro check` is the active version. It reports the plugin and OpenCode versions, the API surface the plugin depends on, whether the configured model answers, which prompt layer is in force, and whether the output format still produces a parseable lesson.
+Those checks run on every review and cost nothing: the plugin and OpenCode versions, the API surface the plugin depends on, which prompt layer is in force, and what is waiting. Whether the model answers and whether the output format still parses are not asked separately — every `/retro` exercises both, and reports the model's own words when either fails.
 
 ## Requirements
 

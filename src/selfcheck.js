@@ -259,17 +259,17 @@ export const STATUS = { OK, DEGRADED, BROKEN, SKIPPED }
 /**
  * The checks a passing session cannot make (AGENTS.md decision 19).
  *
- * Run on every `/retro`, which is why the two that cost a model call — does it answer, and
- * does the output contract still round-trip — are behind `probe`. Those are asked only when
- * an analysis has just failed, because that is when the answer is worth paying for; the
- * rest is a few property reads.
+ * Free, so it runs on every `/retro`. It used to also ask the model whether it answers and
+ * whether the output contract still round-trips, which cost two calls nobody requested —
+ * and both questions are answered for free by the analysis itself, every time, with the
+ * model's own words when it fails.
  *
  * It checks:
  * that the `ctx` surface we depend on is still there, that the model answers, that the
  * prompts resolve, and that a real extraction prompt still round-trips into a parseable
  * lesson — which is the only check that exercises a user-edited prompt end to end.
  */
-export async function activeCheck({ ctx, config, prompts, store, state, log, generate, model, probe = true }) {
+export async function activeCheck({ ctx, config, prompts, store, state }) {
   const checks = []
   const notes = []
 
@@ -296,41 +296,6 @@ export async function activeCheck({ ctx, config, prompts, store, state, log, gen
   )
 
   // 2. Connectivity.
-  if (!probe) {
-    // Free checks only. Asking the model whether it answers costs a call, and that answer
-    // arrives on its own the moment an analysis is attempted.
-  } else if (!model?.providerID || !model?.id) {
-    checks.push({
-      status: DEGRADED,
-      name: "model",
-      detail: "none could be resolved",
-      meaning:
-        'extraction cannot run. Set options.model, e.g. { "providerID": "deepseek", "id": "deepseek-flash" }.',
-    })
-  } else {
-    const started = Date.now()
-    const name = `${model.providerID}/${model.id}`
-    const source = model.from ? ` (${model.from})` : ""
-    try {
-      const reply = await generate({ prompt: "Reply with one word: ok", model })
-      checks.push({
-        status: reply?.text ? OK : DEGRADED,
-        name: "model",
-        detail: `${name}${source} answered in ${Date.now() - started} ms`,
-      })
-    } catch (err) {
-      const message = String(err?.message ?? err)
-      checks.push({
-        status: BROKEN,
-        name: "model",
-        detail: `${name}${source}: ${message.slice(0, 120)}`,
-        meaning: /free tier/i.test(message)
-          ? "a plugin may not use OpenCode's own free tier. Pin a different model in options.model."
-          : "extraction will keep failing until this resolves.",
-      })
-    }
-  }
-
   // 3. Prompts: which layer is in force, and is a newer default waiting.
   const prompt = prompts.resolve("extract")
   checks.push(
@@ -343,32 +308,6 @@ export async function activeCheck({ ctx, config, prompts, store, state, log, gen
   }
 
   // 4. Round trip: does the contract still produce something we can parse?
-  if (probe && prompt && model?.providerID) {
-    const { parseLessons, OUTPUT_CONTRACT } = await import("./contract.js")
-    try {
-      const reply = await generate({
-        prompt:
-          "A session edited one file and then reverted it, achieving nothing.\n\n" +
-          OUTPUT_CONTRACT +
-          "\n\nReturn exactly one lesson about that, with steps [1, 2].",
-        model,
-      })
-      const parsed = parseLessons(reply?.text)
-      checks.push(
-        parsed.ok
-          ? { status: OK, name: "round trip", detail: `contract parsed, ${parsed.lessons.length} lesson(s)` }
-          : {
-              status: BROKEN,
-              name: "round trip",
-              detail: `reply did not parse: ${parsed.error}`,
-              meaning: "lessons will silently stop appearing. Check prompts/extract.md for instructions that fight the output format.",
-            },
-      )
-    } catch (err) {
-      checks.push({ status: DEGRADED, name: "round trip", detail: String(err?.message ?? err).slice(0, 120) })
-    }
-  }
-
   // 5. Stock, so the answer to "is it doing anything" is in the same place.
   const lessons = store.list()
   checks.push({

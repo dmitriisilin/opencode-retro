@@ -1,4 +1,4 @@
-<!-- translated-from: README.md@aebd3ab102d7 -->
+<!-- translated-from: README.md@39206f01ab32 -->
 # opencode-retro
 
 [English](README.md) | [Русский](README.ru.md) | [简体中文](README.zh-CN.md) | **Español** | [日本語](README.ja.md)
@@ -73,9 +73,10 @@ El plugin lee el log. La persona lee propuestas. El plugin se detiene en la prop
 
 | Comando | Qué hace |
 |---|---|
-| `/retro` | Entrega una lección, la de mayor puntuación aún sin decidir. |
-| `/retro auto` | Entrega todas las lecciones pendientes como un único plan, para aprobarlo de una pasada. |
-| `/retro check` | Informa de si el plugin está funcionando. |
+| `/retro` | Analiza lo acumulado y entrega después una lección: la de mayor puntuación aún sin decidir. |
+| `/retro all` | El mismo análisis y después todas las lecciones pendientes como un único plan, para aprobarlo de una pasada. |
+
+No hay un tercer comando. Si el plugin funciona se informa en `.retro/selfcheck.md`, reescrito en cada revisión.
 
 La lección se entrega en la sesión donde se ejecutó el comando, dirigida al agente que ya está allí. Primero se le pide que determine si la lección sigue siendo válida, después que la transmita, y que no cambie nada hasta que haya una decisión.
 
@@ -97,7 +98,7 @@ Requiere una decisión
 
 La decisión corresponde a la persona y al agente de esa sesión. El agente tiene los archivos, el historial y las skills propias del proyecto, lo que lo convierte en mejor juez de si una lección sigue aplicándose que el plugin. Una vez tomada la decisión, el agente la registra mediante una herramienta `retro_decide`. Esa herramienta solo lleva la contabilidad: un rechazo se recuerda y la lección no se vuelve a proponer.
 
-`/retro auto` es la misma entrega para todo a la vez. Las lecciones pendientes se ordenan, las que siguen en pie se reúnen en un único plan agrupado por archivo, y el plan se aprueba una sola vez.
+`/retro all` es la misma entrega para todo a la vez. Las lecciones pendientes se ordenan, las que siguen en pie se reúnen en un único plan agrupado por archivo, y el plan se aprueba una sola vez.
 
 ### Dónde corresponde el arreglo
 
@@ -220,7 +221,7 @@ Por eso `.retro/selfcheck.md` informa de que está vivo, no de que está instala
 
 > Si hay trabajo en curso y `heartbeat` tiene más de unos pocos minutos, el plugin no está en marcha.
 
-`/retro check` es la versión activa. Informa de las versiones del plugin y de OpenCode, de la superficie de API de la que el plugin depende, de si el modelo configurado responde, de qué capa de prompts está vigente y de si el formato de salida sigue produciendo una lección analizable.
+Esas comprobaciones se ejecutan en cada revisión y no cuestan nada: las versiones del plugin y de OpenCode, la superficie de API de la que el plugin depende, qué capa de prompts está vigente y qué hay esperando. Si el modelo responde y si el formato de salida sigue siendo analizable no se preguntan por separado: cada `/retro` ejercita ambas cosas e informa con las palabras del propio modelo cuando alguna falla.
 
 ## Requisitos
 
