@@ -12,7 +12,7 @@ import { activeCheck } from "./src/selfcheck.js"
 import { resolveConfig } from "./src/config.js"
 
 const REPO = "github.com/dmitriisilin/opencode-retro"
-const VERSION = "0.0.2"
+const VERSION = "0.0.3"
 
 /**
  * opencode-retro — M3: capture, extract, review.
