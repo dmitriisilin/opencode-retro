@@ -98,7 +98,7 @@ test("the guidance the detectors used to encode is in the prompt the user can ed
   assert.match(input.prompt, /a place to start, not a checklist/, "stated as guidance, not rules")
 })
 
-test("a session with nothing in it costs no model call", async () => {
+test("a single exchange that did nothing costs no model call", async () => {
   const r = rig({ reply: REPLY() })
   const result = await extract({
     records: [{ k: "prompt", n: 1, text: "hi" }, { k: "session", n: 2, event: "end", outcome: "succeeded" }],
@@ -109,7 +109,41 @@ test("a session with nothing in it costs no model call", async () => {
   assert.ok(result.ok)
   assert.ok(result.skipped)
   assert.equal(r.calls.length, 0, "no model call means no bill")
-  assert.match(result.detail, /nothing to extract \(0 tool calls\)/)
+  assert.match(result.detail, /one exchange, nothing done/)
+})
+
+test("a conversation with no tool calls is still analysed", async () => {
+  // The wrong instruction file is the clearest lesson there is, and it produces a wrong
+  // answer and a correction, with nothing executed. A tool-call threshold would drop it.
+  const r = rig({ reply: REPLY() })
+  const result = await extract({
+    records: [
+      { k: "prompt", n: 1, text: "how do we deploy here?" },
+      { k: "text", n: 2, text: "AGENTS.md says to run `make deploy`." },
+      { k: "prompt", n: 3, text: "no, that was removed a year ago, we use the pipeline" },
+      { k: "session", n: 4, event: "end", outcome: "succeeded" },
+    ],
+    session: "ses_talk",
+    ...r,
+  })
+
+  assert.ok(result.ok)
+  assert.ok(!result.skipped, "a correction is evidence, and it never touches a tool")
+  assert.equal(r.calls.length, 1)
+})
+
+test("one prompt with work done is analysed too", async () => {
+  const r = rig({ reply: REPLY() })
+  const result = await extract({
+    records: [
+      { k: "prompt", n: 1, text: "fix it" },
+      { k: "tool", n: 2, tool: "shell", input: { command: "make" }, status: "completed", exit: 2 },
+      { k: "session", n: 3, event: "end", outcome: "succeeded" },
+    ],
+    session: "ses_one",
+    ...r,
+  })
+  assert.ok(!result.skipped)
 })
 
 test("a recurring lesson increments rather than duplicating", async () => {

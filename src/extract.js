@@ -25,11 +25,22 @@ export async function extract({
   fingerprint,
   timeoutMs = DEFAULT_TIMEOUT_MS,
 }) {
-  // No model call when there is demonstrably nothing to look at — not a judgement that
-  // the session went well, just that there is too little in it to read.
+  // Skip only a session that cannot contain evidence of anything: one instruction, one
+  // answer, nothing done. Everything else is analysed.
+  //
+  // This used to require three tool calls, which was the wrong proxy and would have thrown
+  // away the clearest lessons of all. An instruction file that is wrong produces a wrong
+  // answer with no tool call at all; a correction is a second prompt and nothing more. Both
+  // live in the text, which is why the projection keeps prompts and replies whole.
+  const asked = records.filter((r) => r.k === "prompt").length
   const toolCalls = records.filter((r) => r.k === "tool").length
-  if (toolCalls < 3) {
-    return { ok: true, skipped: true, detail: `nothing to extract (${toolCalls} tool calls)`, lessons: [] }
+  if (asked <= 1 && toolCalls === 0) {
+    return {
+      ok: true,
+      skipped: true,
+      detail: "nothing to extract (one exchange, nothing done)",
+      lessons: [],
+    }
   }
 
   // Without an explicit model, generate.text resolves to OpenCode's free tier and fails

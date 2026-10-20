@@ -1,4 +1,4 @@
-<!-- translated-from: README.md@6dcc81c25079 -->
+<!-- translated-from: README.md@5e2e666dbca3 -->
 # opencode-retro
 
 [English](README.md) | [Русский](README.ru.md) | [简体中文](README.zh-CN.md) | **Español** | [日本語](README.ja.md)
@@ -38,7 +38,9 @@ Cuando una sesión termina, su log se conserva y no ocurre nada más hasta que s
 
 `/retro` es el momento en que ocurre. Un solo comando comprime los logs acumulados, los convierte en lecciones y solo entonces busca algo que entregar. Un atraso largo se analiza de diez logs cada vez, para que un único comando no pueda facturar sin límite; lo que queda se informa, y otro `/retro` toma el siguiente lote.
 
-Cada log se analiza en una sesión propia, creada para esa única llamada y eliminada después: entra el log, no intervienen agente, historial ni herramientas, y sale texto. El agente que hizo el trabajo queda excluido a propósito, porque defendería sus propias decisiones. Una sesión con menos de tres llamadas a herramientas se omite sin llamada alguna.
+Cada log se analiza en una sesión propia, creada para esa única llamada y eliminada después: entra el log, no intervienen agente, historial ni herramientas, y sale texto. El agente que hizo el trabajo queda excluido a propósito, porque defendería sus propias decisiones.
+
+Solo se omite sin llamada la sesión que no puede contener evidencia de nada: una instrucción, una respuesta, nada hecho. Una conversación sin ninguna llamada a herramientas sí se analiza, porque es justo ahí donde se manifiesta un archivo de instrucciones equivocado: una respuesta errónea y una corrección, sin nada ejecutado.
 
 `options.autoExtract` traslada el análisis al inicio de la sesión siguiente, para quien prefiera tener las lecciones listas antes de pedirlas.
 
@@ -194,7 +196,7 @@ Todo lo que el plugin escribe se queda bajo `.retro/` dentro del proyecto, y en 
   state.json
 ```
 
-Un log se borra en cuanto su sesión ha sido extraída. La historia la lleva la propia lección y el rango de pasos lo lleva la evidencia, así que el log en bruto ya no aporta nada.
+Un log permanece en disco mientras alguna lección abierta lo cite. La evidencia de una lección nombra una sesión y un rango de pasos, y durante la revisión la pregunta «¿qué pasó realmente ahí?» tiene que tener una respuesta que no sea un resumen. Cuando todas las lecciones que citan un log han sido decididas, el log se elimina. El crecimiento lo marca el número de lecciones abiertas, que está acotado, y no la edad del proyecto.
 
 De todo esto, `lessons/` y `archive/` son conocimiento sobre el proyecto y conviene versionarlos: se leen, aparecen en la revisión y viajan con el repositorio. El resto es estado de máquina. Un `.gitignore` razonable:
 

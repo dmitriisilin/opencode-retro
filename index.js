@@ -1,4 +1,4 @@
-import { appendFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { createIngest } from "./src/ingest.js"
 import { createPrompts } from "./src/prompts.js"
 import { createSelfCheck } from "./src/selfcheck.js"
@@ -191,6 +191,7 @@ export default {
           input: DECIDE_INPUT,
           execute: async (input) => {
             const result = decide(input, { store, state })
+            pruneLogs()
             writeSelfCheck()
             return { output: result, content: result.detail }
           },
@@ -299,6 +300,30 @@ export default {
         } catch (err) {
           onError("session.remove", err)
         }
+      }
+    }
+
+    /**
+     * A log lives as long as an open lesson cites it.
+     *
+     * Lessons carry `evidence` as a session id and a step range, and during review the
+     * human may well ask what actually happened at those steps. A summary cannot answer
+     * that; the log can. So the reference has to be real. Once every lesson citing a log
+     * has been decided and archived, nothing will ask about it again and it goes.
+     *
+     * Growth is bounded by the number of open lessons, which is capped, rather than by how
+     * long the project has existed. `keepSessions` keeps everything.
+     */
+    function pruneLogs() {
+      if (config.keepSessions) return
+      const cited = new Set()
+      for (const lesson of store.list()) {
+        const evidence = Array.isArray(lesson.evidence) ? lesson.evidence : [lesson.evidence].filter(Boolean)
+        for (const e of evidence) if (e?.session) cited.add(e.session)
+      }
+      const owed = new Set(state.pending.map((p) => p.session))
+      for (const id of log.list()) {
+        if (!cited.has(id) && !owed.has(id)) log.remove(id)
       }
     }
 
@@ -475,15 +500,7 @@ export default {
       // attempt would just keep charging for the same answer.
       if (result.ok || state.pending.find((p) => p.session === sessionID)?.attempts >= 3) {
         state.markExtracted(sessionID, { ok: result.ok, detail: result.detail })
-        // The lesson carries the story; the raw log has nothing left to give. Keeping it
-        // would mean a project accumulating ~28 KB a session forever.
-        if (result.ok && !config.keepSessions) {
-          try {
-            rmSync(log.path(sessionID))
-          } catch (err) {
-            if (err?.code !== "ENOENT") onError("sessions.prune", err)
-          }
-        }
+        if (result.ok) pruneLogs()
       }
 
       const verified = lastVerified.get(sessionID)

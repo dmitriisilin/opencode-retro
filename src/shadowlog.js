@@ -1,4 +1,4 @@
-import { appendFileSync, mkdirSync, statSync } from "node:fs"
+import { appendFileSync, mkdirSync, readdirSync, rmSync, statSync } from "node:fs"
 import { join } from "node:path"
 
 /**
@@ -31,6 +31,27 @@ export function createShadowLog({ dir, onError }) {
         return true
       } catch (err) {
         onError?.("shadowlog.write", err)
+        return false
+      }
+    },
+
+    /** Session ids with a log still on disk. */
+    list() {
+      try {
+        return readdirSync(dir)
+          .filter((n) => n.endsWith(".jsonl"))
+          .map((n) => n.slice(0, -".jsonl".length))
+      } catch {
+        return []
+      }
+    },
+
+    remove(sessionID) {
+      try {
+        rmSync(join(dir, `${sessionID}.jsonl`))
+        return true
+      } catch (err) {
+        if (err?.code !== "ENOENT") onError?.("shadowlog.remove", err)
         return false
       }
     },

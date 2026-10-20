@@ -232,3 +232,42 @@ test("a command that throws reports itself instead of vanishing into a 500", asy
   assert.match(result.content, /no lesson/)
   await cleanup?.()
 })
+
+test("a log survives while a lesson cites it, and goes once that lesson is decided", async () => {
+  const directory = sandbox()
+  const session = "ses_cited"
+  const fake = fakeOpenCode({ directory, options: { model: MODEL } })
+  const cleanup = await plugin.setup(fake.ctx)
+
+  await fake.hooks.get("session.prompt")({ sessionID: session, messageID: "m1", prompt: { text: "do it" } })
+  await fake.hooks.get("tool.execute.before")({ sessionID: session, id: "c1", tool: "shell", input: { command: "x" } })
+  await fake.hooks.get("tool.execute.after")({
+    sessionID: session,
+    id: "c1",
+    tool: "shell",
+    input: { command: "x" },
+    status: "completed",
+    result: { output: { exit: 1, output: "no" }, metadata: { exit: 1 } },
+  })
+  const logPath = join(directory, ".retro", "sessions", `${session}.jsonl`)
+  assert.ok(existsSync(logPath), "the log is written as the session runs")
+
+  writeFileSync(
+    join(directory, ".retro", "state.json"),
+    JSON.stringify({ version: 1, rejected: [], extracted: {}, sessions: 1, pending: [{ session, queuedAt: "now", attempts: 0 }] }),
+  )
+
+  const fresh = fakeOpenCode({ directory, options: { model: MODEL } })
+  const cleanup2 = await plugin.setup(fresh.ctx)
+  await fresh.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
+
+  // The lesson's evidence points at this log, and review may ask what happened at those
+  // steps, so the reference has to still resolve.
+  assert.ok(existsSync(logPath), "the log outlives extraction while a lesson cites it")
+
+  await fresh.tools.get("retro_decide").execute({ id: "lint-skill-no-config", status: "accepted" })
+  assert.ok(!existsSync(logPath), "and goes once nothing open refers to it")
+
+  await cleanup?.()
+  await cleanup2?.()
+})

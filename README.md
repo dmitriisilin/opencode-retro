@@ -35,7 +35,9 @@ When a session ends its log is kept, and nothing further happens until asked. An
 
 `/retro` is the moment it happens. One command compresses the logs that have accumulated, turns them into lessons, and only then looks for something to hand over. A long backlog is analysed up to ten logs at a time, so a single command cannot bill without limit; what is left over is reported, and another `/retro` takes the next batch.
 
-Each log is analysed in a session of its own, created for that one call and removed afterwards: the log goes in, no agent, no history and no tools are involved, and text comes out. The agent that did the work is deliberately excluded, since it would defend its own decisions. A session with fewer than three tool calls is skipped without a call at all.
+Each log is analysed in a session of its own, created for that one call and removed afterwards: the log goes in, no agent, no history and no tools are involved, and text comes out. The agent that did the work is deliberately excluded, since it would defend its own decisions.
+
+A session is skipped without a call only when it cannot contain evidence of anything: one instruction, one answer, nothing done. A conversation with no tool calls at all is still analysed, because that is exactly where a wrong instruction file shows up — a wrong answer and a correction, with nothing executed.
 
 `options.autoExtract` moves the analysis to the start of the next session instead, for anyone who would rather have lessons ready before asking.
 
@@ -190,7 +192,7 @@ Everything the plugin writes stays under `.retro/` in the project, and nowhere e
   state.json
 ```
 
-A log is deleted once its session has been extracted. The lesson carries the story and the evidence carries the step range, so the raw log has nothing further to give.
+A log stays on disk as long as an open lesson cites it. A lesson's evidence names a session and a range of steps, and during review the question "what actually happened there?" has to have an answer that is not a summary. Once every lesson citing a log has been decided, the log is removed. Growth is bounded by the number of open lessons, which is capped, rather than by the age of the project.
 
 Of this, `lessons/` and `archive/` are knowledge about the project and are worth committing: they are readable, they show up in review, and they travel with the repository. The rest is machine state. A reasonable `.gitignore`:
 
