@@ -1,5 +1,7 @@
 # opencode-retro
 
+**English** · [Русский](README.ru.md) · [简体中文](README.zh-CN.md) · [Español](README.es.md) · [日本語](README.ja.md)
+
 **Retrospectives for coding agents.** An [OpenCode](https://opencode.ai) v2 plugin that turns session friction — reverts, loops, abandoned tasks, user corrections — into proposed changes to your harness: skills, instructions, tools, code.
 
 Agents don't learn from their own sessions. The only way to find out where they struggled is to read the log, and nobody reads the log. `opencode-retro` reads it for you and comes back with proposals.

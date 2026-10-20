@@ -649,6 +649,15 @@ understood is just a diagnostic that was written badly.
   is the failure mode decision 19 exists to kill.
 - Anything a user may want to change is a file in `.retro/`, not a config key and not a
   constant in our source.
+- **README.md is canonical and has four translations** (`README.ru.md`, `README.zh-CN.md`,
+  `README.es.md`, `README.ja.md`), each opening with the same language bar and a note saying
+  the English version wins. A change to `README.md` means updating all four **in the same
+  commit**, then `npm run i18n` to re-stamp them. `npm test` fails while any stamp is stale
+  and names which ones — a translation that drifts silently is a lie told to whoever can
+  only read it, and this project does not ship diagnostics that misreport themselves. CI
+  does not run tests (the publish workflow only checks tag vs version), so a stale
+  translation blocks the suite, not a release. Adding a language means a file plus one entry
+  in `LANGUAGES` in `scripts/i18n-stamp.mjs`; the bar and the staleness check follow from it.
 
 ## Release
 

@@ -49,6 +49,7 @@
     "access": "public"
   },
   "scripts": {
-    "test": "node --test \"test/*.test.js\""
+    "test": "node --test \"test/*.test.js\"",
+    "i18n": "node scripts/i18n-stamp.mjs"
   }
 }
