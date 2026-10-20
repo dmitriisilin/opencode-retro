@@ -5,9 +5,10 @@ import { createSelfCheck } from "./src/selfcheck.js"
 import { createShadowLog, parseShadowLog } from "./src/shadowlog.js"
 import { createState } from "./src/state.js"
 import { createStore, score } from "./src/lessons.js"
-import { assessCurrency, fingerprintOf } from "./src/currency.js"
+import { assessCurrency, explainChange, fingerprintOf } from "./src/currency.js"
+import { headCommit } from "./src/git.js"
 import { extract } from "./src/extract.js"
-import { DECIDE_INPUT, decide, pickLesson, renderNothing, renderProposal } from "./src/review.js"
+import { AUTO_LIMIT, DECIDE_INPUT, decide, pickLesson, pickOpen, renderBatch, renderNothing, renderProposal } from "./src/review.js"
 import { activeCheck } from "./src/selfcheck.js"
 import { resolveConfig } from "./src/config.js"
 
@@ -138,8 +139,14 @@ export default {
           execute: async ({ sessionID, prompt }) => {
             const text = String(prompt?.text ?? "").trim().toLowerCase()
             if (text.startsWith("check")) return runCheck(sessionID)
+            if (text.startsWith("auto") || text.startsWith("all")) return runAuto(sessionID)
             return runReview(sessionID)
           },
+        })
+        cmds.add({
+          name: "retro-auto",
+          description: "Plan every waiting lesson at once, for approval in one go",
+          execute: async ({ sessionID }) => runAuto(sessionID),
         })
         cmds.add({
           name: "retro-check",
@@ -242,18 +249,54 @@ export default {
       }
     }
 
+    /** The currency check, with commit evidence when git can supply it. */
+    async function currencyOf(lesson) {
+      const base = assessCurrency(lesson, { directory: config.directory, fingerprint })
+      try {
+        return await explainChange(base, lesson, { directory: config.directory })
+      } catch (err) {
+        onError("currency.explain", err)
+        return base
+      }
+    }
+
+    async function runAuto(sessionID) {
+      await settleDebt(sessionID)
+
+      const open = pickOpen(store.list(), { sessions: state.sessions, halfLife: config.halfLife })
+      writeSelfCheck()
+      if (!open.length) return say(sessionID, renderNothing({ queued: state.pending.length }))
+
+      const shown = open.slice(0, config.autoLimit)
+      const currencies = new Map()
+      for (const lesson of shown) currencies.set(lesson.id, await currencyOf(lesson))
+
+      return say(
+        sessionID,
+        renderBatch(open, {
+          sessions: state.sessions,
+          halfLife: config.halfLife,
+          currencies,
+          limit: config.autoLimit,
+        }),
+      )
+    }
+
+    /** Both review modes pay the extraction debt first, so you review what just happened. */
+    async function settleDebt(sessionID) {
+      const owed = state.nextPending(sessionID)
+      if (!owed) return null
+      await runExtraction(owed.session)
+      return state.pending.some((p) => p.session === owed.session) ? null : "done"
+    }
+
     async function runReview(sessionID) {
       // One invocation, one lesson: the top of the list. Deciding is the user's business,
       // in this session, with the agent that is already here.
-      let extracted = null
-      const owed = state.nextPending(sessionID)
-      if (owed) {
-        await runExtraction(owed.session)
-        extracted = state.pending.some((p) => p.session === owed.session) ? null : "done"
-      }
+      const extracted = await settleDebt(sessionID)
 
       const lessons = store.list()
-      const lesson = pickLesson(lessons)
+      const lesson = pickLesson(lessons, { sessions: state.sessions, halfLife: config.halfLife })
       writeSelfCheck()
 
       if (!lesson) {
@@ -265,7 +308,7 @@ export default {
         renderProposal(lesson, {
           total: open,
           remaining: open - 1,
-          currency: assessCurrency(lesson, { directory: config.directory, fingerprint }),
+          currency: await currencyOf(lesson),
           sessions: state.sessions,
           halfLife: config.halfLife,
         }),
@@ -326,6 +369,7 @@ export default {
           store,
           state,
           fingerprint,
+          baseCommit: await headCommit(config.directory),
           timeoutMs: config.extractTimeoutMs,
         })
       } catch (err) {

@@ -11,8 +11,71 @@ import { score, staleSessions } from "./lessons.js"
 
 export const OPEN = new Set(["new", "later", undefined, null])
 
-export function pickLesson(lessons) {
-  return lessons.filter((l) => OPEN.has(l.status)).sort((a, b) => score(b) - score(a))[0] ?? null
+/** How many lessons one `/retro auto` will carry. Beyond this, a plan stops being a plan. */
+export const AUTO_LIMIT = 10
+
+export function pickLesson(lessons, ctx) {
+  return pickOpen(lessons, ctx)[0] ?? null
+}
+
+export function pickOpen(lessons, ctx = {}) {
+  return lessons.filter((l) => OPEN.has(l.status)).sort((a, b) => score(b, ctx) - score(a, ctx))
+}
+
+/** Addressed to the agent: one plan over everything, still nothing applied unasked. */
+export const AUTO_LEAD_IN =
+  "_opencode-retro: below is every lesson this project has waiting, highest score first. " +
+  "Check each one against the repository as it is now — some will already be fixed — then " +
+  "come back with **one plan** that covers the ones that still stand, in the order you would " +
+  "do them, saying what you would change in each file. Group anything that touches the same " +
+  "file. Say which ones you are dropping and why. Change nothing until the human approves the " +
+  "plan; once they do, work through it and record each lesson with `retro_decide` as you go._"
+
+export function renderBatch(lessons, { sessions = null, halfLife, currencies = new Map(), limit = AUTO_LIMIT } = {}) {
+  const shown = lessons.slice(0, limit)
+  const lines = [
+    AUTO_LEAD_IN,
+    "",
+    `# retro — ${shown.length} lesson${shown.length === 1 ? "" : "s"} waiting`,
+    "",
+  ]
+  if (lessons.length > shown.length) {
+    lines.push(`(${lessons.length - shown.length} more below the cut; run \`/retro auto\` again after this round.)`, "")
+  }
+
+  shown.forEach((lesson, i) => {
+    const stale = staleSessions(lesson, sessions)
+    lines.push(
+      `## ${i + 1}. \`${lesson.id}\` — score ${round(score(lesson, { sessions, halfLife }))}`,
+      "",
+      lesson.statement ?? "",
+      "",
+      `Seen in ${lesson.recurrence ?? 1} session${(lesson.recurrence ?? 1) === 1 ? "" : "s"}, ` +
+        `${lesson.cost ?? 0} step${(lesson.cost ?? 0) === 1 ? "" : "s"} spent` +
+        (stale ? `, last seen ${stale} session${stale === 1 ? "" : "s"} ago` : "") +
+        ".",
+      "",
+    )
+    if (lesson.reopenedFrom) {
+      lines.push(`**Came back** after being closed as ${lesson.reopenedFrom}.`, "")
+    }
+    const currency = currencies.get(lesson.id)
+    if (currency?.warning) lines.push(currency.warning, "")
+    if (lesson.proposal?.change) {
+      lines.push(
+        `**Target:** ${lesson.proposal.target ?? "not named"}`,
+        "",
+        lesson.proposal.change.trim(),
+        "",
+      )
+    } else {
+      lines.push("**No proposal** — the problem is named, where it belongs is a judgement call.", "")
+    }
+    if (lesson.ask) lines.push(`**Needs a human call:** ${lesson.ask.trim()}`, "")
+  })
+
+  lines.push("---", "", "Nothing has been changed. The plan comes first.")
+  return lines.join("\n")
 }
 
 /** Addressed to the agent in the session, because that is who reads it first. */

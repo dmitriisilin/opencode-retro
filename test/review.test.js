@@ -3,7 +3,7 @@ import assert from "node:assert/strict"
 import { mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { DECIDE_INPUT, decide, pickLesson, renderNothing, renderProposal } from "../src/review.js"
+import { DECIDE_INPUT, decide, pickLesson, pickOpen, renderBatch, renderNothing, renderProposal } from "../src/review.js"
 import { createStore } from "../src/lessons.js"
 import { createState } from "../src/state.js"
 
@@ -118,4 +118,57 @@ test("the tool schema is plain JSON Schema, so it needs no dependency", () => {
   assert.equal(DECIDE_INPUT.type, "object")
   assert.deepEqual(DECIDE_INPUT.required, ["id", "status"])
   assert.deepEqual(DECIDE_INPUT.properties.status.enum, ["accepted", "rejected", "later"])
+})
+
+test("auto carries every waiting lesson and asks for one plan", () => {
+  const lessons = [
+    lesson({ id: "a", cost: 20 }),
+    lesson({ id: "b", cost: 10, proposal: null }),
+    lesson({ id: "c", cost: 5, reopenedFrom: "accepted" }),
+  ]
+  const text = renderBatch(lessons, {
+    currencies: new Map([["a", { warning: "**`x.md` has changed.**" }]]),
+  })
+
+  assert.match(text, /^_opencode-retro: below is every lesson/)
+  assert.match(text, /come back with \*\*one plan\*\*/, "a plan, not a stream of questions")
+  assert.match(text, /Group anything that touches the same file/)
+  assert.match(text, /Change nothing until the human approves/)
+  assert.match(text, /# retro — 3 lessons waiting/)
+  assert.match(text, /## 1\. `a` — score 36/)
+  assert.match(text, /## 2\. `b`/)
+  assert.match(text, /\*\*No proposal\*\*/)
+  assert.match(text, /## 3\. `c`/)
+  assert.match(text, /\*\*Came back\*\* after being closed as accepted/)
+  assert.match(text, /\*\*`x\.md` has changed\.\*\*/, "a stale one is labelled, not hidden")
+  assert.match(text, /Nothing has been changed\. The plan comes first\./)
+})
+
+test("auto is capped, and says what it left out", () => {
+  const many = Array.from({ length: 14 }, (_, i) => lesson({ id: `l${i}`, cost: 14 - i }))
+  const text = renderBatch(many, { limit: 10 })
+
+  assert.match(text, /# retro — 10 lessons waiting/)
+  assert.match(text, /4 more below the cut/)
+  assert.doesNotMatch(text, /## 11\./)
+})
+
+test("ordering is by effective score, so stale lessons sink in the batch", () => {
+  const ordered = pickOpen(
+    [
+      lesson({ id: "stale", cost: 100, recurrence: 1, confidence: 1, lastSeen: 0 }),
+      lesson({ id: "fresh", cost: 6, recurrence: 3, confidence: 0.9, lastSeen: 39 }),
+    ],
+    { sessions: 40, halfLife: 10 },
+  )
+  assert.deepEqual(
+    ordered.map((l) => l.id),
+    ["fresh", "stale"],
+  )
+})
+
+test("closed lessons never reach the batch", () => {
+  const text = renderBatch(pickOpen([lesson({ id: "open" }), lesson({ id: "done", status: "accepted" })]))
+  assert.match(text, /`open`/)
+  assert.doesNotMatch(text, /`done`/)
 })

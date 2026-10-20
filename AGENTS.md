@@ -22,7 +22,7 @@ Motivating example: a project carries a `lint` skill borrowed from another harne
 8. **Lessons are workspace-scoped and keyed by problem, not by session.** One file per lesson, `lessons/<id>.md`, scoped to `location.project.id`. Sessions appear only as evidence refs, and a second session hitting the same problem increments `recurrence` and appends evidence rather than creating a second file. Score = `cost × recurrence × confidence × freshness`, where freshness halves every `halfLife` sessions (default 10) since the problem was last seen — counted in **sessions, not days**, because at one session a day a wall-clock decay buries everything. Recurrence matters more than one expensive incident: a lesson that shows up in three sessions *will* show up in the fourth. Overflow past the cap (default 30) is archived, never deleted.
 9. **Integration loop is human-triggered, and the plugin stops at the proposal.** `/retro` delivers **one** lesson — the highest-scoring one still undecided — into the session the user ran it in, and stops. The human and the agent already in that session work out whether they like it and how to integrate it; the plugin does not patch files and does not drive the conversation. One invocation, one lesson: deciding is not a wizard to be stepped through. The outcome comes back through a `retro_decide` tool, which is bookkeeping only — a rejection is remembered and fed to the extractor so it is not proposed again. *Amended after M2: the earlier "accept applies the diff" could not work. The extractor's `proposal.change` comes out as prose — "add a precondition as step 1: ..." — because the model has not carefully read the target file and the file may have moved since. The agent in the session has both the file and the human; we have neither.*
 10. **Project-scoped by default.** Global promotion only if evidence has no project-specific files/configs AND the lesson recurred in ≥2 workspaces. Promotion is itself a `/retro` proposal.
-11. **Autonomy ladder L0–L3** (see README). v1 target is L1. Promotion between levels is to be driven by accept/reject stats, later.
+11. **Autonomy ladder L0–L3** (see README). v1 target is L1, and `/retro auto` is the step that makes the rest reachable: the same lessons, the same currency checks, the same `retro_decide` bookkeeping, but batched into one plan a human approves once instead of a decision per lesson. The ladder from here is about how much of that plan runs without being asked, not about new machinery. Promotion between levels is to be driven by accept/reject stats, later.
 12. **Not a memory plugin.** We edit artifacts the harness already reads; we don't build a knowledge base the agent must remember to query.
 13. **The extraction prompt lives in the user's project, not in the package.** It is the one place where this plugin's behaviour is actually decided, so it sits next to its inputs and outputs, in `.retro/prompts/extract.md`. The package ships a default; on first run it is copied into the project if absent. Resolution order: project → global (`~/.config/opencode/retro/prompts/`) → packaged default. `options` in `opencode.json` can override the directory and the extractor model. *Narrowed in M3: there was to be a second prompt for applying a lesson. Decision 9 as amended has no application step to drive — the agent in the session does the integrating.*
 14. **The prompt is editable; the output contract is compiled in.** The project file is entirely the user's — criteria, emphasis, project-specific wording. The output format the parser needs lives in the plugin's source and is wrapped around the prompt at call time. It is never written to disk, so it cannot be edited away by accident, and the prompt file has no "do not touch" region in it. `/retro check` prints the contract for anyone who wants to see it.
@@ -342,11 +342,25 @@ on without it. The effect is the one that matters: a 100-step one-off from forty
 loses to a 6-step problem that recurred three times this week, where the raw score has it the
 other way round.
 
-**Currency is checked at proposal time, not at extraction time.** At extraction we only
-record a fingerprint of the target file. At `/retro` we compare — gone, changed, unchanged —
-and a changed or missing target puts a warning at the top of the proposal. We do not try to
-detect the moment a fix happened; that would mean watching for something we cannot
-recognise. We check when it matters, which is the moment before we spend someone's attention.
+**Currency is checked when the human asks, in their session.** At extraction we only record
+two things about the target: a content fingerprint and the workspace's `HEAD`. The check
+itself runs inside `/retro` and `/retro auto` — not in the background, not at extraction —
+because that is the moment before someone's attention gets spent, and because by then the
+answer may have changed. Order is: take the lesson, then ask whether it still holds.
+
+Two signals, and the second is the one that usually settles it:
+
+- the fingerprint, which also catches uncommitted edits;
+- `git log <baseCommit>..HEAD -- <target>`, which names *why* the file changed. A commit
+  message is the cheapest explanation there is, and often answers the question outright.
+  Measured in the playground: a lesson asking for a note that `.retro/` is runtime state came
+  back with "Committed since the lesson was recorded: `119c4b4 say that .retro is
+  intentionally untracked`" — the fix, visibly, in one line.
+
+`ctx.vcs` has info/base/branches/status/diff but no history, and `ctx.shell` is a hook with
+no way to execute, so this shells out to git itself through `node:child_process` — read-only,
+3-second timeout, fails silent. Still no runtime dependencies. We do not try to detect the
+*moment* a fix happens; that would mean watching for something we cannot recognise.
 
 The deterministic check is deliberately only half of it. The other half is the agent that
 receives the proposal, which is told to read the repository as it is now and say plainly if
@@ -369,6 +383,7 @@ Two commands. Everything else happens without being asked.
 | | |
 |---|---|
 | `/retro` | Settles any extraction debt, then delivers the top undecided lesson into this session. One invocation, one lesson. |
+| `/retro auto` (or `/retro-auto`) | Delivers **every** waiting lesson, ranked, and asks for one plan covering the ones that still stand. Meant for plan mode: read the plan, approve once, go. Capped at `autoLimit` (default 10) — past that a plan stops being a plan. |
 | `/retro check` (or `/retro-check`) | The active self-check: `ctx` surface, model connectivity, which prompt layer is live, and a round trip of the real output contract. Costs one model call. |
 
 The loop around them:
@@ -587,6 +602,8 @@ understood is just a diagnostic that was written badly.
 - [x] Closing archives; recurrence reopens from the archive with history.
 - [x] Shadow logs deleted after a successful extraction.
 - [x] Every model call bounded, so a hang is reported rather than wedging the queue.
+- [x] `/retro auto` — every waiting lesson, one plan, approved once (`renderBatch`).
+- [x] Commit evidence in the currency check (`src/git.js`), computed when the command runs.
 - [ ] Cross-workspace promotion (decision 10) now matters more than it looked: at one
       session per workspace, recurrence inside a workspace accrues slowly, and "I work this
       way everywhere" is caught faster across two workspaces than across ten sessions.

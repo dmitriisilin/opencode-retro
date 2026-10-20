@@ -129,7 +129,7 @@ export function createStore({ dir, archive, cap = DEFAULT_CAP, halfLife = DEFAUL
      * existing id — or that lands on the same id — increments recurrence instead of
      * creating a near-duplicate.
      */
-    record(extracted, { session, fingerprint = null }) {
+    record(extracted, { session, fingerprint = null, baseCommit = null }) {
       const existing = list()
       const byId = new Map(existing.map((l) => [l.id, l]))
       const archived = new Map(listArchive().map((l) => [l.id, l]))
@@ -160,6 +160,7 @@ export function createStore({ dir, archive, cap = DEFAULT_CAP, halfLife = DEFAUL
             closedAt: undefined,
             lastSeen: seen,
             targetFingerprint: fingerprint?.(buried.proposal?.target) ?? buried.targetFingerprint,
+            baseCommit: baseCommit ?? buried.baseCommit ?? undefined,
           }
           if (write(reopened)) {
             result.reopened.push(reopened.id)
@@ -212,6 +213,7 @@ export function createStore({ dir, archive, cap = DEFAULT_CAP, halfLife = DEFAUL
           status: "new",
           lastSeen: seen,
           targetFingerprint: fingerprint?.(lesson.proposal?.target) ?? undefined,
+          baseCommit: baseCommit ?? undefined,
           body: lesson.why ?? "",
         }
         if (write(created)) result.created.push(created.id)

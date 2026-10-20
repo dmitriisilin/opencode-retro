@@ -17,6 +17,8 @@ export const DEFAULTS = {
   keepSessions: false,
   /** Give up on a silent model call rather than wedging the queue behind it. */
   extractTimeoutMs: 90_000,
+  /** Lessons carried by one `/retro auto`. Beyond this a plan stops being a plan. */
+  autoLimit: 10,
 }
 
 /**
@@ -45,6 +47,7 @@ export function resolveConfig(ctx) {
     halfLife: options.halfLife ?? DEFAULTS.halfLife,
     keepSessions: options.keepSessions ?? DEFAULTS.keepSessions,
     extractTimeoutMs: options.extractTimeoutMs ?? DEFAULTS.extractTimeoutMs,
+    autoLimit: options.autoLimit ?? DEFAULTS.autoLimit,
   }
 }
 

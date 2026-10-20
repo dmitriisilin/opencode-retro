@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto"
 import { existsSync, readFileSync } from "node:fs"
 import { isAbsolute, resolve } from "node:path"
+import { commitsTouching } from "./git.js"
 
 /**
  * Is a lesson still true?
@@ -54,6 +55,7 @@ export function assessCurrency(lesson, { directory, fingerprint = fingerprintOf(
   if (now && now !== before) {
     return {
       state: "target-changed",
+      target,
       detail: `\`${target}\` changed since the lesson was recorded`,
       warning:
         `**\`${target}\` has changed since this lesson was recorded.** It may already be ` +
@@ -61,6 +63,24 @@ export function assessCurrency(lesson, { directory, fingerprint = fingerprintOf(
     }
   }
   return { state: "unchanged", detail: `\`${target}\` is unchanged since the lesson was recorded` }
+}
+
+/**
+ * Names the commits that touched the target since the lesson was recorded. A commit
+ * message is the cheapest explanation of why a file changed, and often settles the
+ * question outright — "make lint conditional on a config" is the fix, visibly.
+ */
+export async function explainChange(currency, lesson, { directory }) {
+  if (!currency?.target || !lesson?.baseCommit || !directory) return currency
+  const commits = await commitsTouching(directory, currency.target, lesson.baseCommit)
+  if (!commits.length) return currency
+  return {
+    ...currency,
+    commits,
+    warning:
+      `${currency.warning}\n\nCommitted since the lesson was recorded:\n` +
+      commits.map((c) => `- \`${c}\``).join("\n"),
+  }
 }
 
 function resolveTarget(directory, target) {
