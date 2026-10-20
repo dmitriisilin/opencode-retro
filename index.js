@@ -96,9 +96,19 @@ export default {
       writeSelfCheck()
     }
 
+    /**
+     * Child session -> the session that delegated to it.
+     *
+     * A subagent announces itself on `session.created` with a `parentID`, and the parent's
+     * own `subagent` tool call carries the child's id in its result metadata. Either is
+     * enough; both are recorded because the second arrives even if the first is missed.
+     */
+    const parents = new Map()
+
     const ingest = createIngest({
       maxOutput: config.maxOutput,
       emit: (sessionID, record) => log.write(sessionID, record),
+      parentOf: (sessionID) => parents.get(sessionID) ?? null,
     })
 
     // Hooks. Registration proving nothing is the whole reason the self-check exists:
@@ -137,6 +147,8 @@ export default {
 
     await hook("tool", "execute.before", (p) => ingest.toolBefore(p))
     await hook("tool", "execute.after", (p) => {
+      const child = p.tool === "subagent" ? p.result?.metadata?.sessionID : null
+      if (child) parents.set(child, p.sessionID)
       ingest.toolAfter(p)
       beat()
     })
@@ -212,6 +224,9 @@ export default {
     })()
 
     function handleEvent(event) {
+      if (event.type === "session.created" && event.data?.parentID && event.data?.sessionID) {
+        parents.set(event.data.sessionID, event.data.parentID)
+      }
       ingest.event(event)
 
       // session.idle never fires outside the TUI (AGENTS.md Gotcha 2), so the end of work
@@ -224,6 +239,8 @@ export default {
 
       const sessionID = event?.data?.sessionID
       if (!sessionID || ended.has(sessionID)) return
+      // A subagent finishing is a step in its parent's task, not a session to analyse.
+      if (parents.has(sessionID)) return
       ended.add(sessionID)
 
       const verified = {

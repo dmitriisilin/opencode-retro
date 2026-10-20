@@ -12,8 +12,15 @@ import { clamp } from "./config.js"
  *   - hooks carry no `durable.seq`, only events do, so `n` — our own per-session counter,
  *     assigned at append time — is the step index, and `seq` is recorded when an event
  *     happens to supply it.
+ *
+ * A subagent runs in a session of its own, with its own execution events and its own tool
+ * calls (measured: agent `explore`, its own sessionID, `parentID` on `session.created`).
+ * Its work belongs to the task that delegated it, so its records are written into the
+ * parent's log and it is never analysed on its own. Otherwise one delegation would become a
+ * second log, a second model call and a second count against the same problem — and the
+ * fragment would be read without the instruction that caused it.
  */
-export function createIngest({ emit, maxOutput, now = () => Date.now() }) {
+export function createIngest({ emit, maxOutput, now = () => Date.now(), parentOf = () => null }) {
   /** sessionID -> { n, pending: Map<callID, started>, seq: Map<callID, number>, counts } */
   const sessions = new Map()
 
@@ -32,10 +39,14 @@ export function createIngest({ emit, maxOutput, now = () => Date.now() }) {
     return s
   }
 
+  /** A subagent's records belong to the session that delegated to it. */
+  const owner = (sessionID) => parentOf(sessionID) ?? sessionID
+
   function append(sessionID, record) {
-    const s = session(sessionID)
+    const target = owner(sessionID)
+    const s = session(target)
     s.counts.records++
-    emit(sessionID, { v: 1, n: ++s.n, t: now(), ...record })
+    emit(target, { v: 1, n: ++s.n, t: now(), ...record })
   }
 
   return {
@@ -48,7 +59,7 @@ export function createIngest({ emit, maxOutput, now = () => Date.now() }) {
     pending: (sessionID) => [...session(sessionID).pending.values()],
 
     prompt(p) {
-      const s = session(p.sessionID)
+      const s = session(owner(p.sessionID))
       s.counts.prompts++
       append(p.sessionID, {
         k: "prompt",
@@ -60,7 +71,7 @@ export function createIngest({ emit, maxOutput, now = () => Date.now() }) {
     },
 
     toolBefore(p) {
-      session(p.sessionID).pending.set(p.id, {
+      session(owner(p.sessionID)).pending.set(p.id, {
         id: p.id,
         tool: p.tool,
         input: p.input,
@@ -71,7 +82,7 @@ export function createIngest({ emit, maxOutput, now = () => Date.now() }) {
     },
 
     toolAfter(p) {
-      const s = session(p.sessionID)
+      const s = session(owner(p.sessionID))
       s.counts.toolHook++
       const started = s.pending.get(p.id)
       s.pending.delete(p.id)
@@ -93,7 +104,7 @@ export function createIngest({ emit, maxOutput, now = () => Date.now() }) {
     event(e) {
       const sessionID = e?.data?.sessionID
       if (!sessionID) return
-      const s = session(sessionID)
+      const s = session(owner(sessionID))
       const seq = e?.durable?.seq ?? null
 
       switch (e.type) {
@@ -127,12 +138,14 @@ export function createIngest({ emit, maxOutput, now = () => Date.now() }) {
           return
 
         case "session.execution.started":
+          if (parentOf(sessionID)) return // a delegation is a step, not a session
           append(sessionID, { k: "session", seq, event: "start" })
           return
 
         case "session.execution.succeeded":
         case "session.execution.failed":
         case "session.execution.interrupted":
+          if (parentOf(sessionID)) return // the parent is still working
           for (const call of s.pending.values()) {
             append(sessionID, {
               k: "tool",

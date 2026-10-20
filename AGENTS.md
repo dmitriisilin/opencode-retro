@@ -146,6 +146,26 @@ Observed tool names: `read`, `glob`, `edit`, `shell`, `skill`. Not `bash` — `s
 
 **Prompts.** `session.prompt` → `{ sessionID, messageID, prompt: { text, files }, delivery }`.
 
+**Subagents run in sessions of their own, and yes, we see all of it.** Measured with
+`explore`: the parent calls a tool named `subagent` with `{ agent, description, prompt }`
+and gets `result.metadata.sessionID` — the child's id. The child announces itself first on
+`session.created`, carrying `parentID`, `agent` and a `title`. It then emits its own
+`session.execution.started` and `.succeeded`, its own `durable.seq` sequence, and its own
+`tool.execute.*` hook calls, which arrive with the child's `sessionID` and `agent:
+"explore"`.
+
+So nothing is hidden, and the design question is what to do with it. A subagent's work
+belongs to the task that delegated it, so its records are written into the **parent's**
+shadow log and the child is never analysed on its own. Three reasons: one delegation would
+otherwise become a second log and a second model call; the same problem would be counted
+twice against `recurrence`; and the fragment would be read without the instruction that
+caused it — the child's prompt is a delegation, not the user's request. Its start and end
+events are dropped for the same reason: a delegation is a step, not a session.
+
+Verified live — the parent's log held one ordered sequence containing
+`build/execute`, `explore/read` and `build/subagent`, with a single session end, and only
+the parent queued.
+
 **Step index.** Every *event* carries `durable: { aggregateID, seq, version }`, where
 `aggregateID` is the session and `seq` is monotonic per session. Hooks carry no `seq` at
 all, so indexing tool calls by it would mean joining hook data to `session.tool.called` on
@@ -230,9 +250,6 @@ plugin needed — and it gets the `sessionID`, so it can drive the review conver
 
 ### Still unverified
 
-- Does `session.execution.*` fire separately for subagent sessions, and does
-  `event.subscribe` see them? (Needed before we decide whether subagent sessions get their
-  own shadow log.)
 - `session.hook("compaction")` — registered without error but never fired; no session got
   long enough. Decision 3 means we do not depend on it, but the payload is still unknown.
 - `ctx.storage` vs our own files. Storage is plugin-scoped JSON KV and would be the natural

@@ -486,3 +486,54 @@ test("a review costs nothing beyond the analysis itself", async () => {
   assert.match(text, /ctx surface/, "and the free diagnostic still ran")
   await cleanup?.()
 })
+
+test("a subagent's work lands in the parent's log, and is not analysed on its own", async () => {
+  // Measured in a live run: a subagent gets its own session, its own execution events and
+  // its own tool calls. Analysing it separately would mean a second model call and a second
+  // count against the same problem, from a fragment with no instruction behind it.
+  const directory = sandbox()
+  const parent = "ses_parent"
+  const child = "ses_child"
+  const fake = fakeOpenCode({ directory, options: { model: MODEL } })
+  const cleanup = await plugin.setup(fake.ctx)
+
+  await fake.hooks.get("session.prompt")({ sessionID: parent, messageID: "m1", prompt: { text: "find the exports" } })
+
+  // The parent delegates; the child announces itself with a parentID.
+  await fake.hooks.get("tool.execute.before")({ sessionID: parent, id: "d1", tool: "subagent", input: { agent: "explore" } })
+  await fake.hooks.get("tool.execute.after")({
+    sessionID: parent,
+    id: "d1",
+    tool: "subagent",
+    input: { agent: "explore" },
+    status: "completed",
+    result: { output: { output: "done" }, metadata: { sessionID: child, status: "completed" } },
+  })
+
+  // The child does the work and finishes.
+  await fake.hooks.get("tool.execute.before")({ sessionID: child, id: "c1", tool: "read", input: { path: "src/sum.js" } })
+  await fake.hooks.get("tool.execute.after")({
+    sessionID: child,
+    id: "c1",
+    tool: "read",
+    agent: "explore",
+    input: { path: "src/sum.js" },
+    status: "completed",
+    result: { output: { output: "export function sum" } },
+  })
+
+  assert.ok(!existsSync(join(directory, ".retro", "sessions", `${child}.jsonl`)), "the child has no log of its own")
+
+  const records = readFileSync(join(directory, ".retro", "sessions", `${parent}.jsonl`), "utf8")
+    .trim()
+    .split("\n")
+    .map((l) => JSON.parse(l))
+  const read = records.find((r) => r.tool === "read")
+  assert.ok(read, "the delegated tool call is in the parent's log")
+  assert.equal(read.agent, "explore", "and says which agent did it")
+  assert.ok(records.find((r) => r.tool === "subagent"), "alongside the delegation itself")
+
+  const ns = records.map((r) => r.n)
+  assert.deepEqual(ns, [...ns].sort((a, b) => a - b), "one step sequence, not two interleaved")
+  await cleanup?.()
+})
