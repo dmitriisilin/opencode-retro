@@ -130,27 +130,37 @@ export default {
 
     // Commands. A command's execute is a context where generate.text returns (Gotcha 9),
     // so /retro settles the extraction debt before it looks for something to show.
+    /** A command that throws surfaces as an HTTP 500 the user never sees. Log it too. */
+    const command = (name, run) => async (invocation) => {
+      try {
+        await run(invocation)
+      } catch (err) {
+        onError(`command.${name}`, err)
+        await say(invocation.sessionID, `_opencode-retro: \`/${name}\` failed: ${err?.message ?? err}. See .retro/plugin.log._`)
+      }
+    }
+
     try {
       await ctx.command.transform((cmds) => {
         cmds.add({
           name: "retro",
           description: "Review what the last sessions should have taught this project",
-          execute: async ({ sessionID, prompt }) => {
+          execute: command("retro", ({ sessionID, prompt }) => {
             const text = String(prompt?.text ?? "").trim().toLowerCase()
             if (text.startsWith("check")) return runCheck(sessionID)
             if (text.startsWith("auto") || text.startsWith("all")) return runAuto(sessionID)
             return runReview(sessionID)
-          },
+          }),
         })
         cmds.add({
           name: "retro-auto",
           description: "Plan every waiting lesson at once, for approval in one go",
-          execute: async ({ sessionID }) => runAuto(sessionID),
+          execute: command("retro-auto", ({ sessionID }) => runAuto(sessionID)),
         })
         cmds.add({
           name: "retro-check",
           description: "Check that opencode-retro is actually working",
-          execute: async ({ sessionID }) => runCheck(sessionID),
+          execute: command("retro-check", ({ sessionID }) => runCheck(sessionID)),
         })
       })
     } catch (err) {
@@ -248,8 +258,14 @@ export default {
       }
     }
 
-    /** A hint for the agent's own check, not a verdict. */
-    const currencyOf = (lesson) => assessCurrency(lesson, { directory: config.directory, fingerprint })
+    /**
+     * A hint for the agent's own check, not a verdict.
+     * A declaration, not a `const`: everything in here sits after setup's `return`, and
+     * only declarations are hoisted. A `const` here is undefined when a command calls it.
+     */
+    function currencyOf(lesson) {
+      return assessCurrency(lesson, { directory: config.directory, fingerprint })
+    }
 
     async function runAuto(sessionID) {
       await settleDebt(sessionID)
