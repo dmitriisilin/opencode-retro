@@ -21,13 +21,13 @@ test("a healthy session reports ok, and a pending extraction says so", () => {
   assert.equal(status(checks, "extraction"), STATUS.SKIPPED)
 })
 
-test("a queued extraction says why it is queued and how to force it", () => {
+test("a queued log says what will analyse it, and that nothing happens unasked", () => {
   const checks = assess({ ...healthy, extraction: { queued: true } })
   const x = checks.find((c) => c.name === "extraction")
   assert.equal(x.status, STATUS.SKIPPED)
-  assert.match(x.detail, /next session/)
-  assert.match(x.meaning, /never returns when made from the event stream/)
-  assert.match(x.meaning, /\/retro/)
+  assert.match(x.detail, /`\/retro` analyses it/)
+  assert.match(x.meaning, /costs a model call, so it happens when you ask/)
+  assert.match(x.meaning, /autoExtract/, "and names the switch for the other behaviour")
 })
 
 test("a skipped extraction is not dressed up as a success", () => {

@@ -130,10 +130,10 @@ export function assess(session) {
     checks.push({
       status: SKIPPED,
       name: "extraction",
-      detail: "queued — runs at the start of your next session",
+      detail: "this session's log is queued; `/retro` analyses it",
       meaning:
-        "not a delay we chose: a model call never returns when made from the event stream, " +
-        "only from inside a hook. Run /retro to settle it now.",
+        "analysis is not automatic — it costs a model call, so it happens when you ask. " +
+        "`options.autoExtract` turns it on for the start of the next session.",
     })
   } else if (x.ok && x.skipped) {
     checks.push({ status: SKIPPED, name: "extraction", detail: x.detail })

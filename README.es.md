@@ -1,4 +1,4 @@
-<!-- translated-from: README.md@dad92981caec -->
+<!-- translated-from: README.md@f15c3087df9d -->
 # opencode-retro
 
 [English](README.md) | [Русский](README.ru.md) | [简体中文](README.zh-CN.md) | **Español** | [日本語](README.ja.md)
@@ -34,9 +34,13 @@ Cada llamada a herramienta y cada prompt se añaden a un log paralelo en `.retro
 
 ### Extracción
 
-Cuando una sesión termina, su log queda en cola para su análisis. La cola se procesa en el primer prompt de la sesión siguiente en ese espacio de trabajo, y `/retro` la procesa a petición.
+Cuando una sesión termina, su log se conserva y no ocurre nada más hasta que se pide. El análisis cuesta una llamada al modelo, y nada en este plugin la gasta sin que se lo pidan.
 
-El análisis se ejecuta fuera de cualquier sesión: una única llamada al modelo cuya entrada es ese log, sin agente, sin historial y sin herramientas. No toca el contexto de la sesión que lo dispara ni retrasa el primer prompt de esa sesión. El agente que hizo el trabajo queda excluido a propósito, porque defendería sus propias decisiones.
+`/retro` es el momento en que ocurre. Un solo comando comprime los logs acumulados, los convierte en lecciones y solo entonces busca algo que entregar. Un atraso largo se analiza de diez logs cada vez, para que un único comando no pueda facturar sin límite; lo que queda se informa, y otro `/retro` toma el siguiente lote.
+
+Cada log se analiza fuera de cualquier sesión: una única llamada al modelo cuya entrada es ese log, sin agente, sin historial y sin herramientas. El agente que hizo el trabajo queda excluido a propósito, porque defendería sus propias decisiones. Una sesión con menos de tres llamadas a herramientas se omite sin llamada alguna.
+
+`options.autoExtract` traslada el análisis al inicio de la sesión siguiente, para quien prefiera tener las lecciones listas antes de pedirlas.
 
 Por omisión el análisis usa el modelo con el que se ejecutan tus propias sesiones. `options.model` fija otro, y conviene hacerlo si ese modelo por omisión es uno de la capa gratuita de OpenCode: un plugin no puede llamarlos.
 
@@ -46,7 +50,7 @@ Esa llamada recibe una vista comprimida de la sesión: la salida de las herramie
 
 La respuesta es una lista de lecciones en `.retro/lessons/`.
 
-Una sesión cuesta como máximo una llamada, y una sesión con menos de tres llamadas a herramientas no cuesta ninguna: hay demasiado poco que leer en ella. Un proyecto que no se vuelve a abrir no se analiza nunca.
+Un log cuesta como máximo una llamada. Un proyecto en el que nunca se revisa no se analiza nunca.
 
 ### Qué guía la extracción
 

@@ -19,6 +19,13 @@ export const DEFAULTS = {
   extractTimeoutMs: 90_000,
   /** Lessons carried by one `/retro auto`. Beyond this a plan stops being a plan. */
   autoLimit: 10,
+  /** Logs analysed by one `/retro`, so a long backlog cannot bill in one go. */
+  extractLimit: 10,
+  /**
+   * Analyse a finished session at the start of the next one, without being asked. Off:
+   * a model call costs money, and nothing else in this plugin spends it unprompted.
+   */
+  autoExtract: false,
 }
 
 /**
@@ -48,6 +55,8 @@ export function resolveConfig(ctx) {
     keepSessions: options.keepSessions ?? DEFAULTS.keepSessions,
     extractTimeoutMs: options.extractTimeoutMs ?? DEFAULTS.extractTimeoutMs,
     autoLimit: options.autoLimit ?? DEFAULTS.autoLimit,
+    extractLimit: options.extractLimit ?? DEFAULTS.extractLimit,
+    autoExtract: options.autoExtract ?? DEFAULTS.autoExtract,
   }
 }
 

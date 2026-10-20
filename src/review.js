@@ -199,11 +199,15 @@ export function hintLines(lesson, currency) {
 
 export function renderNothing({ queued = 0, extracted = null } = {}) {
   const lines = ["# retro", "", "Nothing to review."]
-  if (extracted) lines.push("", `Just extracted from your last session: ${extracted}.`)
-  if (queued) lines.push("", `${queued} session${queued === 1 ? "" : "s"} still queued for extraction.`)
+  if (extracted?.analysed) {
+    lines.push("", `Analysed ${extracted.analysed} finished session${extracted.analysed === 1 ? "" : "s"} just now, with nothing to learn from ${extracted.analysed === 1 ? "it" : "them"}.`)
+  }
+  if (queued) {
+    lines.push("", `${queued} more log${queued === 1 ? "" : "s"} waiting. Run \`/retro\` again to analyse ${queued === 1 ? "it" : "them"}.`)
+  }
   lines.push(
     "",
-    "Either your sessions have been going straight, or there is nothing recorded yet.",
+    "Either the sessions have been going straight, or nothing is recorded yet.",
     "`.retro/selfcheck.md` says whether the plugin is actually watching.",
   )
   return lines.join("\n")

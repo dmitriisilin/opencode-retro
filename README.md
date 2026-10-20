@@ -31,9 +31,13 @@ Every tool call and every prompt is appended to a shadow log at `.retro/sessions
 
 ### Extraction
 
-When a session ends its log is queued for analysis. The queue is processed at the first prompt of the next session in that workspace, and `/retro` processes it on demand.
+When a session ends its log is kept, and nothing further happens until asked. Analysis costs a model call, and nothing in this plugin spends that unprompted.
 
-The analysis runs outside any session: a single model call with the log as its input, no agent, no history and no tools. It does not touch the session that triggers it, and it does not hold up that session's first prompt. The agent that did the work is deliberately excluded, since it would defend its own decisions.
+`/retro` is the moment it happens. One command compresses the logs that have accumulated, turns them into lessons, and only then looks for something to hand over. A long backlog is analysed up to ten logs at a time, so a single command cannot bill without limit; what is left over is reported, and another `/retro` takes the next batch.
+
+Each log is analysed outside any session: a single model call with the log as its input, no agent, no history and no tools. The agent that did the work is deliberately excluded, since it would defend its own decisions. A session with fewer than three tool calls is skipped without a call at all.
+
+`options.autoExtract` moves the analysis to the start of the next session instead, for anyone who would rather have lessons ready before asking.
 
 By default the analysis uses the model your own sessions run on. `options.model` pins a different one, which is worth doing if your default is one of OpenCode's free-tier models: a plugin may not call those.
 
@@ -43,7 +47,7 @@ That call receives a compressed view of the session. Tool output is trimmed; pro
 
 The answer is a list of lessons in `.retro/lessons/`.
 
-One session costs at most one call, and a session with fewer than three tool calls costs none: there is too little in it to read. A project that is never opened again is never analysed.
+One log costs at most one call. A project that is never reviewed is never analysed.
 
 ### What guides the extraction
 

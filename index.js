@@ -118,10 +118,10 @@ export default {
     await hook("session", "prompt", (p) => {
       ingest.prompt(p)
       beat()
-      // A hook callback is the one context where ctx.generate.text returns; from the event
-      // stream it hangs forever (AGENTS.md "Gotchas"). So the extraction owed by the last
-      // session is paid here, at the start of the next one, without blocking this prompt.
-      void drainQueue(p.sessionID)
+      // Analysis is what `/retro` does, not something a new session triggers: a model call
+      // costs money and nothing here spends it unprompted. `autoExtract` restores the old
+      // behaviour for anyone who wants lessons ready before they ask.
+      if (config.autoExtract) void drainQueue(p.sessionID)
     })
 
     // The model the user actually works with, so extraction can default to it instead of
@@ -282,11 +282,11 @@ export default {
     }
 
     async function runAuto(sessionID) {
-      await settleDebt(sessionID)
+      const extracted = await processQueue(sessionID)
 
       const open = pickOpen(store.list(), { sessions: state.sessions, halfLife: config.halfLife })
       writeSelfCheck()
-      if (!open.length) return say(sessionID, renderNothing({ queued: state.pending.length }))
+      if (!open.length) return say(sessionID, renderNothing({ queued: extracted.left, extracted }))
 
       const shown = open.slice(0, config.autoLimit)
       const currencies = new Map()
@@ -304,25 +304,35 @@ export default {
       )
     }
 
-    /** Both review modes pay the extraction debt first, so you review what just happened. */
-    async function settleDebt(sessionID) {
-      const owed = state.nextPending(sessionID)
-      if (!owed) return null
-      await runExtraction(owed.session)
-      return state.pending.some((p) => p.session === owed.session) ? null : "done"
+    /**
+     * Both review modes analyse what has accumulated before they propose anything: one
+     * `/retro` compresses the raw logs, turns them into lessons, and only then looks for
+     * something to hand over. Bounded, so a long backlog cannot bill in one command.
+     */
+    async function processQueue(sessionID) {
+      const done = []
+      while (done.length < config.extractLimit) {
+        const owed = state.nextPending(sessionID)
+        if (!owed) break
+        await runExtraction(owed.session)
+        if (state.pending.some((p) => p.session === owed.session)) break // gave up or failed
+        done.push(owed.session)
+      }
+      const left = state.pending.filter((p) => p.session !== sessionID).length
+      return { analysed: done.length, left }
     }
 
     async function runReview(sessionID) {
       // One invocation, one lesson: the top of the list. Deciding is the user's business,
       // in this session, with the agent that is already here.
-      const extracted = await settleDebt(sessionID)
+      const extracted = await processQueue(sessionID)
 
       const lessons = store.list()
       const lesson = pickLesson(lessons, { sessions: state.sessions, halfLife: config.halfLife })
       writeSelfCheck()
 
       if (!lesson) {
-        return say(sessionID, renderNothing({ queued: state.pending.length, extracted }))
+        return say(sessionID, renderNothing({ queued: extracted.left, extracted }))
       }
       const open = lessons.filter((l) => ["new", "later", undefined, null].includes(l.status)).length
       return say(

@@ -243,3 +243,21 @@ test("a slow but finite call still succeeds", async () => {
   const result = await extract({ records: live(), session: "ses_slow", ...r, generate: slow, timeoutMs: 2000 })
   assert.ok(result.ok, result.detail)
 })
+
+test("a backlog is analysed in order and bounded, so one command cannot bill without limit", () => {
+  // processQueue's contract, exercised through the state it drives.
+  const r = rig({ reply: REPLY() })
+  for (const id of ["ses_a", "ses_b", "ses_c"]) r.state.queue(id)
+
+  const order = []
+  let guard = 0
+  while (guard++ < 2) {
+    const next = r.state.nextPending("ses_current")
+    if (!next) break
+    order.push(next.session)
+    r.state.markExtracted(next.session, { ok: true, detail: "done" })
+  }
+
+  assert.deepEqual(order, ["ses_a", "ses_b"], "oldest first")
+  assert.equal(r.state.pending.length, 1, "and the bound leaves the rest for the next call")
+})

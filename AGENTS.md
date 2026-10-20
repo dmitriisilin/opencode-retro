@@ -16,7 +16,7 @@ Motivating example: a project carries a `lint` skill borrowed from another harne
 2. **v2 only.** No v1 compatibility layer.
 3. **Shadow log.** Plugin writes its own append-only log of every tool call and prompt to `.opencode/retro/sessions/<sessionID>.jsonl` in real time. No LLM, no batching. We do *not* depend on session history surviving compaction.
 4. **No detectors in front of the model.** There were three — `repeat`, `revert`, `skill-failure` — marking suspicious step ranges in the prompt. They are gone, and `fixtures/ab-anchors/` is why: given the same log, the model found the same lessons with them and without. What they encoded was never really detection, it was *guidance about what to look for*, and guidance belongs in `prompts/extract.md`, where the user can read it, disagree with it and change it — not in 196 lines of JavaScript that decide in advance what the model is allowed to notice. So the signals the detectors knew are now prose in that prompt: a call repeated with nothing changed between attempts, an edit undone, a skill followed into a dead end, a non-zero exit hiding behind a "completed" status, a task quietly dropped, a correction the user had to repeat. Stated as a place to start, explicitly not a checklist. The one mechanical thing left is a cost guard: fewer than three tool calls and the model is not called at all — which claims nothing about the session, only that there is too little in it to read.
-5. **Extraction runs in a clean context**, not the working agent (it would defend its own choices) — one `ctx.generate.text` call, no session, no history. Input: compressed projection of the shadow log (tool outputs trimmed to head/tail, prompts and assistant text in full) + existing lessons + rejected ids. Core question: *"If this session were run again, what should change so it goes shorter and straighter?"* **When** it runs is forced by the API, not chosen: see "Extraction has to run where a hook is running".
+5. **Extraction runs when asked, in a clean context**, not the working agent (it would defend its own choices) — one `ctx.generate.text` call, no session, no history. Input: compressed projection of the shadow log (tool outputs trimmed to head/tail, prompts and assistant text in full) + existing lessons + rejected ids. Core question: *"If this session were run again, what should change so it goes shorter and straighter?"* **When** it runs is a deliberate choice, not an API constraint: see "When the analysis runs".
 6. **No separate "incident" entity.** Log → lessons. Each lesson carries `evidence` (session id + step ranges).
 7. **Lesson ≠ proposal.** Extracting the lesson is mandatory; proposing where to apply it is optional. Targets `skill | instruction | tool | refactor | other` are prompt hints, not an enum the extractor must fit into. "Doesn't fit the ontology" is a normal outcome — the human decides.
 8. **Lessons are workspace-scoped and keyed by problem, not by session.** One file per lesson, `lessons/<id>.md`, scoped to `location.project.id`. Sessions appear only as evidence refs, and a second session hitting the same problem increments `recurrence` and appends evidence rather than creating a second file. Score = `cost × recurrence × confidence × freshness`, where freshness halves every `halfLife` sessions (default 10) since the problem was last seen — counted in **sessions, not days**, because at one session a day a wall-clock decay buries everything. Recurrence matters more than one expensive incident: a lesson that shows up in three sessions *will* show up in the fourth. Overflow past the cap (default 30) is archived, never deleted.
@@ -419,28 +419,34 @@ would leave `AGENTS.md` pointing at a skill that no longer exists, named the sib
 changed nothing, and put the decision to the human. That is the argument for stopping at
 the proposal rather than patching: the agent has the files and the human; we have neither.
 
-## Extraction has to run where a hook is running
+## When the analysis runs
 
-`ctx.generate.text` only settles when the call originates inside a hook callback
-(Gotcha 9). From the event stream — which is where a session *ends* — it hangs for good.
-So the trigger and the work cannot be the same moment:
+`ctx.generate.text` only settles when the call originates inside a hook callback or a
+command's `execute` (Gotcha 9). From the event stream — which is where a session *ends* —
+it hangs for good. So the trigger and the work cannot be the same moment.
 
-```
-session ends   →  session.execution.succeeded  →  queued in state.json
-next session   →  session.prompt hook          →  queue drained, one model call
-```
+**The work happens in `/retro`.** A finished session's log is kept and nothing more. One
+command then compresses what has accumulated, turns it into lessons, and only then looks
+for something to hand over. A command's `execute` is a working context, so the call is
+simply awaited: no fire-and-forget, no draining guard, no race.
 
-The drain is fire-and-forget, so the user's prompt is never held up. Three consequences
-worth stating plainly, because they are visible to the user:
+The reason is not the API, it is the bill. A model call costs money, and nothing else in
+this plugin spends the user's money without being asked. Lessons sitting unextracted and
+lessons sitting unreviewed are the same thing from the user's side, since nothing is applied
+automatically either way — so there is no value in paying earlier.
 
-- **Lessons land one session late.** A session that is never followed by another in that
-  project never gets extracted, and costs nothing. `/retro` drains the queue on demand,
-  because a command is also a working context.
-- **Extraction outlives the session that triggered it.** A 20 KB projection takes longer
-  than a one-word session, so `selfcheck.md` can read `queued` for a few seconds after a
-  short session and then be rewritten. Measured, not theoretical.
-- **It is attempted at most three times.** A transient model failure deserves another go on
-  the next prompt; a third would just keep paying for the same answer.
+- **Bounded.** Up to `extractLimit` logs (default 10) per command, with the remainder
+  reported. A month of unreviewed sessions cannot bill in one keystroke.
+- **Cheap when there is nothing to read.** A session with fewer than three tool calls is
+  skipped without a model call.
+- **`autoExtract` restores the old behaviour** — analysis at the first prompt of the next
+  session — for anyone who wants lessons ready before asking. It was the default until the
+  owner pointed out that it spends money on a schedule the user did not choose.
+
+Two claims about the old default turned out to be false, and are worth keeping straight
+because they sound plausible: the fire-and-forget drain did **not** block the user's prompt
+(the hook returned immediately, nothing awaited it), and it did **not** touch the session's
+context (`generate.text` takes no `sessionID` and cannot). What was true was the cost.
 
 Rejected: awaiting the call inside a hook OpenCode awaits. That deadlocks the session —
 the server waits for the hook, the hook waits for the server.
