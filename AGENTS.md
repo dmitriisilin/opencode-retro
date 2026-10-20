@@ -218,7 +218,14 @@ plugin needed — and it gets the `sessionID`, so it can drive the review conver
    `resume: true` the message sits there until the user happens to type something, so they
    never see what they asked for. With it, the session resumes, the agent receives the text
    and answers — which for `/retro` is the point.
-13. **Nothing tells the user a plugin failed to load.** A bad path, a throwing `setup`, a
+13. **A command that throws is invisible.** It surfaces as an HTTP 500 to whoever called it
+   and nowhere else — not in `plugin.log`, not in the session. `/retro` shipped broken this
+   way for one commit ("currencyOf is not defined") while 118 unit tests passed, because
+   none of them ran a command. Command bodies are now wrapped: the failure reaches
+   `plugin.log` and the session. The lesson for this repo is narrower than "write tests":
+   unit tests over exported functions cannot see a plugin that registers and dies, so
+   `test/plugin.test.js` drives the real entry point against a fake OpenCode.
+14. **Nothing tells the user a plugin failed to load.** A bad path, a throwing `setup`, a
    module that does not import — the session just runs without us. Hence "if `selfcheck.md`
    is older than your last session, the plugin is not running".
 
@@ -612,7 +619,14 @@ understood is just a diagnostic that was written badly.
 **M4 — first public release** (`v0.1.0` tag → CI publishes).
 - [x] README rewritten against what was built: install, the real layout, the self-check,
       and a roadmap that says what is missing.
+- [x] Release path verified on a package install, not just an absolute path: OpenCode fetches
+      the package into its own cache (`~/.cache/opencode/npm/<name>@latest`), ignoring the
+      project's `node_modules`, so swapping that copy for a real tarball is the honest test.
+      A `.tgz` path in `package` is not a supported spec and hangs startup.
 - [ ] Decide whether promotion to global scope (decision 10) blocks `v0.1.0`.
+- [ ] `npm version 0.1.0` bumps `package.json`; `VERSION` in `index.js` must move with it
+      (a test enforces this, so a forgotten bump fails the suite rather than shipping a
+      self-check that misreports its own version).
 
 ## Dev environment
 
