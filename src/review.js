@@ -229,7 +229,22 @@ export const DECIDE_INPUT = {
 
 export function decide({ id, status, note }, { store, state }) {
   const lesson = store.list().find((l) => l.id === id)
-  if (!lesson) return { ok: false, detail: `no lesson \`${id}\`` }
+
+  if (!lesson) {
+    // Idempotent on purpose. A decided lesson has moved to the archive, and a second call
+    // used to answer "no lesson", which reads as a failure: in a live session that sent the
+    // agent hunting the filesystem for a tool it already had, and calling it twice more.
+    const closed = store.listArchive().find((l) => l.id === id)
+    if (closed) {
+      return { ok: true, already: true, detail: `\`${id}\` was already recorded as ${closed.status}` }
+    }
+    return {
+      ok: false,
+      detail: `no lesson \`${id}\` is open or archived. Open lessons: ${
+        store.list().map((l) => l.id).join(", ") || "none"
+      }`,
+    }
+  }
 
   // A rejection has to outlive the lesson file, or the extractor proposes it again.
   if (status === "rejected") state.reject(id, note)

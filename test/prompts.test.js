@@ -139,6 +139,11 @@ test("the review prompts ask the currency question without prescribing how", () 
     assert.match(text, /already resolved in this workspace/, `${name} must put the question`)
     assert.match(text, /however you normally would/, `${name} must leave the method open`)
     assert.match(text, /retro_decide/, `${name} must say how to record the outcome`)
+    assert.match(
+      text,
+      /already available in\s+this session|already available in this session/,
+      `${name} must say the tool is present, or the agent goes looking for it`,
+    )
     assert.doesNotMatch(text, /git log/, `${name} must not prescribe a command`)
   }
   assert.match(s.prompts.resolve("review").text, /Change nothing until they have decided/)

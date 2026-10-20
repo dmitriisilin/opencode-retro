@@ -172,8 +172,11 @@ export default {
         tools.add({
           name: "retro_decide",
           description:
-            "Record the human's decision on a retro lesson. Call this once they have decided, " +
-            "after any change has been made. It only records — it never edits the harness itself.",
+            "Record the human's decision on a retro lesson. This tool is already available " +
+            "in this session — there is nothing to install, locate or configure. Call it once " +
+            "the human has decided and any change has been made. It only records the outcome; " +
+            "it never edits the harness itself. Calling it twice for the same lesson is safe " +
+            "and reports that the decision was already recorded.",
           input: DECIDE_INPUT,
           execute: async (input) => {
             const result = decide(input, { store, state })

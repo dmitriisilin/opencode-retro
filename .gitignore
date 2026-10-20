@@ -2,3 +2,11 @@ node_modules/
 dist/
 *.tgz
 .DS_Store
+
+# The plugin runs on this repository too. Lessons and the archive are project
+# knowledge and belong in git; the rest is machine state.
+.retro/sessions/
+.retro/prompts/
+.retro/selfcheck.md
+.retro/state.json
+.retro/plugin.log

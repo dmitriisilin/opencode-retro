@@ -188,3 +188,28 @@ test("closed lessons never reach the batch", () => {
   assert.match(text, /`open`/)
   assert.doesNotMatch(text, /`done`/)
 })
+
+test("deciding twice is safe and says so, instead of reading as a failure", () => {
+  const r = rig()
+  r.store.record([{ ...lesson(), steps: [9, 18], matches: null, why: "b" }], { session: "ses_a" })
+
+  const first = decide({ id: "lint-skill-no-config", status: "accepted" }, r)
+  assert.ok(first.ok)
+
+  // A live session failed here: the second call answered "no lesson", the agent read that
+  // as broken and went looking through the filesystem for a tool it already had.
+  const again = decide({ id: "lint-skill-no-config", status: "accepted" }, r)
+  assert.ok(again.ok, "a repeat call must not look like a failure")
+  assert.ok(again.already)
+  assert.match(again.detail, /already recorded as accepted/)
+})
+
+test("an unknown id says what is actually open", () => {
+  const r = rig()
+  r.store.record([{ ...lesson(), steps: [9, 18], matches: null, why: "b" }], { session: "ses_a" })
+
+  const got = decide({ id: "typo-in-the-id", status: "accepted" }, r)
+  assert.equal(got.ok, false)
+  assert.match(got.detail, /no lesson `typo-in-the-id` is open or archived/)
+  assert.match(got.detail, /lint-skill-no-config/, "and names what it could have meant")
+})

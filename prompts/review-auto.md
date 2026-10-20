@@ -1,6 +1,6 @@
 ---
 prompt: review-auto
-base: 2
+base: 3
 ---
 
 Every lesson this project has waiting is listed below, highest score first. The human wants
@@ -30,5 +30,6 @@ Keep the plan short enough to read in one go. If two lessons disagree with each 
 so rather than picking one quietly.
 
 **Change nothing until the human approves the plan.** Once they do, work through it and
-record each lesson with `retro_decide` as you go, so an interrupted run does not lose what
-was already settled.
+record each lesson with the `retro_decide` tool as you go, so an interrupted run does not
+lose what was already settled. The tool is already available in this session — nothing to
+install or look for — and recording the same decision twice is harmless.

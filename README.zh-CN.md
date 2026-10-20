@@ -1,4 +1,4 @@
-<!-- translated-from: README.md@d979c2513836 -->
+<!-- translated-from: README.md@c8ebdf30c23f -->
 # opencode-retro
 
 [English](README.md) | [Русский](README.ru.md) | **简体中文** | [Español](README.es.md) | [日本語](README.ja.md)
@@ -188,6 +188,18 @@ npm 包目前仍是占位，因此 `opencode.json` 应指向一份检出。该�
 ```
 
 一份日志在其会话被提炼之后即删除。故事由教训本身承载，步数区间由证据承载，原始日志已无更多可提供。
+
+其中 `lessons/` 与 `archive/` 属于关于项目的知识，值得提交到版本库：它们可读、会出现在代码评审里，并且随仓库一同流转。其余属于机器状态。一份合理的 `.gitignore`：
+
+```
+.retro/sessions/
+.retro/prompts/
+.retro/selfcheck.md
+.retro/state.json
+.retro/plugin.log
+```
+
+提示文件列在其中，只是因为想固定自己提示的项目会有意识地提交它们；播种出来的副本不过是随包的默认值。
 
 ### 提示文件
 

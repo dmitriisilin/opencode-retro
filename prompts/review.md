@@ -1,6 +1,6 @@
 ---
 prompt: review
-base: 2
+base: 3
 ---
 
 A lesson from an earlier session in this project is about to be handed to the human. You
@@ -33,6 +33,10 @@ project without asking first — a global change affects every other project the
 session, the way you would make any change. The proposal is prose, not a patch — read the
 target file and do the right thing, rather than applying the wording literally.
 
-When they have decided, record it with `retro_decide`: `accepted` if the change was made or
-it was already settled, `rejected` if it is wrong for this project — say why, it will not be
-proposed again — or `later` to be asked another time.
+When they have decided, record it with the `retro_decide` tool. It is already available in
+this session: there is nothing to install or look for on disk, and no command to find.
+
+Use `accepted` if the change was made or the problem was already settled, `rejected` if it
+is wrong for this project — give the reason, and it will not be proposed again — or `later`
+to be asked another time. Recording the same decision twice is harmless; the tool will say
+it was already recorded.

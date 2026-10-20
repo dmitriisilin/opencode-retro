@@ -1,4 +1,4 @@
-<!-- translated-from: README.md@d979c2513836 -->
+<!-- translated-from: README.md@c8ebdf30c23f -->
 # opencode-retro
 
 [English](README.md) | [Русский](README.ru.md) | [简体中文](README.zh-CN.md) | [Español](README.es.md) | **日本語**
@@ -188,6 +188,18 @@ npm パッケージは現時点ではプレースホルダーのため、`openco
 ```
 
 ログはそのセッションが抽出された時点で削除されます。物語は教訓そのものが、ステップの範囲は証拠が担っているため、生のログに残る役目はありません。
+
+このうち `lessons/` と `archive/` はプロジェクトについての知識であり、バージョン管理に含める価値があります。読める形式であり、レビューに現れ、リポジトリとともに移動します。残りは機械的な状態です。妥当な `.gitignore` は次のとおりです。
+
+```
+.retro/sessions/
+.retro/prompts/
+.retro/selfcheck.md
+.retro/state.json
+.retro/plugin.log
+```
+
+プロンプトがここに挙がっているのは、独自のものを固定したいプロジェクトが意図してコミットするからにすぎません。種をまかれた複製は、同梱の既定値そのものです。
 
 ### プロンプト
 

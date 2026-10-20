@@ -1,4 +1,4 @@
-<!-- translated-from: README.md@d979c2513836 -->
+<!-- translated-from: README.md@c8ebdf30c23f -->
 # opencode-retro
 
 [English](README.md) | [Русский](README.ru.md) | [简体中文](README.zh-CN.md) | **Español** | [日本語](README.ja.md)
@@ -189,6 +189,18 @@ Todo lo que el plugin escribe se queda bajo `.retro/` dentro del proyecto, y en 
 ```
 
 Un log se borra en cuanto su sesión ha sido extraída. La historia la lleva la propia lección y el rango de pasos lo lleva la evidencia, así que el log en bruto ya no aporta nada.
+
+De todo esto, `lessons/` y `archive/` son conocimiento sobre el proyecto y conviene versionarlos: se leen, aparecen en la revisión y viajan con el repositorio. El resto es estado de máquina. Un `.gitignore` razonable:
+
+```
+.retro/sessions/
+.retro/prompts/
+.retro/selfcheck.md
+.retro/state.json
+.retro/plugin.log
+```
+
+Los prompts figuran ahí solo porque un proyecto que quiera fijar los suyos los versionaría de forma deliberada; las copias sembradas no son más que los valores por omisión del paquete.
 
 ### Prompts
 

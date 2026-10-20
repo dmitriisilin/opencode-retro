@@ -186,6 +186,18 @@ Everything the plugin writes stays under `.retro/` in the project, and nowhere e
 
 A log is deleted once its session has been extracted. The lesson carries the story and the evidence carries the step range, so the raw log has nothing further to give.
 
+Of this, `lessons/` and `archive/` are knowledge about the project and are worth committing: they are readable, they show up in review, and they travel with the repository. The rest is machine state. A reasonable `.gitignore`:
+
+```
+.retro/sessions/
+.retro/prompts/
+.retro/selfcheck.md
+.retro/state.json
+.retro/plugin.log
+```
+
+Prompts are listed there only because a project that wants to pin its own would commit them deliberately; the seeded copies are just the packaged defaults.
+
 ### Prompts
 
 Three prompts shape what the plugin does, and all three are files in the project: what counts as a lesson, how a lesson is handed over, and how a batch of lessons becomes one plan.
