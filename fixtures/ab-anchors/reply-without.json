@@ -1,0 +1,40 @@
+{
+  "ok": true,
+  "lessons": [
+    {
+      "id": "lint-skill-no-eslint",
+      "statement": "The `lint` skill tells the agent to run `npx eslint . --fix`, but this repository has no ESLint config or dependency, so following the skill is a guaranteed dead end and its 'fix the config' fallback invites out-of-scope work.",
+      "steps": [
+        9,
+        23
+      ],
+      "cost": 5,
+      "confidence": 0.95,
+      "matches": null,
+      "proposal": {
+        "target": ".opencode/skills/lint/SKILL.md",
+        "change": "Remove the skill (or rewrite it to run the existing `npm test` command) until an ESLint config and dependency are added."
+      },
+      "ask": "Should this project get a real ESLint setup, or should the lint skill be deleted?",
+      "why": "The skill loaded at [9], before any source edit, with instructions to run `npx eslint . --fix`. At [18] that command failed because no `eslint.config.*` exists. The agent then spent [20]–[23] re-checking the commit and re-reading the skill file, and at [30] reported the lint convention as unsatisfiable. package.json at [6] shows only a `test` script and no ESLint dependency."
+    },
+    {
+      "id": "agents-md-missing-build-script",
+      "statement": "AGENTS.md requires `npm run build`, but package.json defines only a `test` script, so the mandated build check always fails and contributes nothing to verifying the change.",
+      "steps": [
+        17,
+        17
+      ],
+      "cost": 1,
+      "confidence": 0.85,
+      "matches": null,
+      "proposal": {
+        "target": "AGENTS.md",
+        "change": "Remove the `npm run build` convention or replace it with the real check (`npm test` / `node --test test/`)."
+      },
+      "ask": "Is a build step intended for this package, or should AGENTS.md drop it?",
+      "why": "At [17] `npm run build` exited 1 with 'Missing script: build'. The package.json read at [6] defines only `test`. The agent had to mention the missing build pipeline in its final answer at [30]."
+    }
+  ],
+  "raw": "```json\n{\n  \"lessons\": [\n    {\n      \"id\": \"lint-skill-no-eslint\",\n      \"statement\": \"The `lint` skill tells the agent to run `npx eslint . --fix`, but this repository has no ESLint config or dependency, so following the skill is a guaranteed dead end and its 'fix the config' fallback invites out-of-scope work.\",\n      \"steps\": [9, 23],\n      \"cost\": 5,\n      \"confidence\": 0.95,\n      \"matches\": null,\n      \"proposal\": {\n        \"target\": \".opencode/skills/lint/SKILL.md\",\n        \"change\": \"Remove the skill (or rewrite it to run the existing `npm test` command) until an ESLint config and dependency are added.\"\n      },\n      \"ask\": \"Should this project get a real ESLint setup, or should the lint skill be deleted?\",\n      \"why\": \"The skill loaded at [9], before any source edit, with instructions to run `npx eslint . --fix`. At [18] that command failed because no `eslint.config.*` exists. The agent then spent [20]–[23] re-checking the commit and re-reading the skill file, and at [30] reported the lint convention as unsatisfiable. package.json at [6] shows only a `test` script and no ESLint dependency.\"\n    },\n    {\n      \"id\": \"agents-md-missing-build-script\",\n      \"statement\": \"AGENTS.md requires `npm run build`, but package.json defines only a `test` script, so the mandated build check always fails and contributes nothing to verifying the change.\",\n      \"steps\": [17, 17],\n      \"cost\": 1,\n      \"confidence\": 0.85,\n      \"matches\": null,\n      \"proposal\": {\n        \"target\": \"AGENTS.md\",\n        \"change\": \"Remove the `npm run build` convention or replace it with the real check (`npm test` / `node --test test/`).\"\n      },\n      \"ask\": \"Is a build step intended for this package, or should AGENTS.md drop it?\",\n      \"why\": \"At [17] `npm run build` exited 1 with 'Missing script: build'. The package.json read at [6] defines only `test`. The agent had to mention the missing build pipeline in its final answer at [30].\"\n    }\n  ]\n}\n```"
+}

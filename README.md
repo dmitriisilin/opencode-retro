@@ -32,9 +32,9 @@ independent of session compaction — the raw trajectory is always available. On
 has been extracted its log is deleted: the lesson carries the story, and a log per session
 forever is a hoard.
 
-Cheap deterministic **anchor detectors** mark suspicious windows in the trajectory. An
-anchor earns its place only where it is cheaper and more reliable than a model — exit codes,
-patches, repeated arguments:
+Cheap deterministic **anchor detectors** mark windows in the trajectory and attach a precise
+reason to them. They involve no model and read no prose — only exit codes, patches and
+repeated arguments:
 
 | Anchor | Signal |
 |---|---|
@@ -56,6 +56,12 @@ OpenCode has no todo or plan entity, so an abandoned task exists only as a sente
 correction is a sentence too. The projection hands the extractor every prompt and every
 assistant message **in full** — only tool output is trimmed — so both are already in front of
 it. A keyword detector would be a guess wearing a detector's clothes.
+
+Anchors are not what finds a lesson, and we measured that rather than assuming it
+(`fixtures/ab-anchors/`): given the same log, the model found the same two lessons with the
+anchor section and without it. What the anchor changed was the evidence range and the step
+cost — which feed the score, and so decide what you are shown first. They also let a short
+session skip the model call entirely.
 
 The output is a list of **lessons** in `.retro/lessons/`.
 

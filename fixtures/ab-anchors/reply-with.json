@@ -1,0 +1,40 @@
+{
+  "ok": true,
+  "lessons": [
+    {
+      "id": "lint-skill-requires-missing-eslint",
+      "statement": "The `lint` skill prescribes `npx eslint . --fix`, but this repo has no ESLint config or dependency, so the skill dead-ends on a config error instead of verifying the change.",
+      "steps": [
+        9,
+        18
+      ],
+      "cost": 10,
+      "confidence": 0.95,
+      "matches": null,
+      "proposal": {
+        "target": ".opencode/skills/lint/SKILL.md",
+        "change": "Remove this skill, or add the ESLint config/dependency before instructing agents to run it; do not ship a lint skill whose prescribed command cannot run in this repository."
+      },
+      "ask": "Should this project have ESLint, or should the lint skill be dropped?",
+      "why": "At step 9 the skill content is loaded and says to run ESLint. At step 18 `npx eslint . --fix` exits 2 because no `eslint.config.*` exists; the final response then has to call out the lint convention as impossible. The mismatch is in the skill file, not the median implementation."
+    },
+    {
+      "id": "agents-md-requires-missing-build-script",
+      "statement": "AGENTS.md requires `npm run build`, but package.json defines no `build` script, so the required verification command fails immediately.",
+      "steps": [
+        17,
+        17
+      ],
+      "cost": 1,
+      "confidence": 0.9,
+      "matches": null,
+      "proposal": {
+        "target": "AGENTS.md",
+        "change": "Remove or correct the `npm run build` requirement so it matches package.json, or add a real `build` script if this project is supposed to have one."
+      },
+      "ask": "Should this repo have a build step, or is AGENTS.md stale?",
+      "why": "At step 17 the agent runs `npm run build`; npm exits 1 with `Missing script: \"build\"`. The final assistant message explicitly lists this as a project convention that could not be satisfied."
+    }
+  ],
+  "raw": "```json\n{\n  \"lessons\": [\n    {\n      \"id\": \"lint-skill-requires-missing-eslint\",\n      \"statement\": \"The `lint` skill prescribes `npx eslint . --fix`, but this repo has no ESLint config or dependency, so the skill dead-ends on a config error instead of verifying the change.\",\n      \"steps\": [9, 18],\n      \"cost\": 10,\n      \"confidence\": 0.95,\n      \"matches\": null,\n      \"proposal\": {\n        \"target\": \".opencode/skills/lint/SKILL.md\",\n        \"change\": \"Remove this skill, or add the ESLint config/dependency before instructing agents to run it; do not ship a lint skill whose prescribed command cannot run in this repository.\"\n      },\n      \"ask\": \"Should this project have ESLint, or should the lint skill be dropped?\",\n      \"why\": \"At step 9 the skill content is loaded and says to run ESLint. At step 18 `npx eslint . --fix` exits 2 because no `eslint.config.*` exists; the final response then has to call out the lint convention as impossible. The mismatch is in the skill file, not the median implementation.\"\n    },\n    {\n      \"id\": \"agents-md-requires-missing-build-script\",\n      \"statement\": \"AGENTS.md requires `npm run build`, but package.json defines no `build` script, so the required verification command fails immediately.\",\n      \"steps\": [17, 17],\n      \"cost\": 1,\n      \"confidence\": 0.9,\n      \"matches\": null,\n      \"proposal\": {\n        \"target\": \"AGENTS.md\",\n        \"change\": \"Remove or correct the `npm run build` requirement so it matches package.json, or add a real `build` script if this project is supposed to have one.\"\n      },\n      \"ask\": \"Should this repo have a build step, or is AGENTS.md stale?\",\n      \"why\": \"At step 17 the agent runs `npm run build`; npm exits 1 with `Missing script: \\\"build\\\"`. The final assistant message explicitly lists this as a project convention that could not be satisfied.\"\n    }\n  ]\n}\n```"
+}

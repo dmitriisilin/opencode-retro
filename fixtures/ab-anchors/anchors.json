@@ -1,0 +1,10 @@
+[
+  {
+    "kind": "skill-failure",
+    "from": 9,
+    "to": 18,
+    "skill": "lint",
+    "target": "/home/di735/retro-playground/.opencode/skills/lint",
+    "reason": "skill `lint` prescribes `npx eslint . --fix`, which failed at step 18 with exit 2"
+  }
+]

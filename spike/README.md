@@ -58,3 +58,10 @@ Load it the same way as the probe, one at a time, and remember that **the plugin
 the server process** — `RETRO_PROBE_DIR` has to be in the environment of the service, not
 of `opencode run`. With the background service, that means restarting it with the variable
 set; this cost me three confused test runs.
+
+## `anchors/`
+
+An A/B of one design claim: does the `## Anchors` section change what the extractor finds?
+Registers `/ab`, runs the real extraction prompt over `fixtures/sessions/lint-trap-live.jsonl`
+twice — with the section and without — and writes both replies. Result and reading:
+`fixtures/ab-anchors/`.
