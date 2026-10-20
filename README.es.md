@@ -1,4 +1,4 @@
-<!-- translated-from: README.md@f15c3087df9d -->
+<!-- translated-from: README.md@6dcc81c25079 -->
 # opencode-retro
 
 [English](README.md) | [Русский](README.ru.md) | [简体中文](README.zh-CN.md) | **Español** | [日本語](README.ja.md)
@@ -38,11 +38,11 @@ Cuando una sesión termina, su log se conserva y no ocurre nada más hasta que s
 
 `/retro` es el momento en que ocurre. Un solo comando comprime los logs acumulados, los convierte en lecciones y solo entonces busca algo que entregar. Un atraso largo se analiza de diez logs cada vez, para que un único comando no pueda facturar sin límite; lo que queda se informa, y otro `/retro` toma el siguiente lote.
 
-Cada log se analiza fuera de cualquier sesión: una única llamada al modelo cuya entrada es ese log, sin agente, sin historial y sin herramientas. El agente que hizo el trabajo queda excluido a propósito, porque defendería sus propias decisiones. Una sesión con menos de tres llamadas a herramientas se omite sin llamada alguna.
+Cada log se analiza en una sesión propia, creada para esa única llamada y eliminada después: entra el log, no intervienen agente, historial ni herramientas, y sale texto. El agente que hizo el trabajo queda excluido a propósito, porque defendería sus propias decisiones. Una sesión con menos de tres llamadas a herramientas se omite sin llamada alguna.
 
 `options.autoExtract` traslada el análisis al inicio de la sesión siguiente, para quien prefiera tener las lecciones listas antes de pedirlas.
 
-Por omisión el análisis usa el modelo con el que se ejecutan tus propias sesiones. `options.model` fija otro, y conviene hacerlo si ese modelo por omisión es uno de la capa gratuita de OpenCode: un plugin no puede llamarlos.
+Por omisión el análisis usa el modelo con el que se ejecutan tus propias sesiones y, si todavía no lo ha visto, el modelo por omisión del espacio de trabajo. Esto funciona también con los modelos de la capa gratuita de OpenCode, así que no hace falta configurar nada. `options.model` fija otro, lo que conviene si el análisis debe ejecutarse en algo más barato que el trabajo.
 
 Esa llamada recibe una vista comprimida de la sesión: la salida de las herramientas se recorta y los prompts y las respuestas se conservan completos. Responde a una sola pregunta:
 
@@ -173,7 +173,7 @@ El paquete de npm es por ahora un marcador de nombre, así que `opencode.json` d
 }
 ```
 
-`options.model` es opcional. Sin él, el plugin usa el modelo con el que se ejecutan tus sesiones y, si todavía no lo ha visto, recurre al modelo por omisión del espacio de trabajo. Fíjalo explícitamente si ese modelo pertenece a la capa gratuita de OpenCode, porque un plugin no puede llamarlos; `/retro check` informa de qué modelo se usó y de dónde salió.
+`options.model` es opcional. Sin él, el plugin usa el modelo con el que se ejecutan tus sesiones y, si todavía no lo ha visto, recurre al modelo por omisión del espacio de trabajo. `/retro check` informa de qué modelo se usó y de dónde salió.
 
 Todo lo demás es opcional: `dir` para el directorio, por omisión `.retro`; `prompts` para el directorio de prompts; `halfLife` en sesiones, por omisión diez; `autoLimit`, el número de lecciones en un `/retro auto`, por omisión diez; `maxOutput`, `extractTimeoutMs`, `keepSessions`.
 
@@ -231,7 +231,7 @@ Por eso `.retro/selfcheck.md` informa de que está vivo, no de que está instala
 ## Requisitos
 
 - OpenCode v2, `@opencode/plugin` 2.0 o posterior. Verificado contra 2.0.32.
-- Un modelo que un plugin pueda llamar. Por omisión se usa el de tus propias sesiones; uno económico es suficiente.
+- Nada más allá de OpenCode. El análisis usa por omisión tu propio modelo; uno económico es suficiente.
 - Ninguna dependencia en tiempo de ejecución.
 
 ## Licencia

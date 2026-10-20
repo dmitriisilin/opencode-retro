@@ -261,3 +261,10 @@ test("a backlog is analysed in order and bounded, so one command cannot bill wit
   assert.deepEqual(order, ["ses_a", "ses_b"], "oldest first")
   assert.equal(r.state.pending.length, 1, "and the bound leaves the rest for the next call")
 })
+
+test("the per-command log limit is unlimited by default and can be capped", async () => {
+  const { DEFAULTS, resolveConfig } = await import("../src/config.js")
+  assert.equal(DEFAULTS.extractLimit, Infinity, "a half-analysed backlog only moves the work")
+  assert.equal(resolveConfig({ options: {} }).extractLimit, Infinity)
+  assert.equal(resolveConfig({ options: { extractLimit: 3 } }).extractLimit, 3, "but it is a knob")
+})

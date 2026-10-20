@@ -19,6 +19,9 @@ function fakeOpenCode({ options = {}, directory } = {}) {
   const hooks = new Map()
   const synthetic = []
   const generated = []
+  const live = new Set()
+  const sessions = []
+  let created = 0
 
   const ctx = {
     app: { version: "2.0.32" },
@@ -28,34 +31,33 @@ function fakeOpenCode({ options = {}, directory } = {}) {
       hook: async (name, fn) => (hooks.set(`tool.${name}`, fn), { dispose: async () => {} }),
       transform: async (fn) => fn({ add: (t) => tools.set(t.name, t) }),
     },
+    // Analysis runs through a session of our own, because generate.text refuses OpenCode's
+    // free-tier models. The fake tracks the lifecycle so a leaked session shows up here.
     session: {
       hook: async (name, fn) => (hooks.set(`session.${name}`, fn), { dispose: async () => {} }),
       synthetic: async (input) => synthetic.push(input),
+      create: async (input) => {
+        const session = { id: `ses_analysis_${++created}`, ...input }
+        sessions.push(input)
+        live.add(session.id)
+        return session
+      },
+      generate: async (input) => {
+        generated.push(input)
+        return { text: REPLY }
+      },
+      remove: async ({ sessionID }) => void live.delete(sessionID),
     },
     command: { transform: async (fn) => fn({ add: (c) => commands.set(c.name, c) }) },
     event: { subscribe: () => ({ [Symbol.asyncIterator]: () => ({ next: () => new Promise(() => {}) }) }) },
+    model: { default: async () => ({ data: { providerID: "fake", modelID: "fake-model" } }) },
     generate: {
-      text: async (input) => {
-        generated.push(input)
-        return {
-          text: JSON.stringify({
-            lessons: [
-              {
-                id: "lint-skill-no-config",
-                statement: "The lint skill prescribes eslint, which this project cannot run.",
-                steps: [9, 18],
-                cost: 9,
-                confidence: 0.9,
-                proposal: { target: "AGENTS.md", change: "Make it conditional." },
-                why: "step 9 then 18",
-              },
-            ],
-          }),
-        }
+      text: async () => {
+        throw new Error("generate.text must not be used: it refuses OpenCode's free tier")
       },
     },
   }
-  return { ctx, commands, tools, hooks, synthetic, generated }
+  return { ctx, commands, tools, hooks, synthetic, generated, live, sessions }
 }
 
 const sandbox = () => {
@@ -65,6 +67,20 @@ const sandbox = () => {
 }
 
 const MODEL = { providerID: "deepseek", id: "deepseek-flash" }
+
+const REPLY = JSON.stringify({
+  lessons: [
+    {
+      id: "lint-skill-no-config",
+      statement: "The lint skill prescribes eslint, which this project cannot run.",
+      steps: [9, 18],
+      cost: 9,
+      confidence: 0.9,
+      proposal: { target: "AGENTS.md", change: "Make it conditional." },
+      why: "step 9 then 18",
+    },
+  ],
+})
 
 test("setup registers the commands and the decision tool, and seeds the prompts", async () => {
   const directory = sandbox()
@@ -130,12 +146,55 @@ test("a prompt, a tool call and a session end produce a lesson, then /retro hand
 
   assert.equal(fresh.generated.length, 1, "extraction ran")
   assert.match(fresh.generated[0].prompt, /shorter and straighter/, "through the seeded prompt")
-  assert.deepEqual(fresh.generated[0].model, MODEL)
+
+  // The model is chosen when the analysis session is created, not per call: session.generate
+  // takes no model. And the session must not be left behind in the user's list.
+  assert.equal(fresh.sessions.length, 1)
+  assert.deepEqual(fresh.sessions[0].model, MODEL)
+  assert.equal(fresh.live.size, 0, "the analysis session was removed afterwards")
 
   const [delivered] = fresh.synthetic
   assert.match(delivered.text, /# retro — `lint-skill-no-config`/)
   assert.match(delivered.text, /how to hand this over/, "the lead-in comes from the prompt file")
   assert.equal(delivered.resume, true, "or the user never sees it")
+
+  await cleanup?.()
+  await cleanup2?.()
+})
+
+test("with no model configured, the workspace default is used", async () => {
+  // This is the bug a live run caught and every other test missed: the resolution chain
+  // existed but was not wired into extraction, and both the unit tests (which pass a model
+  // explicitly) and this file (which configured one) were blind to it.
+  const directory = sandbox()
+  const session = "ses_nomodel"
+  const fake = fakeOpenCode({ directory, options: {} })
+  const cleanup = await plugin.setup(fake.ctx)
+
+  await fake.hooks.get("session.prompt")({ sessionID: session, messageID: "m1", prompt: { text: "do a thing" } })
+  for (const id of ["c1", "c2", "c3"]) {
+    await fake.hooks.get("tool.execute.before")({ sessionID: session, id, tool: "shell", input: { command: "x" } })
+    await fake.hooks.get("tool.execute.after")({
+      sessionID: session,
+      id,
+      tool: "shell",
+      input: { command: "x" },
+      status: "completed",
+      result: { output: { exit: 1, output: "no" }, metadata: { exit: 1 } },
+    })
+  }
+  writeFileSync(
+    join(directory, ".retro", "state.json"),
+    JSON.stringify({ version: 1, rejected: [], extracted: {}, sessions: 1, pending: [{ session, queuedAt: "now", attempts: 0 }] }),
+  )
+
+  const fresh = fakeOpenCode({ directory, options: {} })
+  const cleanup2 = await plugin.setup(fresh.ctx)
+  await fresh.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
+
+  assert.equal(fresh.generated.length, 1, "the analysis ran without options.model")
+  assert.deepEqual(fresh.sessions[0].model, { providerID: "fake", id: "fake-model" }, "from ctx.model.default()")
+  assert.doesNotMatch(fresh.synthetic[0].text, /could not analyse/, "and did not report a failure")
 
   await cleanup?.()
   await cleanup2?.()

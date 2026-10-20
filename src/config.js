@@ -19,8 +19,11 @@ export const DEFAULTS = {
   extractTimeoutMs: 90_000,
   /** Lessons carried by one `/retro auto`. Beyond this a plan stops being a plan. */
   autoLimit: 10,
-  /** Logs analysed by one `/retro`, so a long backlog cannot bill in one go. */
-  extractLimit: 10,
+  /**
+   * Logs analysed by one `/retro`. Unlimited by default: leaving a backlog half-analysed
+   * only moves the work, it does not avoid it. Set a number to cap one command's spend.
+   */
+  extractLimit: Infinity,
   /**
    * Analyse a finished session at the start of the next one, without being asked. Off:
    * a model call costs money, and nothing else in this plugin spends it unprompted.

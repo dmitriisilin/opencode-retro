@@ -206,16 +206,7 @@ plugin needed — and it gets the `sessionID`, so it can drive the review conver
    returns. No error, no timeout, no log line — it simply never settles. Awaiting one
    *inside* a hook that OpenCode awaits deadlocks the session outright. This reshapes
    decision 5; see "Extraction has to run where a hook is running" below.
-10. **A plugin may not call OpenCode's own free tier.** With `model` omitted, `generate.text`
-   resolves to it and fails with *"OpenCode's free tier can only be used from within
-   OpenCode"*. Naming such a model explicitly fails identically — measured against
-   `opencode/minimax-m3.1-flash-free`, which is what `ctx.model.default()` returned on the
-   dev machine. So a model has to be named, but it does not have to be configured:
-   `ctx.model.default()` gives the workspace default, and `session.hook("model.request")`
-   with `kind: "primary"` gives the model the user's sessions actually run on. The plugin
-   prefers `options.model`, then the observed session model, then the workspace default, and
-   reports which one it used and where it came from. No credential is involved at any point;
-   OpenCode holds those and the plugin never sees them.
+10. **The free-tier restriction is on `generate.text`, not on plugins.** `ctx.generate.text` refuses OpenCode's own free-tier models with *"OpenCode's free tier can only be used from within OpenCode"* — with the model omitted, with it named explicitly, and from a command's `execute` just as much as from `setup`. But `ctx.session.create()` followed by `ctx.session.generate({ sessionID, prompt })` returns normally **on the very same free model**: a session *is* within OpenCode. Measured both ways against `opencode/minimax-m3.1-flash-free`. So the analysis runs through a session of its own, created for the call and removed after it, which means the plugin works with no configuration at all — verified end to end with no `options.model` on a free-tier default. `session.generate` takes no model of its own, so the model is chosen when the session is created; `generate` is its own request kind, with no agent loop, no tools and no history. No credential is involved anywhere: OpenCode holds those and performs the call.
 11. **A hung `generate.text` wedges whatever guards it.** My own bug, and worth keeping as a
    warning: the drain had a `draining` flag released in a `finally`, so one call that never
    settled blocked every later drain for the life of the process — silently. Every model

@@ -7,7 +7,7 @@ import { createState } from "./src/state.js"
 import { createStore, score } from "./src/lessons.js"
 import { assessCurrency, fingerprintOf } from "./src/currency.js"
 import { extract } from "./src/extract.js"
-import { DECIDE_INPUT, decide, pickLesson, pickOpen, renderBatch, renderNothing, renderProposal } from "./src/review.js"
+import { DECIDE_INPUT, decide, pickLesson, pickOpen, renderBatch, renderFailures, renderNothing, renderProposal } from "./src/review.js"
 import { activeCheck } from "./src/selfcheck.js"
 import { resolveConfig } from "./src/config.js"
 
@@ -23,9 +23,9 @@ const VERSION = "0.0.3"
  * you are in and stops there — you and the agent decide what to do with it. A self-check
  * says whether any of it worked.
  *
- * The queue is not a scheduling preference. `ctx.generate.text` hangs when called from the
- * event stream or from setup, and returns only from inside a hook callback — measured, see
- * AGENTS.md "Gotchas". So extraction has to run where a hook is running.
+ * Nothing is analysed until `/retro` asks for it: a model call costs money, and nothing
+ * here spends it unprompted. The analysis goes through a session of its own rather than
+ * `generate.text`, which refuses OpenCode's free-tier models — see `analyse`.
  *
  * The API facts this relies on are all verified against OpenCode 2.0.32; see AGENTS.md
  * "OpenCode v2 plugin API" and fixtures/payloads/.
@@ -273,6 +273,36 @@ export default {
     }
 
     /**
+     * One analysis call, through a session of our own.
+     *
+     * Not `ctx.generate.text`: that endpoint refuses OpenCode's own free-tier models with
+     * "can only be used from within OpenCode", from a command's execute as much as from
+     * anywhere else. A session is within OpenCode, and `session.generate` on the very same
+     * free model returns normally — measured. So this path works whatever the user runs on,
+     * including with no configuration at all.
+     *
+     * The session is created for the call and removed after it, so it does not pile up in
+     * the user's session list. `generate` is its own request kind: no agent loop, no tools,
+     * no history — the clean context extraction needs.
+     */
+    async function analyse({ prompt, model }) {
+      const session = await ctx.session.create({
+        title: "opencode-retro analysis",
+        location: ctx.location,
+        ...(model?.providerID && model?.id ? { model: { providerID: model.providerID, id: model.id } } : {}),
+      })
+      try {
+        return await ctx.session.generate({ sessionID: session.id, prompt })
+      } finally {
+        try {
+          await ctx.session.remove({ sessionID: session.id })
+        } catch (err) {
+          onError("session.remove", err)
+        }
+      }
+    }
+
+    /**
      * A hint for the agent's own check, not a verdict.
      * A declaration, not a `const`: everything in here sits after setup's `return`, and
      * only declarations are hoisted. A `const` here is undefined when a command calls it.
@@ -311,15 +341,21 @@ export default {
      */
     async function processQueue(sessionID) {
       const done = []
+      const failures = []
       while (done.length < config.extractLimit) {
         const owed = state.nextPending(sessionID)
         if (!owed) break
-        await runExtraction(owed.session)
-        if (state.pending.some((p) => p.session === owed.session)) break // gave up or failed
+        const result = await runExtraction(owed.session)
+        if (state.pending.some((p) => p.session === owed.session)) {
+          // Still queued means the analysis failed. Say why: it used to vanish, leaving
+          // only an incremented attempt count in state.json for anyone who went looking.
+          failures.push({ session: owed.session, detail: result?.detail ?? "unknown failure" })
+          break
+        }
         done.push(owed.session)
       }
       const left = state.pending.filter((p) => p.session !== sessionID).length
-      return { analysed: done.length, left }
+      return { analysed: done.length, left, failures }
     }
 
     async function runReview(sessionID) {
@@ -337,7 +373,8 @@ export default {
       const open = lessons.filter((l) => ["new", "later", undefined, null].includes(l.status)).length
       return say(
         sessionID,
-        renderProposal(lesson, {
+        renderFailures(extracted) +
+          renderProposal(lesson, {
           total: open,
           remaining: open - 1,
           currency: currencyOf(lesson),
@@ -356,7 +393,7 @@ export default {
         store,
         state,
         log,
-        generate: (input) => ctx.generate.text(input),
+        generate: analyse,
         model: await resolveModel(),
       })
       for (const note of report.notes) check.note(note)
@@ -403,7 +440,7 @@ export default {
     }
 
     async function runExtraction(sessionID) {
-      if (state.wasExtracted(sessionID)) return
+      if (state.wasExtracted(sessionID)) return { ok: true, already: true }
       state.attempt(sessionID)
 
       let records
@@ -411,8 +448,9 @@ export default {
         records = parseShadowLog(readFileSync(log.path(sessionID), "utf8"))
       } catch (err) {
         onError("extract.read", err)
-        state.markExtracted(sessionID, { ok: false, detail: "shadow log could not be read" })
-        return
+        const detail = "shadow log could not be read"
+        state.markExtracted(sessionID, { ok: false, detail })
+        return { ok: false, detail }
       }
 
       let result
@@ -420,8 +458,8 @@ export default {
         result = await extract({
           records,
           session: sessionID,
-          generate: (input) => ctx.generate.text(input),
-          model: config.model,
+          generate: analyse,
+          model: await resolveModel(),
           prompts,
           store,
           state,
@@ -453,6 +491,7 @@ export default {
         check.verify({ ...verified, extraction: result })
         writeSelfCheck()
       }
+      return result
     }
   },
 }

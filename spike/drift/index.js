@@ -1,4 +1,4 @@
-// Can a plugin detect that the OpenCode API moved under it?
+// Can a plugin reach OpenCode's free tier at all, and if not via generate.text, via a session?
 import { appendFileSync, mkdirSync } from "node:fs"
 import { join } from "node:path"
 
@@ -9,48 +9,35 @@ export default {
     mkdirSync(dir, { recursive: true })
     const file = join(dir, "drift.jsonl")
     const write = (o) => appendFileSync(file, JSON.stringify(o) + "\n")
-    write({ probe: "setup.entered" })
 
-    // 1. does an unknown hook name throw, or register silently?
-    for (const [domain, name] of [
-      ["tool", "execute.after"],
-      ["tool", "execute.nonsense"],
-      ["tool", "before"],
-      ["session", "prompt"],
-      ["session", "promptz"],
-      ["session", "idle"],
-    ]) {
-      try {
-        const reg = await ctx[domain].hook(name, () => {})
-        write({ probe: "hook", domain, name, result: "registered", hasDispose: typeof reg?.dispose })
-      } catch (err) {
-        write({ probe: "hook", domain, name, result: "threw", error: String(err?.message ?? err) })
-      }
-    }
+    await ctx.command.transform((cmds) => {
+      cmds.add({
+        name: "freetier",
+        description: "probe the free tier from a command context",
+        execute: async () => {
+          const d = (await ctx.model.default())?.data
+          const model = { providerID: d?.providerID, id: d?.modelID }
+          write({ probe: "default model", model })
 
-    // 2. does a missing ctx domain / method surface as undefined?
-    for (const path of ["tool.hook", "tool.nosuch", "session.hook", "nosuchdomain", "generate.text", "storage.set"]) {
-      const [a, b] = path.split(".")
-      const v = b ? ctx?.[a]?.[b] : ctx?.[a]
-      write({ probe: "surface", path, type: typeof v })
-    }
+          // 1. generate.text with the free-tier model named explicitly, from a command.
+          try {
+            const r = await ctx.generate.text({ prompt: "Reply with one word: ok", model })
+            write({ probe: "generate.text + free model", result: "returned", value: r })
+          } catch (err) {
+            write({ probe: "generate.text + free model", result: "threw", error: String(err?.message ?? err).slice(0, 160) })
+          }
 
-    // 3. does a bad model fail loudly?
-    try {
-      const r = await ctx.generate.text({ prompt: "hi", model: { providerID: "nope", id: "nope" } })
-      write({ probe: "generate", model: "bogus", result: "resolved", value: r })
-    } catch (err) {
-      write({ probe: "generate", model: "bogus", result: "threw", error: String(err?.message ?? err).slice(0, 300) })
-    }
-
-    // 4. does subscribing to an unknown event type fail?
-    try {
-      const ac = new AbortController()
-      const it = ctx.event.subscribe({ signal: ac.signal })
-      write({ probe: "event.subscribe", result: "ok", type: typeof it?.[Symbol.asyncIterator] })
-      ac.abort()
-    } catch (err) {
-      write({ probe: "event.subscribe", result: "threw", error: String(err?.message ?? err) })
-    }
+          // 2. a session of our own, on the workspace default, then session.generate.
+          try {
+            const s = await ctx.session.create({ title: "retro probe", location: ctx.location })
+            write({ probe: "session.create", id: s?.id, model: s?.model ?? null })
+            const r = await ctx.session.generate({ sessionID: s.id, prompt: "Reply with one word: ok" })
+            write({ probe: "session.generate", result: "returned", value: r })
+          } catch (err) {
+            write({ probe: "session.generate", result: "threw", error: String(err?.message ?? err).slice(0, 160) })
+          }
+        },
+      })
+    })
   },
 }

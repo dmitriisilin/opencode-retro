@@ -133,7 +133,8 @@ export function assess(session) {
       detail: "this session's log is queued; `/retro` analyses it",
       meaning:
         "analysis is not automatic — it costs a model call, so it happens when you ask. " +
-        "`options.autoExtract` turns it on for the start of the next session.",
+        "`/retro` analyses everything waiting, in one go. `options.autoExtract` moves it to " +
+        "the start of the next session instead.",
     })
   } else if (x.ok && x.skipped) {
     checks.push({ status: SKIPPED, name: "extraction", detail: x.detail })

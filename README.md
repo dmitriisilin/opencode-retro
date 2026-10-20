@@ -35,11 +35,11 @@ When a session ends its log is kept, and nothing further happens until asked. An
 
 `/retro` is the moment it happens. One command compresses the logs that have accumulated, turns them into lessons, and only then looks for something to hand over. A long backlog is analysed up to ten logs at a time, so a single command cannot bill without limit; what is left over is reported, and another `/retro` takes the next batch.
 
-Each log is analysed outside any session: a single model call with the log as its input, no agent, no history and no tools. The agent that did the work is deliberately excluded, since it would defend its own decisions. A session with fewer than three tool calls is skipped without a call at all.
+Each log is analysed in a session of its own, created for that one call and removed afterwards: the log goes in, no agent, no history and no tools are involved, and text comes out. The agent that did the work is deliberately excluded, since it would defend its own decisions. A session with fewer than three tool calls is skipped without a call at all.
 
 `options.autoExtract` moves the analysis to the start of the next session instead, for anyone who would rather have lessons ready before asking.
 
-By default the analysis uses the model your own sessions run on. `options.model` pins a different one, which is worth doing if your default is one of OpenCode's free-tier models: a plugin may not call those.
+By default the analysis uses the model your own sessions run on, falling back to the workspace default. This works on OpenCode's free-tier models too, so nothing needs configuring. `options.model` pins a different one, which is worth doing if the analysis should run somewhere cheaper than the work.
 
 That call receives a compressed view of the session. Tool output is trimmed; prompts and replies are kept whole. It answers one question:
 
@@ -169,7 +169,7 @@ The npm package is a placeholder for now, so `opencode.json` should point at a c
 }
 ```
 
-`options.model` is optional. Without it the plugin uses the model your sessions run on, falling back to the workspace default. Pin one explicitly if that default is an OpenCode free-tier model, since a plugin may not call those; `/retro check` reports which model was used and where it came from.
+`options.model` is optional. Without it the plugin uses the model your sessions run on, falling back to the workspace default. `/retro check` reports which model was used and where it came from.
 
 Everything else is optional: `dir` for the directory, default `.retro`; `prompts` for the prompt directory; `halfLife` in sessions, default ten; `autoLimit`, the number of lessons in one `/retro auto`, default ten; `maxOutput`, `extractTimeoutMs`, `keepSessions`.
 
@@ -227,7 +227,7 @@ A registered hook proves nothing. A hook registered under a name the API no long
 ## Requirements
 
 - OpenCode v2, `@opencode/plugin` 2.0 or newer. Verified against 2.0.32.
-- A model that a plugin may call. Your own session model is used by default; an inexpensive one is enough.
+- Nothing beyond OpenCode itself. The analysis runs on your own model by default; an inexpensive one is enough.
 - No runtime dependencies.
 
 ## License

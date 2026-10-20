@@ -197,8 +197,22 @@ export function hintLines(lesson, currency) {
   return [`_Worth knowing before you check: ${facts.join("; ")}_`]
 }
 
+/** A failed analysis used to leave nothing but a counter in state.json. */
+export function renderFailures(extracted) {
+  const failures = extracted?.failures ?? []
+  if (!failures.length) return ""
+  return (
+    failures
+      .map((f) => `_opencode-retro could not analyse \`${f.session}\`: ${f.detail}_`)
+      .join("\n") + "\n\n"
+  )
+}
+
 export function renderNothing({ queued = 0, extracted = null } = {}) {
   const lines = ["# retro", "", "Nothing to review."]
+  for (const f of extracted?.failures ?? []) {
+    lines.push("", `Could not analyse \`${f.session}\`: ${f.detail}`)
+  }
   if (extracted?.analysed) {
     lines.push("", `Analysed ${extracted.analysed} finished session${extracted.analysed === 1 ? "" : "s"} just now, with nothing to learn from ${extracted.analysed === 1 ? "it" : "them"}.`)
   }
