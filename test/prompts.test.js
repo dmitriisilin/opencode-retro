@@ -97,3 +97,28 @@ test("the news file is written once, and keeps being reported", () => {
   assert.ok(s.prompts.checkForUpdate("extract"), "still named in the report")
   assert.equal(readFileSync(join(s.updates, first[0]), "utf8"), "edited by hand", "and not rewritten")
 })
+
+test("all three prompts seed, resolve and carry a base", () => {
+  const s = sandbox()
+  for (const name of ["extract", "review", "review-auto"]) {
+    assert.equal(s.prompts.seed(name).seeded, true, `${name} did not seed`)
+    const got = s.prompts.resolve(name)
+    assert.equal(got.layer, "project")
+    assert.equal(typeof got.base, "number", `${name} must record which default it came from`)
+    assert.ok(got.text.length > 100, `${name} looks empty`)
+  }
+})
+
+test("the review prompts ask the currency question without prescribing how", () => {
+  const s = sandbox()
+  for (const name of ["review", "review-auto"]) {
+    s.prompts.seed(name)
+    const text = s.prompts.resolve(name).text
+    assert.match(text, /already resolved in this workspace/, `${name} must put the question`)
+    assert.match(text, /however you normally would/, `${name} must leave the method open`)
+    assert.match(text, /retro_decide/, `${name} must say how to record the outcome`)
+    assert.doesNotMatch(text, /git log/, `${name} must not prescribe a command`)
+  }
+  assert.match(s.prompts.resolve("review").text, /Change nothing until they have decided/)
+  assert.match(s.prompts.resolve("review-auto").text, /one plan/)
+})

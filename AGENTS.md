@@ -24,8 +24,8 @@ Motivating example: a project carries a `lint` skill borrowed from another harne
 10. **Project-scoped by default.** Global promotion only if evidence has no project-specific files/configs AND the lesson recurred in ≥2 workspaces. Promotion is itself a `/retro` proposal.
 11. **Autonomy ladder L0–L3** (see README). v1 target is L1, and `/retro auto` is the step that makes the rest reachable: the same lessons, the same currency checks, the same `retro_decide` bookkeeping, but batched into one plan a human approves once instead of a decision per lesson. The ladder from here is about how much of that plan runs without being asked, not about new machinery. Promotion between levels is to be driven by accept/reject stats, later.
 12. **Not a memory plugin.** We edit artifacts the harness already reads; we don't build a knowledge base the agent must remember to query.
-13. **The extraction prompt lives in the user's project, not in the package.** It is the one place where this plugin's behaviour is actually decided, so it sits next to its inputs and outputs, in `.retro/prompts/extract.md`. The package ships a default; on first run it is copied into the project if absent. Resolution order: project → global (`~/.config/opencode/retro/prompts/`) → packaged default. `options` in `opencode.json` can override the directory and the extractor model. *Narrowed in M3: there was to be a second prompt for applying a lesson. Decision 9 as amended has no application step to drive — the agent in the session does the integrating.*
-14. **The prompt is editable; the output contract is compiled in.** The project file is entirely the user's — criteria, emphasis, project-specific wording. The output format the parser needs lives in the plugin's source and is wrapped around the prompt at call time. It is never written to disk, so it cannot be edited away by accident, and the prompt file has no "do not touch" region in it. `/retro check` prints the contract for anyone who wants to see it.
+13. **The prompts live in the user's project, not in the package.** Three of them, in `.retro/prompts/`: `extract.md` (what counts as a lesson), `review.md` and `review-auto.md` (what the agent treats as its job when a lesson is handed over — check currency, relay, touch nothing before a decision, record the outcome). The package ships defaults; on first run each missing one is copied in. Resolution order: project → global (`~/.config/opencode/retro/prompts/`) → packaged default → a terse built-in fallback, so a deleted file degrades rather than going silent. `options` can override the directory and the extractor model. *Narrowed in M3 to one prompt on the reasoning that there was no application step to drive, then restored: the review texts do not drive the application, but they do decide what the agent considers its job, which is exactly the semantics worth iterating on in practice.*
+14. **The prompts are editable; the machine parts are compiled in.** The project files are entirely the user's — criteria, emphasis, project-specific wording. The output format the parser needs lives in the plugin's source and is wrapped around the prompt at call time. It is never written to disk, so it cannot be edited away by accident, and the prompt file has no "do not touch" region in it. `/retro check` prints the contract for anyone who wants to see it.
 15. **New defaults arrive as news, never as changes.** One live file per prompt, seeded from our default, carrying `base` (the default's version) in frontmatter. We never write to it again — not even when the user has not touched it. A newer default lands in `.retro/prompts/updates/extract.v3.md`, headed by a statement that *this file is not used*, that the live file is what runs, and that if they have their own version they should keep it and consider adapting it to what changed. Named in `selfcheck.md` so it is not just a file in a directory nobody opens. Updates accumulate like release notes; deleting them is the user's call. Rejected alternative: shipping a default file plus a user override file. It forces the user to know what the default said before they can write a meaningful override, makes partial overrides ambiguous, and gives two sources of truth for one prompt.
 16. **A lesson is checked for currency before it is proposed.** A lesson can sit for weeks, and by the time anyone looks the thing it complains about may be fixed, moved or gone. Proposing a fix for a problem that no longer exists wastes the attention this plugin exists to save. So `/retro` runs a cheap deterministic check first — is the target file gone, or changed since the lesson was recorded (a content fingerprint taken at extraction time) — and when it has, the proposal carries that warning at the top. It never decides on its own: a changed file is a reason to look, not proof. The other half is the agent receiving the proposal, which is told to verify the claims against the repository before relaying them, and does it well.
 17. **Decided means closed, and closed means archived.** `lessons/` holds open questions only; accepting or rejecting moves the file to `archive/`. Nothing is deleted, because recurrence consults the archive: a problem that comes back after being closed is the same problem *plus* the news that the fix did not hold, so it is reopened with its history and a `reopenedFrom` marker rather than started over at recurrence 1. `later` stays open.
@@ -235,15 +235,18 @@ plugin needed — and it gets the `sessionID`, so it can drive the review conver
 - Whether `/api/experimental/session/{id}/log` (the durable event log) makes the shadow log
   redundant. Decision 3 says keep our own; worth a look before M1 ships.
 
-## Customisation: the two prompts
+## Customisation: the prompts
 
-Decisions 13–15. Everything this plugin decides, it decides in two prompts, so both are
-files in the user's project.
+Decisions 13–15. Everything this plugin decides semantically, it decides in three prompts,
+so all three are files in the user's project. What stays in source is the machinery around
+them: the output contract the parser needs, the order of a lesson's fields, the
+`retro_decide` instruction, the recorded-date hint.
 
 | File | Reads | Writes | Owns the question |
 |---|---|---|---|
 | `.retro/prompts/extract.md` | projection of the shadow log + anchors + existing lessons + rejected ids | lessons | *If this session ran again, what should change so it goes shorter and straighter?* |
-| `.retro/prompts/apply.md` | one lesson + the candidate target files | a proposed diff, or a written-up request | *Where does this lesson belong, and what is the smallest change that applies it?* |
+| `.retro/prompts/review.md` | one lesson, handed to the agent in the user's session | a hand-over | *Is this still true, and how do I put it to the human?* |
+| `.retro/prompts/review-auto.md` | every waiting lesson | one plan | *Which of these still stand, and in what order?* |
 
 Resolution per prompt, first hit wins:
 
@@ -585,9 +588,10 @@ understood is just a diagnostic that was written badly.
       a rejection also lands in `state.json` so the extractor stops proposing it.
 - [x] `/retro check` — the active self-check (`activeCheck` in `src/selfcheck.js`), including
       the contract round trip that M2 deferred to here.
-- [ ] No `apply.md` after all. Decision 9 as amended has no application step for a prompt to
-      drive: the agent in the session does the integrating, with the human. Decision 13 drops
-      to one editable prompt; revisit only if the hand-off itself needs tuning.
+- [x] `prompts/review.md` and `prompts/review-auto.md`. There is still no `apply.md` — nothing
+      drives the application itself — but the hand-over texts were hardcoded in `src/review.js`,
+      which put the semantics of "what is your job when a lesson arrives" out of the user's
+      reach. Now seeded and resolved like `extract.md`.
 - [ ] End-of-review summary + `git diff`: nothing to summarise while one invocation shows one
       lesson, and the change lands through the agent's normal edit flow, which already shows
       a diff. Dropped unless the review ever becomes multi-lesson again.

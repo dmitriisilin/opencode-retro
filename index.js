@@ -7,7 +7,7 @@ import { createState } from "./src/state.js"
 import { createStore, score } from "./src/lessons.js"
 import { assessCurrency, fingerprintOf } from "./src/currency.js"
 import { extract } from "./src/extract.js"
-import { AUTO_LIMIT, DECIDE_INPUT, decide, pickLesson, pickOpen, renderBatch, renderNothing, renderProposal } from "./src/review.js"
+import { DECIDE_INPUT, decide, pickLesson, pickOpen, renderBatch, renderNothing, renderProposal } from "./src/review.js"
 import { activeCheck } from "./src/selfcheck.js"
 import { resolveConfig } from "./src/config.js"
 
@@ -228,7 +228,7 @@ export default {
 
     // Seed the editable prompts, then look for a newer default. Neither touches a file
     // the user owns (AGENTS.md decisions 13 and 15).
-    for (const name of ["extract"]) {
+    for (const name of ["extract", "review", "review-auto"]) {
       prompts.seed(name)
       const update = prompts.checkForUpdate(name)
       if (update) check.note(update)
@@ -269,6 +269,7 @@ export default {
           halfLife: config.halfLife,
           currencies,
           limit: config.autoLimit,
+          leadIn: prompts.resolve("review-auto")?.text,
         }),
       )
     }
@@ -302,6 +303,7 @@ export default {
           currency: currencyOf(lesson),
           sessions: state.sessions,
           halfLife: config.halfLife,
+          leadIn: prompts.resolve("review")?.text,
         }),
       )
     }

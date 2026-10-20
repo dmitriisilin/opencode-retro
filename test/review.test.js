@@ -55,11 +55,8 @@ test("the proposal says what it is, what it would change, and that nothing was c
   assert.match(text, /sessions\/ses_a\.jsonl` steps 9–18/)
   assert.match(text, /This is a proposal, not a change — nothing has been edited/)
   assert.match(text, /2 more lessons waiting of 3/)
-  assert.match(text, /^_opencode-retro: first answer one question/, "the agent reads it first")
-  assert.match(text, /is this already resolved in this workspace/)
-  assert.match(text, /check it however you normally would/, "the question, not the mechanism")
+  assert.match(text, /^_opencode-retro: is this already resolved/, "the fallback, when no prompt resolves")
   assert.doesNotMatch(text, /git log/, "we do not prescribe how to look")
-  assert.match(text, /change nothing until the human has/)
 })
 
 test("a lesson with no proposal is still worth showing, and says why", () => {
@@ -132,11 +129,7 @@ test("auto carries every waiting lesson and asks for one plan", () => {
     currencies: new Map([["a", { hint: "`x.md` has changed." }]]),
   })
 
-  assert.match(text, /^_opencode-retro: below is every lesson/)
-  assert.match(text, /is it already resolved in this workspace/)
-  assert.match(text, /come back with \*\*one plan\*\*/, "a plan, not a stream of questions")
-  assert.match(text, /grouping anything that touches the same file/)
-  assert.match(text, /Change nothing until the human approves/)
+  assert.match(text, /^_opencode-retro: for each lesson below/, "the fallback, when no prompt resolves")
   assert.doesNotMatch(text, /git log/)
   assert.match(text, /# retro — 3 lessons waiting/)
   assert.match(text, /## 1\. `a` — score 36/)
@@ -146,6 +139,25 @@ test("auto carries every waiting lesson and asks for one plan", () => {
   assert.match(text, /\*\*Came back\*\* after being closed as accepted/)
   assert.match(text, /Worth knowing before you check: `x\.md` has changed\./, "a hint, not a verdict")
   assert.match(text, /Nothing has been changed\. The plan comes first\./)
+})
+
+test("the hand-over instructions come from the prompt file, not from source", () => {
+  const leadIn = "Check the repo first. Then relay it. My own wording."
+
+  const one = renderProposal(lesson(), { leadIn })
+  assert.match(one, /^_opencode-retro — how to hand this over:_/)
+  assert.match(one, /My own wording\./)
+  assert.doesNotMatch(one, /is this already resolved/, "the fallback must not leak in alongside it")
+
+  const many = renderBatch([lesson()], { leadIn })
+  assert.match(many, /My own wording\./)
+})
+
+test("a missing prompt degrades to a terse hand-off rather than a silent one", () => {
+  for (const text of [renderProposal(lesson(), { leadIn: "   " }), renderProposal(lesson(), {})]) {
+    assert.match(text, /^_opencode-retro: is this already resolved/)
+    assert.match(text, /retro_decide/, "the bookkeeping instruction survives either way")
+  }
 })
 
 test("auto is capped, and says what it left out", () => {

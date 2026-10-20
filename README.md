@@ -210,7 +210,10 @@ you accept a proposal. It is all plain text:
 
 ```
 .retro/
-├── prompts/extract.md   # yours to edit — how a lesson is extracted
+├── prompts/
+│   ├── extract.md       # yours to edit — what counts as a lesson
+│   ├── review.md        # yours to edit — how a lesson is handed over
+│   └── review-auto.md   # yours to edit — how a batch becomes one plan
 ├── sessions/<id>.jsonl  # raw material, deleted once extracted
 ├── lessons/<id>.md      # the product
 ├── archive/             # decided and evicted lessons
@@ -218,9 +221,16 @@ you accept a proposal. It is all plain text:
 └── state.json
 ```
 
-`.retro/prompts/extract.md` is seeded from the packaged default on first run and never
-written to again. A newer default arrives as `prompts/updates/extract.vN.md`, headed by a
-note that it is not in use — nothing is applied on your behalf.
+Each prompt is seeded from the packaged default on first run and never written to again.
+Resolution is project → `~/.config/opencode/retro/prompts/` → packaged, so you can pin one
+for a project, for all your projects, or neither. A newer default arrives as
+`prompts/updates/<name>.vN.md`, headed by a note that it is not in use — nothing is applied
+on your behalf.
+
+What stays in the source and is not yours to edit is the machinery: the output format the
+parser needs (`/retro check` prints it), the order of a lesson's fields, and the instruction
+to record the outcome. A prompt that no longer produces parseable lessons fails silently,
+which is the one failure mode worth designing against.
 
 ### Is it working?
 
