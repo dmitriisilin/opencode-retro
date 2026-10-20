@@ -1,4 +1,4 @@
-<!-- translated-from: README.md@c8ebdf30c23f -->
+<!-- translated-from: README.md@3e14bd21e8a5 -->
 # opencode-retro
 
 [English](README.md) | [Русский](README.ru.md) | [简体中文](README.zh-CN.md) | **Español** | [日本語](README.ja.md)
@@ -16,10 +16,11 @@ Un agente no aprende de sus propias sesiones. El único registro de dónde se at
 Los mismos obstáculos se repiten sesión tras sesión:
 
 - Una skill indica ejecutar el linter. El proyecto no tiene ninguno. El agente lo ejecuta igualmente, reescribe cuarenta archivos, se da cuenta y lo revierte todo.
+- Un archivo de instrucciones exige ejecutar la compilación antes de hacer commit. El proyecto no define ese script, así que el paso falla cada vez que se obedece.
+- El estilo del código no está escrito en ninguna parte, de modo que cada sesión lo deduce de nuevo leyendo las fuentes.
 - Un comando que falla se reintenta varias veces sin que nada cambie entre intentos.
 - Una tarea del plan se abandona en silencio, como «ahora mismo no es posible».
 - La misma corrección se da a mano por tercera semana consecutiva.
-- Una herramienta que habría ahorrado veinte pasos simplemente no existe.
 
 Todo está en el log. Nada de ello llega a la sesión siguiente.
 
@@ -31,7 +32,11 @@ Dos bucles, deliberadamente separados. El primero se ejecuta solo y no consume a
 
 Cada llamada a herramienta y cada prompt se añaden a un log paralelo en `.retro/sessions/<id>.jsonl`. No interviene ningún modelo: el plugin solo escribe. Por eso el log es independiente de la compactación del contexto; la trayectoria en bruto sobrevive a lo que la sesión haga con su propio historial.
 
-Cuando una sesión termina, queda en cola. El primer prompt de la sesión siguiente liquida esa cola con una única llamada al modelo en un contexto limpio, deliberadamente no el agente que hizo el trabajo, que defendería sus propias decisiones.
+### Extracción
+
+Cuando una sesión termina, queda en cola para su análisis. La cola se liquida en el primer prompt de la sesión siguiente en ese espacio de trabajo, y `/retro` la liquida a petición.
+
+El análisis es una única llamada al modelo indicado en `options.model`. No se usa nada más: ni agente, ni sesión, ni historial, ni herramientas. El agente que hizo el trabajo queda excluido a propósito, porque defendería sus propias decisiones.
 
 Esa llamada recibe una vista comprimida de la sesión: la salida de las herramientas se recorta y los prompts y las respuestas se conservan completos. Responde a una sola pregunta:
 
@@ -39,11 +44,11 @@ Esa llamada recibe una vista comprimida de la sesión: la salida de las herramie
 
 La respuesta es una lista de lecciones en `.retro/lessons/`.
 
-Las lecciones aparecen con una sesión de retraso. Un proyecto que no se vuelve a abrir no cuesta nada, y `/retro` liquida la cola a petición.
+Una sesión cuesta como máximo una llamada, y una sesión con menos de tres llamadas a herramientas no cuesta ninguna: hay demasiado poco que leer en ella. Un proyecto que no se vuelve a abrir no se analiza nunca.
 
 ### Qué guía la extracción
 
-Los criterios no están compilados en el plugin. Residen en `.retro/prompts/extract.md`, un archivo que se puede leer y editar, y describen las formas que vale la pena buscar:
+Los criterios no están compilados en el plugin. Residen en [`prompts/extract.md`](prompts/extract.md), que se siembra en el proyecto como `.retro/prompts/extract.md` y se edita allí. Describen las formas que vale la pena buscar:
 
 - Trabajo hecho en balde: la misma llamada repetida sin que ningún archivo haya cambiado entre intentos.
 - Una edición hecha y luego deshecha, ya sea por una edición posterior o al descartar el árbol de trabajo.
@@ -88,19 +93,20 @@ La decisión corresponde a la persona y al agente de esa sesión. El agente tien
 
 ### Dónde corresponde el arreglo
 
-Una propuesta es una sugerencia, no un esquema. Los destinos habituales:
+Una lección registra un problema. Dónde arreglarlo se decide durante la entrega, entre el agente y la persona, después de mirar lo que el espacio de trabajo tiene realmente: qué archivos de instrucciones lee el entorno aquí, si existen skills a nivel de proyecto o globales, si hay algo más específico que ya cubra la tarea.
 
-- Una skill, corregida o ampliada con la forma en que la tarea se hace realmente en este proyecto.
-- Una instrucción para `AGENTS.md`: un hecho o una restricción.
-- Una herramienta que falta, redactada como petición junto con el coste que ya ha provocado.
-- Un cambio en el propio código, para que la trampa desaparezca. Nunca se aplica de forma automática.
-- Algo que no encaja en ninguno de los anteriores, que queda para que lo sitúe la persona.
+Las opciones:
 
-Las lecciones en sí son siempre locales a un espacio de trabajo. Una lección es evidencia de sesiones de un único proyecto, así que vive en ese proyecto y en ningún otro sitio.
+- Modificar un archivo de instrucciones, para un hecho o una restricción de alcance amplio.
+- Modificar una skill, cuando una skill dio los pasos equivocados o se activó donde no debía.
+- Crear una skill, o un archivo de instrucciones limitado al directorio donde la regla se aplica, cuando el sitio adecuado todavía no existe.
+- Pedir una herramienta, cuando lo que falta es una capacidad y no una instrucción.
+- Cambiar el código del proyecto, cuando la trampa está en el código. Nunca se aplica sin acuerdo explícito.
+- Dejarlo sin ubicar, cuando el sitio correcto no está realmente claro.
 
-El arreglo, en cambio, puede corresponder a otro lugar. Parte de la fricción es propia del repositorio: una skill que no le conviene, una instrucción que allí no es cierta. Parte de la fricción tiene que ver con hábitos que viajan: cómo se usa el gestor de incidencias, cómo se nombran las ramas, qué convención se lleva de un proyecto a otro. Lo primero pertenece al entorno del proyecto; lo segundo, al global, en `~/.config/opencode/AGENTS.md` o en una skill global.
+Las lecciones en sí son siempre locales a un espacio de trabajo. El arreglo puede no serlo: la fricción relativa a cómo trabaja una persona en todas partes pertenece a su entorno global, porque arreglarla en un proyecto la deja rota en los demás. Nada fuera del proyecto se edita sin preguntar.
 
-Cuál de los dos pide una lección se resuelve en el momento de la entrega. El plugin no lo adivina y nunca edita un entorno global por su cuenta.
+El procedimiento y esta lista están en [`prompts/review.md`](prompts/review.md), que se siembra en el proyecto y se puede editar allí.
 
 ## Lecciones
 
@@ -143,12 +149,6 @@ La recurrencia pesa más que un único incidente caro. Un problema visto en tres
 Una lección se indexa por problema, no por sesión. Una segunda sesión que choca con lo mismo añade su evidencia e incrementa `recurrence` en lugar de crear otro archivo.
 
 En `lessons/` solo hay cuestiones abiertas. Una decisión mueve el archivo a `archive/`, y nada se borra nunca. Un problema que vuelve después de haberse cerrado es el mismo problema más la noticia de que el arreglo no se sostuvo, así que se reabre con su historial intacto. Un límite, treinta por omisión, mantiene la lista corta; lo que desborda también se archiva.
-
-## Lo que no es
-
-- **No es un plugin de memoria.** Los plugins de memoria construyen una base de conocimiento que el agente tiene que acordarse de consultar. Este edita los archivos que el entorno ya lee. El conocimiento que vive en una skill no hace falta recordarlo.
-- **No es un rompedor de bucles.** Los detectores de bucles detienen al agente en el momento. Este plugin trabaja sobre la sesión siguiente. Ambos son útiles.
-- **No es un recolector de éxitos.** La mayoría de las herramientas de skills que se mejoran a sí mismas registran lo que funcionó. Esta registra lo que no funcionó, que es donde están las victorias baratas.
 
 ## Instalación
 
@@ -221,18 +221,6 @@ Por eso `.retro/selfcheck.md` informa de que está vivo, no de que está instala
 > Si hay trabajo en curso y `heartbeat` tiene más de unos pocos minutos, el plugin no está en marcha.
 
 `/retro check` es la versión activa. Informa de las versiones del plugin y de OpenCode, de la superficie de API de la que el plugin depende, de si el modelo configurado responde, de qué capa de prompts está vigente y de si el formato de salida sigue produciendo una lección analizable.
-
-## Hoja de ruta
-
-La autonomía se gana a partir del propio registro de propuestas aceptadas y rechazadas, no se concede de antemano.
-
-| Nivel | El plugin | La persona | |
-|---|---|---|---|
-| L0 | captura sesiones y extrae lecciones | lee `lessons/` directamente | disponible |
-| L1 | propone una lección cada vez | decide, con el agente | disponible |
-| L1.5 | planifica de una vez todas las pendientes | aprueba el plan una vez | disponible |
-| L2 | aplica a una rama las lecciones confirmadas | revisa el lote | previsto |
-| L3 | aplica skills e instrucciones directamente | solo ve peticiones de herramientas y refactorizaciones | previsto |
 
 ## Requisitos
 

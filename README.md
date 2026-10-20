@@ -13,10 +13,11 @@ An agent does not learn from its own sessions. The only record of where it strug
 The same obstacles repeat across sessions:
 
 - A skill says to run the linter. The project has no linter. The agent runs it anyway, rewrites forty files, notices, and reverts everything.
+- An instruction file requires a build command before committing. The project defines no such script, so the step fails every time it is obeyed.
+- The code style is written down nowhere, so each session re-derives it by reading the sources first.
 - A failing command is retried several times with nothing changed between attempts.
 - A task from the plan is dropped quietly, as "not possible right now".
 - The same correction is given by hand for the third week running.
-- A tool that would have saved twenty steps is simply absent.
 
 All of it is in the log. None of it reaches the next session.
 
@@ -28,7 +29,11 @@ Two loops, deliberately separate. One runs by itself and costs no attention. The
 
 Every tool call and every prompt is appended to a shadow log at `.retro/sessions/<id>.jsonl`. No model is involved; the plugin only writes. The log is therefore independent of context compaction: the raw trajectory survives whatever the session does to its own history.
 
-When a session ends it is queued. The first prompt of the next session settles that queue with a single model call in a clean context, deliberately not the agent that did the work, which would defend its own decisions.
+### Extraction
+
+When a session ends it is queued for analysis. The queue is settled at the first prompt of the next session in that workspace, and `/retro` settles it on demand.
+
+The analysis is a single call to the model named in `options.model`. Nothing else is used: no agent, no session, no history, no tools. The working agent is deliberately excluded, since it would defend its own decisions.
 
 That call receives a compressed view of the session. Tool output is trimmed; prompts and replies are kept whole. It answers one question:
 
@@ -36,11 +41,11 @@ That call receives a compressed view of the session. Tool output is trimmed; pro
 
 The answer is a list of lessons in `.retro/lessons/`.
 
-Lessons appear one session late. A project that is never opened again costs nothing, and `/retro` settles the queue on demand.
+One session costs at most one call, and a session with fewer than three tool calls costs none: there is too little in it to read. A project that is never opened again is never analysed.
 
 ### What guides the extraction
 
-The criteria are not compiled into the plugin. They live in `.retro/prompts/extract.md`, a file that can be read and edited, and they describe the shapes worth looking for:
+The criteria are not compiled into the plugin. They live in [`prompts/extract.md`](prompts/extract.md), seeded into the project as `.retro/prompts/extract.md` and editable there. They describe the shapes worth looking for:
 
 - Work repeated for nothing: the same call made again with no file changed in between.
 - An edit made and then undone, whether by a later edit or by discarding the working tree.
@@ -84,19 +89,20 @@ The decision belongs to the human and the agent in that session. The agent has t
 
 ### Where a fix belongs
 
-A proposal is a suggestion rather than a schema. The usual targets:
+A lesson records a problem. Where to fix it is decided during the hand-over, by the agent and the human, after looking at what the workspace actually has: which instruction files the harness reads here, whether skills exist at project or global level, whether something more specific already covers the task.
 
-- A skill, corrected or extended with how the task is actually done in this project.
-- An instruction for `AGENTS.md`: a fact or a constraint.
-- A tool that is missing, written up as a request with the cost it has already caused.
-- A change to the code itself, so that the trap is gone. Never applied automatically.
-- Something that fits none of these, left for the human to place.
+The options:
 
-Lessons themselves are always local to one workspace. A lesson is evidence from sessions in a single project, so it lives in that project and nowhere else.
+- Amend an instruction file, for a fact or a constraint that applies broadly.
+- Amend a skill, when a skill gave the wrong steps or fired when it should not have.
+- Create a skill, or an instruction file scoped to the directory where the rule applies, when the right place does not exist yet.
+- Request a tool, when the gap is a missing capability rather than a missing instruction.
+- Change the project's code, when the trap is in the code. Never applied without explicit agreement.
+- Leave it unplaced, when the right home is genuinely unclear.
 
-The fix, however, may belong elsewhere. Some friction is about the repository: a skill that does not suit it, an instruction that is not true there. Some friction is about habits that travel: how an issue tracker is used, how branches are named, a convention carried from project to project. The first belongs in the project's harness, the second in the global one at `~/.config/opencode/AGENTS.md` or a global skill.
+Lessons themselves are always local to one workspace. A fix may not be: friction about how a person works everywhere belongs in their global harness, because fixing it in one project leaves it broken in the rest. Nothing outside the project is edited without asking.
 
-Which of the two a lesson calls for is settled when it is handed over. The plugin does not guess, and it never edits a global harness on its own.
+The procedure and this list live in [`prompts/review.md`](prompts/review.md), which is seeded into the project and can be edited there.
 
 ## Lessons
 
@@ -139,12 +145,6 @@ Recurrence weighs more than a single expensive incident. A problem seen in three
 A lesson is keyed by problem, not by session. A second session that hits the same thing adds its evidence and increments `recurrence` instead of creating another file.
 
 `lessons/` holds open questions only. A decision moves the file into `archive/`, and nothing is ever deleted. A problem that returns after being closed is the same problem plus the news that the fix did not hold, so it is reopened with its history intact. A cap, thirty by default, keeps the list short; what overflows is archived as well.
-
-## What this is not
-
-- **Not a memory plugin.** Memory plugins build a knowledge base that an agent has to remember to consult. This one edits the files the harness already reads. Knowledge that lives in a skill does not need to be recalled.
-- **Not a loop breaker.** Loop detectors stop an agent in the moment. This plugin works on the next session instead. Both are useful.
-- **Not a collector of successes.** Most self-improving-skill tools record what worked. This one records what did not, which is where the inexpensive wins are.
 
 ## Install
 
@@ -217,18 +217,6 @@ A registered hook proves nothing. A hook registered under a name the API no long
 > If work is in progress and `heartbeat` is more than a few minutes old, the plugin is not running.
 
 `/retro check` is the active version. It reports the plugin and OpenCode versions, the API surface the plugin depends on, whether the configured model answers, which prompt layer is in force, and whether the output format still produces a parseable lesson.
-
-## Roadmap
-
-Autonomy is earned from the plugin's own record of accepted and rejected proposals, not granted up front.
-
-| Level | The plugin | The human | |
-|---|---|---|---|
-| L0 | captures sessions and extracts lessons | reads `lessons/` directly | available |
-| L1 | proposes one lesson at a time | decides, with the agent | available |
-| L1.5 | plans every waiting lesson at once | approves the plan once | available |
-| L2 | applies confirmed lessons to a branch | reviews the batch | planned |
-| L3 | applies skills and instructions directly | sees only requests for tools and refactors | planned |
 
 ## Requirements
 

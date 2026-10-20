@@ -115,11 +115,24 @@ test("every prompt makes the local-or-global call explicit", () => {
     s.prompts.seed(name)
     const text = s.prompts.resolve(name).text
     // Lessons are always workspace-local (decision 10); what varies is where the fix goes.
-    assert.match(text, /different repository/, `${name} must carry the test for a global fix`)
-    assert.match(text, /config\/opencode\/AGENTS\.md/, `${name} must name the global harness`)
+    assert.match(text, /global harness|global skill|different repository/, `${name} must raise local vs global`)
   }
   assert.match(s.prompts.resolve("review").text, /Never edit anything outside this\nproject without asking/)
   assert.match(s.prompts.resolve("review-auto").text, /approval of their own/)
+})
+
+test("the review prompts survey the setup instead of assuming a target", () => {
+  const s = sandbox()
+  for (const name of ["review", "review-auto"]) {
+    s.prompts.seed(name)
+    const text = s.prompts.resolve(name).text
+    assert.match(text, /guess made without/, `${name} must treat the named target as a guess`)
+    assert.match(text, /instruction files does the harness read|instruction files the\s+harness reads/, `${name} must ask what exists`)
+    assert.match(text, /skills/, `${name} must consider skills`)
+  }
+  // Creating something new is a legitimate outcome, not only editing what is there.
+  assert.match(s.prompts.resolve("review").text, /Create something that is missing/)
+  assert.match(s.prompts.resolve("review-auto").text, /creating a skill or a/)
 })
 
 test("no prompt suggests lessons themselves are global", () => {

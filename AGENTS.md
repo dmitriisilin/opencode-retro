@@ -659,6 +659,11 @@ understood is just a diagnostic that was written badly.
   is the failure mode decision 19 exists to kill.
 - Anything a user may want to change is a file in `.retro/`, not a config key and not a
   constant in our source.
+- **README.md says what the tool is and does, and nothing else.** No roadmap, no levels, no
+  plans, no "what this is not", no account of what was tried or measured. Those belong here,
+  in this brief. The README describes implemented behaviour, states when and with which model
+  each step runs, and links to the prompt files rather than paraphrasing them, so the
+  description cannot drift from the thing described.
 - **README.md is canonical and has four translations** (`README.ru.md`, `README.zh-CN.md`,
   `README.es.md`, `README.ja.md`), each opening with the same language bar and a note saying
   the English version wins. A change to `README.md` means updating all four **in the same
