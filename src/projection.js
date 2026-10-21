@@ -8,22 +8,66 @@ import { clamp } from "./config.js"
  * same log must always project to the same text, or the extractor prompt cannot be
  * iterated on fixtures.
  */
-export function project(records, { maxToolOutput = 600, maxPromptChars = 4000, budget = Infinity } = {}) {
-  // Rendered once at full fidelity. If that is over budget, the same records are rendered
-  // again with less of the tool output, and only then are steps dropped — in that order,
-  // because it loses the least at each stage.
-  const full = render(records, { maxToolOutput, maxPromptChars })
-  if (size(full) <= budget) return join(full)
+export function project(records, options) {
+  return projected(records, options).text
+}
 
-  const tight = render(records, { maxToolOutput: Math.min(maxToolOutput, 200), maxPromptChars })
-  if (size(tight) <= budget) return join(tight)
+/**
+ * The projection, and how far through the log it actually goes.
+ *
+ * `through` is the last step of the **unbroken prefix** — the point up to which the text can
+ * be said to cover the log. It matters because the step mark is set from it: marking the last
+ * step *seen* would jump over an elided middle and that middle would never be analysed, which
+ * is the silent kind of loss this plugin exists to avoid. An excerpt therefore advances the
+ * mark only to its first gap, and the next read picks up from there.
+ */
+export function projected(records, { maxToolOutput = 600, maxPromptChars = 4000, budget = Infinity } = {}) {
+  const render_ = (toolOutput, promptChars) => render(records, { maxToolOutput: toolOutput, maxPromptChars: promptChars })
+
+  // Full fidelity first. Over budget, the same records with less of the tool output, and only
+  // then dropped steps — in that order, because it loses the least at each stage.
+  const full = render_(maxToolOutput, maxPromptChars)
+  if (size(full) <= budget) return covered(full)
+
+  const tightOutput = Math.min(maxToolOutput, 200)
+  const tight = render_(tightOutput, maxPromptChars)
+  if (size(tight) <= budget) return covered(tight)
 
   const elided = elide(tight, budget)
   // Dropping a very small block can cost more than it saves: a one-line call is shorter
   // than the marker that replaces it. Never return a "shorter" projection that is longer
   // than the one it was made from.
-  const elidedText = join(elided)
-  return elidedText.length <= join(tight).length ? elidedText : join(tight)
+  let blocks = size(elided) <= size(tight) ? elided : tight
+
+  // Prompts and assistant replies are never dropped, which is right — they are why the
+  // session happened — but it means a log whose prompts alone exceed the budget stays over
+  // it, and over the budget is where the model answers with an empty string (Gotcha 17). So
+  // they are shortened, last of all, rather than leaving the call to come back silent.
+  if (size(blocks) > budget) {
+    for (const chars of [2000, 1000, 500, 200]) {
+      if (chars >= maxPromptChars) continue
+      blocks = elide(render_(tightOutput, chars), budget)
+      if (size(blocks) <= budget) break
+    }
+  }
+
+  const out = covered(blocks)
+  if (Number.isFinite(budget) && out.text.length > budget) {
+    // Last resort, so the contract holds whatever the log contains: cut it, and say so.
+    const notice = "\n[...] truncated to fit the budget\n"
+    return { text: out.text.slice(0, Math.max(0, budget - notice.length)) + notice, through: out.through }
+  }
+  return out
+}
+
+/** The text, plus the last step of its unbroken prefix. */
+function covered(blocks) {
+  let through = 0
+  for (const b of blocks) {
+    if (b.gap) break
+    if (Number.isFinite(b.n)) through = Math.max(through, b.n)
+  }
+  return { text: join(blocks), through }
 }
 
 /**
@@ -109,13 +153,13 @@ function elide(blocks, budget) {
   for (let i = 0; i < blocks.length; i++) {
     if (keep[i]) {
       if (dropped) {
-        out.push({ lines: [markerText(dropped)] })
+        out.push({ lines: [markerText(dropped)], gap: true })
         dropped = 0
       }
       out.push(blocks[i])
     } else dropped++
   }
-  if (dropped) out.push({ lines: [markerText(dropped)] })
+  if (dropped) out.push({ lines: [markerText(dropped)], gap: true })
   return out
 }
 
@@ -124,7 +168,7 @@ const join = (blocks) => blocks.flatMap((b) => b.lines).join("\n") + "\n"
 
 function render(records, { maxToolOutput, maxPromptChars }) {
   const blocks = []
-  const push = (lines, droppable = false) => blocks.push({ lines, droppable })
+  const push = (lines, droppable = false, n = null) => blocks.push({ lines, droppable, n })
   // Which agent did a step only matters where it is not the usual one, and the usual one is
   // whichever did most of the work. Without this, a subagent's steps are written into the
   // parent's log and then read as if the main agent had done them — the attribution is
@@ -133,37 +177,41 @@ function render(records, { maxToolOutput, maxPromptChars }) {
   for (const r of records) {
     switch (r.k) {
       case "session":
-        push([r.event === "start" ? `--- session ${r.event}` : `--- session ${r.event}: ${r.outcome}`])
+        push(
+          [r.event === "start" ? `--- session ${r.event}` : `--- session ${r.event}: ${r.outcome}`],
+          false,
+          r.n,
+        )
         break
 
       case "prompt": {
         const { text } = clamp(r.text ?? "", maxPromptChars)
-        push([`[${r.n}] user:`, indent(text)])
+        push([`[${r.n}] user:`, indent(text)], false, r.n)
         break
       }
 
       case "handover": {
         const { text } = clamp(r.text ?? "", maxPromptChars)
-        push([`[${r.n}] opencode-retro handed a lesson over:`, indent(text)])
+        push([`[${r.n}] opencode-retro handed a lesson over:`, indent(text)], false, r.n)
         break
       }
 
       case "text": {
         const { text } = clamp(r.text ?? "", maxPromptChars)
-        push([`[${r.n}] assistant:`, indent(text)])
+        push([`[${r.n}] assistant:`, indent(text)], false, r.n)
         break
       }
 
       case "tool": {
         const lines = [`[${r.n}] ${r.agent && r.agent !== primary ? `(${r.agent}) ` : ""}${describeCall(r)}`]
         for (const detail of describeResult(r, maxToolOutput)) lines.push(indent(detail))
-        push(lines, true)
+        push(lines, true, r.n)
         break
       }
 
       case "step":
         if (r.files?.length) {
-          push([`[${r.n}] step ${r.finish ?? ""} — changed: ${r.files.join(", ")}`.trimEnd()], true)
+          push([`[${r.n}] step ${r.finish ?? ""} — changed: ${r.files.join(", ")}`.trimEnd()], true, r.n)
         }
         break
     }

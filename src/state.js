@@ -30,6 +30,12 @@ export function createState({ path, onError }) {
    * described the old file, so a rebase has to be stated explicitly for one save.
    */
   let rebased = new Set()
+  /**
+   * Sessions taken out of the queue on purpose, which the union below must not bring back.
+   * Entries otherwise leave only through an extraction, and the coverage filter expresses
+   * that; a deliberate removal has nothing in the data to express it, so it is said here.
+   */
+  let unqueued = new Set()
 
   /**
    * Written by merging with whatever is on disk, not by overwriting it.
@@ -96,12 +102,37 @@ export function createState({ path, onError }) {
           if (typeof ex?.size === "number") return ex.size
           return asMark(looked[session]).size
         }
-        data.pending = data.pending.filter((p) => !data.extracted[p.session] || (p.size ?? 0) > coveredSizeOf(p.session))
+        // The queue is a union too, not the writer's own. Two instances on one project used
+        // to lose each other's entries, which means a session nobody analyses: the log sits
+        // there, and nothing is owed for it. Entries only ever leave through an extraction,
+        // and the filter below is what expresses that, so a union cannot resurrect one that
+        // was deliberately removed. For a session both writers hold, the higher attempt count
+        // wins — otherwise a retry budget resets — and the smaller queued size, so the
+        // coverage comparison stays conservative.
+        const queued = new Map()
+        for (const entry of [...(Array.isArray(disk.pending) ? disk.pending : []), ...data.pending]) {
+          if (!entry?.session) continue
+          const held = queued.get(entry.session)
+          queued.set(
+            entry.session,
+            held
+              ? {
+                  ...held,
+                  attempts: Math.max(held.attempts ?? 0, entry.attempts ?? 0),
+                  size: Math.min(held.size ?? 0, entry.size ?? 0),
+                }
+              : { ...entry },
+          )
+        }
+        data.pending = [...queued.values()]
+          .filter((p) => !unqueued.has(p.session))
+          .filter((p) => !data.extracted[p.session] || (p.size ?? 0) > coveredSizeOf(p.session))
       }
 
       mkdirSync(dirname(path), { recursive: true })
       writeFileSync(path, JSON.stringify(data, null, 2) + "\n")
       rebased = new Set()
+      unqueued = new Set()
     } catch (err) {
       onError?.("state.save", err)
     }
@@ -201,7 +232,21 @@ export function createState({ path, onError }) {
      * test, or a hand-written state file — gets the conservative answer: an entry for an
      * already-extracted session stays only if there is no extraction to cover it.
      */
+    /**
+     * A session that turned out to be somebody's child. Its end may have been processed
+     * before the link was known — `session.created` can be missed when the plugin loads
+     * lazily, leaving the parent's `subagent` result as the only route — and a delegation is
+     * a step, not a session to analyse.
+     */
+    unqueue(session) {
+      unqueued.add(session)
+      const before = data.pending.length
+      data.pending = data.pending.filter((p) => p.session !== session)
+      if (data.pending.length !== before) save()
+      else unqueued.delete(session)
+    },
     queue(session, size = 0) {
+      unqueued.delete(session) // queued again on purpose, so the tombstone no longer applies
       if (!data.pending.some((p) => p.session === session)) {
         data.pending.push({ session, queuedAt: new Date().toISOString(), attempts: 0, size })
         save()

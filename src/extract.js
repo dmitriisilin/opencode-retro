@@ -1,5 +1,5 @@
 import { OUTPUT_CONTRACT, parseLessons } from "./contract.js"
-import { project } from "./projection.js"
+import { projected } from "./projection.js"
 
 /**
  * One extraction: shadow log -> lessons (AGENTS.md decision 5).
@@ -134,8 +134,8 @@ export async function extract({
     }
   }
 
-  let log = project(records, { budget })
-  let answer = await ask(log)
+  let log = projected(records, { budget })
+  let answer = await ask(log.text)
   if (answer.failed) return { ok: false, detail: answer.failed }
 
   /**
@@ -155,16 +155,16 @@ export async function extract({
   if (!answer.text.trim() && Number.isFinite(budget)) {
     // Halve it, never round up to a minimum: when the first budget was small because little
     // room was left, a 1,000-character floor would make the second attempt *larger*.
-    const smaller = project(records, { budget: Math.max(1, Math.floor(budget / 2)) })
-    if (smaller !== log) {
+    const smaller = projected(records, { budget: Math.max(1, Math.floor(budget / 2)) })
+    if (smaller.text !== log.text) {
       log = smaller
-      answer = await ask(log)
+      answer = await ask(log.text)
       if (answer.failed) return { ok: false, detail: answer.failed }
     }
   }
 
   const reply = answer.text
-  const elided = /\d+ steps? elided to fit the budget/.test(log)
+  const elided = /\d+ steps? elided to fit the budget/.test(log.text)
 
   const parsed = parseLessons(reply)
   if (!parsed.ok) return { ok: false, detail: `unparseable reply: ${parsed.error}${excerpt(reply)}`, reply }
@@ -180,6 +180,9 @@ export async function extract({
     // Said out loud: a lesson drawn from an excerpt is still a lesson, but the human should
     // know the extractor did not see the whole session.
     detail: summarise(recorded, lessons.length) + (elided ? " (from an excerpt: the log was over budget)" : ""),
+    // How far through the log this went. An excerpt covers only up to its first gap, so the
+    // caller's mark stops there and the elided middle is read next time rather than skipped.
+    through: log.through,
   }
 }
 

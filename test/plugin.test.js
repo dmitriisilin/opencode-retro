@@ -1548,3 +1548,34 @@ test("a two-turn session is one session with two executions", () => {
     "numbered once through, not restarted per turn",
   )
 })
+
+test("a session that turns out to be a subagent leaves the queue", async () => {
+  // Its end can be processed before the link is known: `session.created` is missed when the
+  // plugin loads lazily, leaving the parent's `subagent` result as the only route. A
+  // delegation is a step in its parent's task, so there is nothing of its own to analyse.
+  const directory = sandbox()
+  const fake = fakeOpenCode({ directory, options: { model: MODEL } })
+  const cleanup = await plugin.setup(fake.ctx)
+  const child = "ses_child"
+  const parent = "ses_parent"
+
+  await fake.hooks.get("session.prompt")({ sessionID: child, messageID: "m1", prompt: { text: "you are a subagent" } })
+  fake.emit({ type: "session.execution.succeeded", durable: { seq: 5 }, data: { sessionID: child } })
+  await tick()
+  assert.deepEqual(savedState(directory).pending.map((p) => p.session), [child], "queued, as far as we knew")
+
+  // The parent's own tool result reveals the link.
+  await fake.hooks.get("tool.execute.after")({
+    sessionID: parent,
+    id: "c1",
+    tool: "subagent",
+    input: { agent: "explore", description: "look around", prompt: "go" },
+    status: "completed",
+    result: { output: "done", metadata: { sessionID: child } },
+  })
+
+  assert.deepEqual(savedState(directory).pending, [], "and then it is not a session to analyse")
+  assert.equal(existsSync(join(directory, ".retro", "sessions", `${child}.jsonl`)), false, "its log went to the parent")
+
+  await cleanup?.()
+})

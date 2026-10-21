@@ -298,7 +298,10 @@ plugin needed — and it gets the `sessionID`, so it can drive the review conver
    bounded by `maxInput` (default 32,000 characters — characters, not tokens, because
    tokenisation is model-specific and a dependency, while the budget only has to be under a
    cliff rather than beside it), and an empty reply is answered by halving the budget and
-   asking once more. The retry matters more than the number: three attempts across `/retro`
+   asking once more. The bound holds whatever the log contains: prompts and replies are never
+   *dropped*, but when they alone exceed the budget they are shortened, and past that the text
+   is cut with a notice — being over the budget is where the answer comes back empty, so
+   "never exceeded" has to be a guarantee rather than an intention. The retry matters more than the number: three attempts across `/retro`
    runs had already sent the identical oversized input and collected the identical silence
    before retiring the log. The projection spends its budget in the order that loses least —
    less tool output first, then whole steps from the middle outward, never a prompt or an
@@ -328,9 +331,13 @@ plugin needed — and it gets the `sessionID`, so it can drive the review conver
   second writer was silently clobbered. Measured: a rejection recorded out of band vanished
   when a long-running instance saved its older copy. Only the append-only parts merge —
   rejections, extractions and counted sessions as unions, the session counter and each
-  `looked` size as maxima — because only they have a safe answer; the queue is the writer's
-  own, minus entries a recorded extraction has already covered (compared by the byte size
-  each entry was queued at, so a session picked up again after being settled is not lost).
+  `looked` size as maxima. The queue is a union as well, with the higher attempt count and the
+  smaller queued size: it used to be the writer's own, and two instances on one project then
+  lost each other's entries, which means a session nobody analyses — the log sits there and
+  nothing is owed for it. A union is only safe because entries leave in exactly two ways, and
+  both say so in the data: an extraction that covers the size the entry was queued at, and an
+  explicit `unqueue` (a session that turned out to be a subagent), which leaves a tombstone
+  for the same reason `rebase` does.
 - Whether `/api/experimental/session/{id}/log` (the durable event log) makes the shadow log
   redundant. Decision 3 says keep our own; worth a look before M1 ships.
 
@@ -475,7 +482,11 @@ re-read all of it, pay for all of it, and re-derive the lessons that were alread
 `state.looked[session]` is the mark that stops that, and it holds two numbers because they
 answer two questions: `n`, the last step actually turned into lessons, which only moves when
 an analysis succeeded and is where the next one starts; and `size`, the largest log already
-sent, success or not, so nothing is paid for twice. A re-read carries the session's prompts
+sent, success or not, so nothing is paid for twice. **`n` is the end of what the projection
+covered, not of what it looked at.** An excerpt keeps a head and a tail with a gap between
+them, so marking the last step *seen* would jump the elided middle and nothing would ever
+read it; `projected()` reports the last step of its unbroken prefix and the mark stops there.
+The tail is read again next time, which costs a little and loses nothing. A re-read carries the session's prompts
 whatever their step — they say what it was for — and is told plainly that steps up to `n` were
 analysed before, along with what was concluded from them.
 

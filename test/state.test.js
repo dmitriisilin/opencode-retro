@@ -290,3 +290,26 @@ test("a session is counted once, however many times it runs", () => {
   assert.equal(createState({ path: s.path }).sessions, 3, "and the count survives a restart")
 })
 
+
+test("two writers' queues are merged, so neither loses what the other owed", () => {
+  // A lost queue entry is a session nobody analyses: the log sits there and nothing is owed
+  // for it. Entries only ever leave through an extraction, which the coverage filter already
+  // expresses, so a union cannot resurrect one that was removed on purpose.
+  const path = join(mkdtempSync(join(tmpdir(), "retro-queue-merge-")), "state.json")
+  const mine = createState({ path })
+  mine.queue("ses_a", 100)
+  mine.attempt("ses_a")
+
+  const theirs = createState({ path })
+  theirs.queue("ses_b", 200)
+
+  mine.queue("ses_c", 300)
+
+  const saved = JSON.parse(readFileSync(path, "utf8"))
+  assert.deepEqual(
+    saved.pending.map((p) => p.session).sort(),
+    ["ses_a", "ses_b", "ses_c"],
+    "both writers' debts survive",
+  )
+  assert.equal(saved.pending.find((p) => p.session === "ses_a").attempts, 1, "and the attempt count is not reset")
+})

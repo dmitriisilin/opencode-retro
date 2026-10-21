@@ -562,6 +562,9 @@ export default {
       const stray = log.read(child)
       ingest.absorb(child, stray)
       if (stray.length) log.remove(child)
+      // Its end may already have been processed, before the link was known: a delegation is a
+      // step in its parent's task, so there is nothing of its own to analyse.
+      state.unqueue(child)
       // The self-check may have been measuring the child's log, which no longer exists.
       observe(rootOf(parent), { force: true })
     }
@@ -887,7 +890,11 @@ export default {
       // written to as we read it.
       // The step mark moves only on success: a failed analysis must not skip the material it
       // failed on. The size was already recorded above, so nothing is paid twice.
-      if (result.ok && lastN > 0) state.look(sessionID, { n: lastN })
+      // Only as far as the analysis actually went. An excerpt covers up to its first gap, so
+      // marking the last step *seen* would jump over the elided middle and nothing would ever
+      // read it — the silent kind of loss this plugin exists to avoid.
+      const through = Math.min(result.through ?? lastN, lastN)
+      if (result.ok && through > 0) state.look(sessionID, { n: through })
 
       if (settle && (result.ok || state.pending.find((p) => p.session === sessionID)?.attempts >= 3)) {
         // `size` is what this settle actually covered, so a queue entry for later material

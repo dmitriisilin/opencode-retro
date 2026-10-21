@@ -1,7 +1,7 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 import { replay } from "./replay.js"
-import { project } from "../src/projection.js"
+import { project, projected } from "../src/projection.js"
 
 test("the projection is deterministic", () => {
   const { records } = replay("session-lint-trap.jsonl")
@@ -281,4 +281,45 @@ test("eliding never makes the projection longer than the text it replaces", () =
 
   assert.ok(out.length <= full.length, `eliding grew it: ${full.length} -> ${out.length}`)
   assert.doesNotMatch(out, /elided to fit/, "nothing was worth dropping")
+})
+
+test("an excerpt reports how far it actually goes, not how far it looked", () => {
+  // The step mark is set from this. Marking the last step *seen* would jump over the elided
+  // middle, and nothing would ever read it — the silent kind of loss this plugin is for.
+  const records = [
+    { v: 1, n: 1, k: "prompt", text: "start" },
+    ...Array.from({ length: 30 }, (_, i) => ({
+      v: 1, n: i + 2, k: "tool", id: `c${i}`, tool: "shell",
+      input: { command: `step-${i}` }, status: "completed", exit: 0, output: "ok",
+    })),
+    { v: 1, n: 32, k: "text", text: "and here is the end" },
+  ]
+
+  const whole = projected(records)
+  assert.equal(whole.through, 32, "nothing dropped, so it covers everything")
+
+  const excerpt = projected(records, { budget: 500 })
+  assert.match(excerpt.text, /elided to fit the budget/)
+  assert.ok(excerpt.through > 0, "it covers its own beginning")
+  assert.ok(excerpt.through < 32, `the tail is read but not covered, got ${excerpt.through}`)
+
+  // The next read starts at the gap, so the middle is read rather than skipped.
+  const rest = records.filter((r) => r.n > excerpt.through || r.k === "prompt")
+  assert.ok(
+    rest.some((r) => r.input?.command === `step-15`),
+    "the middle is still ahead of the mark",
+  )
+})
+
+test("prompts are shortened before a projection is allowed over budget", () => {
+  // Prompts and replies are never dropped, which is right. But over budget is where the model
+  // answers with an empty string, so when they alone exceed it they are shortened instead.
+  const records = Array.from({ length: 12 }, (_, i) => ({
+    v: 1, n: i + 1, k: "prompt", text: `instruction ${i} `.repeat(200),
+  }))
+
+  const out = projected(records, { budget: 4000 })
+  assert.ok(out.text.length <= 4000, `budget respected, got ${out.text.length}`)
+  assert.match(out.text, /instruction 0/, "every prompt is still there, just shorter")
+  assert.match(out.text, /instruction 11/)
 })
