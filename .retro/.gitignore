@@ -1,0 +1,11 @@
+# Written once by opencode-retro. Yours to edit from here on.
+#
+# lessons/ and archive/ are deliberately NOT ignored: they are what this plugin
+# produces, they are meant to be read, reviewed and kept with the project.
+# Everything below is machine state.
+
+sessions/
+state.json
+selfcheck.md
+plugin.log
+prompts/updates/
