@@ -212,7 +212,16 @@ function withTimeout(promise, ms) {
   return Promise.race([
     promise.finally(() => clearTimeout(timer)),
     new Promise((_, reject) => {
-      timer = setTimeout(() => reject(new Error(`no reply after ${Math.round(ms / 1000)}s`)), ms)
+      timer = setTimeout(
+        () =>
+          reject(
+            new Error(
+              `no reply after ${Math.round(ms / 1000)}s. A slow or free model on a long log is the ` +
+                "usual reason: pin a faster one in `options.model`, or raise `extractTimeoutMs`",
+            ),
+          ),
+        ms,
+      )
     }),
   ])
 }

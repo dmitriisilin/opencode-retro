@@ -1,4 +1,4 @@
-<!-- translated-from: README.md@e84c7984f3cf -->
+<!-- translated-from: README.md@a1af8e9e9c1e -->
 # opencode-retro
 
 [English](README.md) | [Русский](README.ru.md) | [简体中文](README.zh-CN.md) | **Español** | [日本語](README.ja.md)
@@ -180,7 +180,7 @@ OpenCode descarga el plugin desde npm; basta con nombrarlo en `opencode.json`:
 
 `options.model` es opcional. Sin él, el plugin usa el modelo con el que se ejecutan tus sesiones y, si todavía no lo ha visto, recurre al modelo por omisión del espacio de trabajo. `.retro/selfcheck.md` informa de si se ejecutó un análisis y de por qué falló si no lo hizo.
 
-Para usar una copia local en lugar del paquete publicado —por ejemplo, si trabajas en el propio plugin— apunta `package` a su ruta absoluta. Una ruta relativa deja el arranque de la sesión colgado sin dar ningún error.
+**Mira primero qué hay realmente en npm.** Toda versión por debajo de `0.1.0` es un reservador de nombre: carga sin error, no registra ningún comando, no crea `.retro/` y no informa de nada. Es decir, seguir este fragmento antes del primer lanzamiento real te deja con una sesión de aspecto normal y un plugin que no está. Si `npm view opencode-retro version` está por debajo de `0.1.0`, apunta `package` a la ruta absoluta de una copia local; así se ejecuta también mientras se trabaja en el propio plugin. Una ruta relativa deja el arranque de la sesión colgado sin dar ningún error, y se puede fijar una versión exacta (`opencode-retro@0.1.0`) cuando haya alguna que fijar.
 
 Todo lo demás es opcional:
 

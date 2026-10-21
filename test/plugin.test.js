@@ -1815,3 +1815,40 @@ test("a session that turns out to be a subagent leaves the queue", async () => {
 
   await cleanup?.()
 })
+
+test("a failed read of a live session is owed, not forgotten", async () => {
+  // The size mark alone hid it: the next command saw "nothing new", and if the plugin
+  // restarted before the session's end event, nothing ever looked at the log again. `open`
+  // could not express it either — an excerpt is owed *now*, a failure is owed *later*, and
+  // one flag made a failing live session either loop every command or vanish.
+  const directory = sandbox()
+  const session = "ses_live_failed"
+  const fake = fakeOpenCode({ directory, options: { model: MODEL }, reply: "not json at all" })
+  const cleanup = await plugin.setup(fake.ctx)
+
+  fake.emit({ type: "session.execution.started", durable: { seq: 1 }, data: { sessionID: session } })
+  await tick()
+  await workSession(fake, session)
+
+  await fake.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
+  assert.equal(fake.generated.length, 1, "it was read")
+  const mark = savedState(directory).looked[session]
+  assert.ok(mark.size > 0, "and the bytes are not paid for twice")
+  assert.equal(mark.failed, true, "but the debt is recorded")
+  assert.equal(mark.open, undefined, "and it is not the kind that re-reads at once")
+
+  // Still live: the same bytes are not sent again.
+  await fake.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
+  assert.equal(fake.generated.length, 1, "nothing new in it, so nothing spent")
+
+  // The plugin restarts, so nothing is live and no end event was ever seen for it.
+  await cleanup?.()
+  const after = fakeOpenCode({ directory, options: { model: MODEL } })
+  const cleanup2 = await plugin.setup(after.ctx)
+  await after.commands.get("retro").execute({ sessionID: "ses_review2", prompt: { text: "" } })
+
+  assert.equal(after.generated.length, 1, "the session is over now, so the log is read")
+  assert.equal(savedState(directory).extracted[session]?.ok, true, "and settled")
+
+  await cleanup2?.()
+})

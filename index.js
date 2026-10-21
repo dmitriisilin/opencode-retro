@@ -103,6 +103,9 @@ export default {
           topScore: lessons.length ? store.score(lessons[0]) : null,
           queued: state.pending.length,
           cited: log.list().filter((id) => citedSessions().has(id)).length,
+          decided: store.listArchive().length,
+          // Logs that failed three analyses: still on disk, and nothing will read them.
+          setAside: log.list().filter((id) => state.wasExtracted(id) && !state.extractionOf(id)?.ok).length,
         })
         mkdirSync(config.dir, { recursive: true })
         writeFileSync(config.selfcheck, check.render())
@@ -662,7 +665,7 @@ export default {
         // Bytes already sent are not the same as steps turned into lessons: an excerpt sends
         // the whole file but covers only its unbroken prefix, and the rest has to be read
         // again without waiting for growth that a finished session will never produce.
-        if (size <= mark.size && !mark.open) continue
+        if (size <= mark.size && !mark.open && !mark.failed) continue
         state.queue(id, size)
       }
 
@@ -860,7 +863,7 @@ export default {
       // pay for the same material twice. The step mark below still moves only on success.
       // `open` is cleared first so a failed retry falls back to the queue's attempt budget
       // instead of re-reading the same excerpt on every command for ever.
-      if (readSize > 0) state.look(sessionID, { size: readSize, open: false })
+      if (readSize > 0) state.look(sessionID, { size: readSize, open: false, failed: false })
 
       // A log we could not read is a failure like any other, and it reaches the same retry
       // policy below. It used to be marked extracted here and returned early, which did two
@@ -929,6 +932,11 @@ export default {
       // own first gap fails once and stops rather than billing for the same excerpt again.
       const open = Boolean(result.ok && through < lastN && through > mark.n)
       if (result.ok && through > 0) state.look(sessionID, { n: through, open })
+      // A failed read of a session nobody has queued — a live one — is owed, and the size
+      // mark alone would hide that: the next command sees "nothing new" and a restart before
+      // the session's end event means the log is never looked at again. Recorded here, and
+      // the queue takes it over the moment the session stops being live.
+      if (!result.ok && !settle) state.look(sessionID, { failed: true })
 
       // An excerpt leaves the debt open: the gap has not been turned into lessons, so the
       // entry stays and the next command reads from the mark. Only a complete read (or a

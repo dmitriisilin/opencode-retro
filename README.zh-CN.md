@@ -1,4 +1,4 @@
-<!-- translated-from: README.md@e84c7984f3cf -->
+<!-- translated-from: README.md@a1af8e9e9c1e -->
 # opencode-retro
 
 [English](README.md) | [Русский](README.ru.md) | **简体中文** | [Español](README.es.md) | [日本語](README.ja.md)
@@ -179,7 +179,7 @@ OpenCode 会从 npm 获取插件；在 `opencode.json` 中写出包名即可：
 
 `options.model` 为选填。不填时，插件会使用你会话所用的模型；若尚未见到，则退回到工作区的默认模型。`.retro/selfcheck.md` 会报告分析是否运行过，以及失败时的原因。
 
-若要改为运行一份检出（例如在开发插件本身时），请把 `package` 指向其绝对路径。相对路径会使会话启动一直挂起，且不报任何错误。
+**先看清 npm 上实际有什么。** 所有低于 `0.1.0` 的版本都只是占位：加载时不报错，不注册命令，不创建 `.retro/`，也不提示任何信息。也就是说，在第一个真正的发布之前照抄这段配置，你会得到一个看起来正常的会话和一个其实并不存在的插件。如果 `npm view opencode-retro version` 低于 `0.1.0`，请把 `package` 指向一份检出的绝对路径——开发插件本身时也是这样运行。相对路径会使会话启动一直挂起且不报任何错误；等到有版本可钉时，也可以钉住确切版本（`opencode-retro@0.1.0`）。
 
 其余均为可选：
 

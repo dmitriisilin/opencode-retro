@@ -6,6 +6,14 @@ import { dirname } from "node:path"
  * rejected (so the extractor is told not to propose them again, decision 9) and which
  * sessions have already been extracted (so a restart does not pay twice).
  */
+/** The on-disk shape of a mark, in one place: flags only when true. */
+const mark = (n, size, open, failed) => ({
+  n,
+  size,
+  ...(open ? { open: true } : {}),
+  ...(failed ? { failed: true } : {}),
+})
+
 export function createState({ path, onError }) {
   let data = {
     version: 1,
@@ -125,6 +133,7 @@ export function createState({ path, onError }) {
           n: typeof v === "number" ? 0 : (v?.n ?? 0),
           size: typeof v === "number" ? v : (v?.size ?? 0),
           open: typeof v === "number" ? false : Boolean(v?.open),
+          failed: typeof v === "number" ? false : Boolean(v?.failed),
         })
         const ownLooked = data.looked ?? {}
         const looked = {}
@@ -134,15 +143,18 @@ export function createState({ path, onError }) {
             // after the rebase may be used; the old number must not come back.
             if (!(id in ownLooked)) continue
             const own = asMark(ownLooked[id])
-            looked[id] = own.open ? { n: own.n, size: own.size, open: true } : { n: own.n, size: own.size }
+            looked[id] = mark(own.n, own.size, own.open, own.failed)
             continue
           }
           const a = asMark(disk.looked?.[id])
           const b = asMark(ownLooked[id])
           const n = Math.max(a.n, b.n)
           const size = Math.max(a.size, b.size)
-          const open = b.present && b.n >= a.n ? b.open : a.open
-          looked[id] = open ? { n, size, open: true } : { n, size }
+          // Both flags follow the writer whose mark is at least as far along, and they are
+          // rebuilt here rather than carried: a flag assembled in `look()` and forgotten in
+          // this merge is invisible until something downstream quietly stops happening.
+          const newer = b.present && b.n >= a.n ? b : a
+          looked[id] = mark(n, size, newer.open, newer.failed)
         }
         // The extraction describes the file that was replaced, so its byte size no longer
         // covers anything: a new log may be smaller than the old one and still be new work.
@@ -218,6 +230,8 @@ export function createState({ path, onError }) {
       }
     },
     wasExtracted: (session) => Boolean(data.extracted[session]),
+    /** What the last analysis of this session concluded, if any — including that it failed. */
+    extractionOf: (session) => data.extracted[session] ?? null,
     isPending: (session) => data.pending.some((p) => p.session === session),
 
     /**
@@ -243,20 +257,39 @@ export function createState({ path, onError }) {
     looked(session) {
       const mark = data.looked[session]
       // Was a bare byte count before the offset existed; an old state.json still has one.
+      // Flags appear only when true, which is the shape callers compare against — and a
+      // falsy `undefined` reads the same to every `!mark.open` in the plugin.
       if (typeof mark === "number") return { n: 0, size: mark }
-      return { n: mark?.n ?? 0, size: mark?.size ?? 0, ...(mark?.open ? { open: true } : {}) }
+      return {
+        n: mark?.n ?? 0,
+        size: mark?.size ?? 0,
+        ...(mark?.open ? { open: true } : {}),
+        ...(mark?.failed ? { failed: true } : {}),
+      }
     },
-    look(session, { n, size, open }) {
+    /**
+     * `open` and `failed` are both "still owed", and they are not the same debt. An excerpt
+     * that covered a prefix is owed *now*, so the live pass reads on without waiting for the
+     * session to grow. A read that failed is owed *later*: re-reading the same bytes would
+     * fail the same way, so it waits for growth while the session is live, and the moment it
+     * is not, the queue picks it up and the attempt budget applies. With only one flag, a
+     * failed read of a live session either looped on every command or — once its size was
+     * recorded and the plugin restarted before the session's end event — was skipped for
+     * good.
+     */
+    look(session, { n, size, open, failed }) {
       const before = this.looked(session)
       // A rebase is deliberately *not* deleted here. Until a save has carried the rebase to
       // the file, the old mark is still on disk; letting this fresh (necessarily smaller)
       // mark be maxed against it would resurrect the number that described the replaced log.
       const nextOpen = open === undefined ? Boolean(before.open) : Boolean(open)
-      data.looked[session] = {
-        n: Math.max(n ?? 0, before.n),
-        size: Math.max(size ?? 0, before.size),
-        ...(nextOpen ? { open: true } : {}),
-      }
+      const nextFailed = failed === undefined ? Boolean(before.failed) : Boolean(failed)
+      data.looked[session] = mark(
+        Math.max(n ?? 0, before.n),
+        Math.max(size ?? 0, before.size),
+        nextOpen,
+        nextFailed,
+      )
       save()
     },
 

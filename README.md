@@ -176,7 +176,7 @@ OpenCode fetches the plugin from npm; name it in `opencode.json`:
 
 `options.model` is optional. Without it the plugin uses the model your sessions run on, falling back to the workspace default. `.retro/selfcheck.md` reports whether an analysis ran, and why it failed if it did not.
 
-To run a checkout instead — when working on the plugin itself — point `package` at its absolute path. A relative path leaves session startup hanging without an error.
+**Check what npm actually has first.** Every version below `0.1.0` is a name placeholder: it loads without error, registers no command, creates no `.retro/`, and reports nothing — so following this snippet before the first real release leaves you with a session that looks normal and a plugin that is not there. If `npm view opencode-retro version` is below `0.1.0`, point `package` at an absolute path to a checkout instead; that is also how you run it while working on the plugin. A relative path leaves session startup hanging without an error, and an exact version can be pinned (`opencode-retro@0.1.0`) once there is one.
 
 Everything else is optional:
 

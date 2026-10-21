@@ -271,13 +271,27 @@ export function render(state) {
   return lines.join("\n")
 }
 
-function renderStock({ lessons = 0, topScore = null, top = null, queued = 0, cited = 0 } = {}) {
+function renderStock({ lessons = 0, topScore = null, top = null, queued = 0, cited = 0, decided = 0, setAside = 0 } = {}) {
   const lines = []
-  if (lessons === 0) lines.push("- no lessons recorded yet")
+  // "No lessons recorded yet" right after a decision read as though the decision had
+  // vanished — the lesson is in `archive/`, which is where a decided one belongs.
+  if (lessons === 0) {
+    lines.push(decided ? `- no open lessons — ${decided} decided, in \`archive/\`` : "- no lessons recorded yet")
+  }
   else {
     lines.push(
       `- ${lessons} lesson${lessons === 1 ? "" : "s"} in \`lessons/\` — run \`/retro\` to review` +
         (top ? `, starting with \`${top}\`${topScore != null ? ` (score ${round(topScore)})` : ""}` : ""),
+    )
+  }
+  if (setAside) {
+    // Kept on disk and owed to nobody. Without a line here, `sessions/` fills with
+    // transcripts nothing will ever read, and the file whose job is to report the stock
+    // does not mention them.
+    lines.push(
+      `- ${setAside} log${setAside === 1 ? "" : "s"} given up on after three failed analyses — still in ` +
+        "`sessions/`, and nothing will read them. `plugin.log` says why each one failed; a slow " +
+        "model timing out is the usual reason, and `options.model` pins a faster one.",
     )
   }
   if (queued) {
