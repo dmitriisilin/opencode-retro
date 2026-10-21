@@ -10,6 +10,7 @@ import { createPrompts } from "../src/prompts.js"
 import { createState } from "../src/state.js"
 import { parseShadowLog } from "../src/shadowlog.js"
 import { parseFrontmatter } from "../src/frontmatter.js"
+import { project } from "../src/projection.js"
 
 const here = dirname(fileURLToPath(import.meta.url))
 const live = () =>
@@ -418,6 +419,125 @@ test("a budget that leaves no room for the log still leaves room for the log", a
 
   assert.ok(result.ok, "it still runs")
   assert.match(r.calls[0].prompt, /do the thing/, "and the log is still in there")
+})
+
+test("a projection that fits the log budget still fits maxInput once the Log section is added", async () => {
+  // The budget was computed from the composition with no log at all, so it never paid for
+  // the "## Log" heading and the separators a non-empty log adds. A full projection of
+  // exactly `budget` therefore composed to `maxInput + a few characters`.
+  const records = [
+    { v: 1, n: 1, k: "prompt", text: "first instruction" },
+    { v: 1, n: 2, k: "prompt", text: "second instruction" },
+    ...Array.from({ length: 10 }, (_, i) => ({
+      v: 1,
+      n: i + 3,
+      k: "tool",
+      id: `c${i}`,
+      tool: "shell",
+      input: { command: `run-${i}` },
+      status: "completed",
+      output: "y".repeat(600),
+    })),
+  ]
+  const nothing = '```json\n{"lessons": []}\n```'
+
+  const full = rig({ reply: nothing })
+  await extract({ ...full, records, session: "ses_frame", maxInput: 1_000_000 })
+  const whole = full.calls[0].prompt.length
+  assert.ok(whole > 3000, "big enough that the 2,000 floor is not what is being measured")
+
+  const bounded = rig({ reply: nothing })
+  const result = await extract({ ...bounded, records, session: "ses_frame", maxInput: whole - 1 })
+
+  assert.ok(result.ok, result.detail)
+  assert.ok(
+    bounded.calls[0].prompt.length <= whole - 1,
+    `sent ${bounded.calls[0].prompt.length} characters against a budget of ${whole - 1}`,
+  )
+})
+
+test("a small but positive log budget is spent, not rounded up to 2,000", async () => {
+  // The 2,000 floor is for the case where the fixed part alone is over budget. When there
+  // is room — even only a few hundred characters — using more than it is how a bounded
+  // input went over maxInput for no reason.
+  const records = [
+    { v: 1, n: 1, k: "prompt", text: "first instruction" },
+    { v: 1, n: 2, k: "prompt", text: "second instruction" },
+    { v: 1, n: 3, k: "tool", id: "c0", tool: "shell", input: { command: "ls" }, status: "completed", output: "y".repeat(600) },
+  ]
+  const nothing = '```json\n{"lessons": []}\n```'
+
+  const full = rig({ reply: nothing })
+  await extract({ ...full, records, session: "ses_small_room", maxInput: 1_000_000 })
+  const whole = full.calls[0].prompt.length
+
+  const bounded = rig({ reply: nothing })
+  const result = await extract({ ...bounded, records, session: "ses_small_room", maxInput: whole - 1 })
+
+  assert.ok(result.ok, result.detail)
+  assert.ok(
+    bounded.calls[0].prompt.length <= whole - 1,
+    `sent ${bounded.calls[0].prompt.length} characters against a budget of ${whole - 1}`,
+  )
+})
+
+test("the empty-reply retry halves a small budget instead of rounding it up to 1,000", async () => {
+  // With a 1,000-character floor, a first attempt at 500 was followed by an attempt at
+  // 1,000 — the same projection, so the guard saw no change and never retried.
+  const root = mkdtempSync(join(tmpdir(), "retro-small-retry-"))
+  const sent = []
+  const r = {
+    store: createStore({ dir: join(root, "lessons"), archive: join(root, "archive") }),
+    state: createState({ path: join(root, "state.json") }),
+    prompts: createPrompts({ dir: join(root, "prompts"), updates: join(root, "prompts", "updates") }),
+    model: MODEL,
+    generate: async (input) => {
+      sent.push(input.prompt)
+      return { text: sent.length === 1 ? "" : '```json\n{"lessons": []}\n```' }
+    },
+  }
+  const records = [
+    { v: 1, n: 1, k: "prompt", text: "go" },
+    { v: 1, n: 2, k: "prompt", text: "again" },
+    ...Array.from({ length: 20 }, (_, i) => ({
+      v: 1,
+      n: i + 3,
+      k: "tool",
+      id: `c${i}`,
+      tool: "shell",
+      input: { command: `run-${i}` },
+      status: "completed",
+      exit: 2,
+      output: "z".repeat(600),
+    })),
+  ]
+
+  const full = rig({ reply: '```json\n{"lessons": []}\n```' })
+  await extract({ ...full, records, session: "ses_small", maxInput: 1_000_000 })
+  const room = 500
+  const maxInput = full.calls[0].prompt.length - project(records).length + room
+
+  const result = await extract({ ...r, records, session: "ses_small", maxInput })
+
+  assert.ok(result.ok, result.detail)
+  assert.equal(sent.length, 2, "one retry")
+  assert.ok(sent[1].length < sent[0].length, `the retry must be smaller: ${sent[0].length} then ${sent[1].length}`)
+})
+
+test("lessons already concluded from this session are put in front of the extractor", async () => {
+  const r = rig({ reply: REPLY() })
+  await extract({
+    records: live(),
+    session: "ses_live",
+    concluded: [
+      { id: "lint-skill-no-config", status: "accepted", statement: "The lint skill assumes eslint." },
+    ],
+    ...r,
+  })
+
+  const [input] = r.calls
+  assert.match(input.prompt, /## Already concluded from this session/)
+  assert.match(input.prompt, /`lint-skill-no-config` \(accepted\): The lint skill assumes eslint\./)
 })
 
 test("an empty reply is answered by asking again with less, not by asking again", async () => {

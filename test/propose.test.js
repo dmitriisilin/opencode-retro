@@ -217,3 +217,11 @@ test("the small pieces both messages share say the same thing the same way", () 
     /could not analyse `ses_bad`: unparseable reply/,
   )
 })
+
+test("an evidence entry without steps is cited by session, not as an empty range", () => {
+  // `steps` is optional in the parser, so a lesson can legitimately arrive with none. The
+  // hand-over used to print "steps " with nothing after it.
+  const text = renderProposal(lesson({ evidence: [{ session: "ses_solo", steps: [] }] }))
+  assert.match(text, /sessions\/ses_solo\.jsonl`/)
+  assert.doesNotMatch(text, /steps\s*[.`]/)
+})

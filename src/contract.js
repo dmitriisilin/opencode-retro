@@ -112,7 +112,10 @@ function normalise(lesson) {
   const statement = str(lesson.statement)
   if (!statement) return null
 
-  const steps = (Array.isArray(lesson.steps) ? lesson.steps : [])
+  // A model that answers `steps: 9` for a one-step lesson meant the same thing as `[9, 9]`.
+  // Dropping a scalar turned a real citation into an empty range, and then into `cost: 1`.
+  const rawSteps = Array.isArray(lesson.steps) ? lesson.steps : lesson.steps == null ? [] : [lesson.steps]
+  const steps = rawSteps
     .map((n) => Number.parseInt(n, 10))
     .filter((n) => Number.isFinite(n))
     .sort((a, b) => a - b)

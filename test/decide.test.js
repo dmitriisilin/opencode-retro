@@ -27,10 +27,10 @@ const lesson = (over = {}) => ({
   ...over,
 })
 
-const rig = () => {
+const rig = ({ cap } = {}) => {
   const root = mkdtempSync(join(tmpdir(), "retro-review-"))
   return {
-    store: createStore({ dir: join(root, "lessons"), archive: join(root, "archive") }),
+    store: createStore({ dir: join(root, "lessons"), archive: join(root, "archive"), cap }),
     state: createState({ path: join(root, "state.json") }),
   }
 }
@@ -168,4 +168,28 @@ test("a decision made without a session still records cleanly", () => {
   const [open] = r.store.list()
   assert.equal(open.status, "later")
   assert.equal("decidedIn" in open, false, "an absent session is absent, not null in the file")
+})
+
+test("a lesson the cap evicted can still be decided, and is not called already decided", () => {
+  // `archive/` holds decisions and cap evictions together. The second was never ruled on,
+  // so answering "already recorded as new" both misreports it and loses the human's answer.
+  const r = rig({ cap: 1 })
+  r.store.record(
+    [
+      { ...lesson(), id: "big", statement: "Big", steps: [1, 2], matches: null, cost: 100, why: "b" },
+      { ...lesson(), id: "small", statement: "Small", steps: [3, 4], matches: null, cost: 1, why: "s" },
+    ],
+    { session: "ses_a" },
+  )
+  assert.equal(r.store.listArchive()[0].id, "small")
+  assert.equal(r.store.listArchive()[0].status, "new")
+
+  const got = decide({ id: "small", status: "accepted", note: "fine after all" }, r)
+
+  assert.ok(got.ok, got.detail)
+  assert.ok(!got.already, "it was never decided, so this is not a repeat")
+  const archived = r.store.listArchive().find((l) => l.id === "small")
+  assert.equal(archived.status, "accepted", "and the decision reached the archive")
+  assert.match(archived.note, /fine after all/)
+  assert.equal(r.store.list().length, 1, "only the undecided lesson stays open")
 })

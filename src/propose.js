@@ -155,7 +155,7 @@ export function renderProposal(
       "",
       "From " +
         evidence
-          .map((e) => `\`sessions/${e.session}.jsonl\`${Array.isArray(e.steps) ? ` steps ${e.steps.join("–")}` : ""}`)
+          .map((e) => `\`sessions/${e.session}.jsonl\`${Array.isArray(e.steps) && e.steps.length ? ` steps ${e.steps.join("–")}` : ""}`)
           .join(", ") +
         ".",
       "",

@@ -18,7 +18,12 @@ export function project(records, { maxToolOutput = 600, maxPromptChars = 4000, b
   const tight = render(records, { maxToolOutput: Math.min(maxToolOutput, 200), maxPromptChars })
   if (size(tight) <= budget) return join(tight)
 
-  return join(elide(tight, budget))
+  const elided = elide(tight, budget)
+  // Dropping a very small block can cost more than it saves: a one-line call is shorter
+  // than the marker that replaces it. Never return a "shorter" projection that is longer
+  // than the one it was made from.
+  const elidedText = join(elided)
+  return elidedText.length <= join(tight).length ? elidedText : join(tight)
 }
 
 /**
@@ -35,16 +40,68 @@ function elide(blocks, budget) {
   const droppable = blocks.map((b, i) => (b.droppable ? i : -1)).filter((i) => i >= 0)
 
   // Middle first: order the droppable indices by distance from the centre, descending.
-  const centre = (droppable[0] + droppable[droppable.length - 1]) / 2
+  const centre = droppable.length ? (droppable[0] + droppable[droppable.length - 1]) / 2 : 0
   const order = [...droppable].sort(
     (a, b) => Math.abs(a - centre) - Math.abs(b - centre) || a - b,
   )
 
+  const markerText = (n) => `[...] ${n} step${n === 1 ? "" : "s"} elided to fit the budget`
+  const markerSize = (n) => markerText(n).length + 1
+  const blockSize = blocks.map((b) => b.lines.reduce((m, l) => m + l.length + 1, 0))
+
+  /**
+   * The cost of the projection as it will actually be rendered, markers included.
+   *
+   * This used to be `size(kept) + 60`, which assumes one gap no matter how many the drops
+   * create. A session with assistant text between tool calls produces a gap per turn, so
+   * the estimate stopped dropping long before the text fitted: a fifty-turn log over an
+   * 8,000-character budget came out at 9,130. Each dropped run carries its own marker, and
+   * two runs merge when the block between them goes, so this tracks runs rather than
+   * guessing.
+   */
   let total = size(blocks)
+  const runAtStart = new Map()
+  const runAtEnd = new Map()
+  const addRun = (run) => {
+    runAtStart.set(run.start, run)
+    runAtEnd.set(run.end, run)
+  }
+  const removeRun = (run) => {
+    runAtStart.delete(run.start)
+    runAtEnd.delete(run.end)
+  }
+
   for (const i of order) {
     if (total <= budget) break
+    const left = runAtEnd.get(i - 1)
+    const right = runAtStart.get(i + 1)
+    let delta = -blockSize[i]
+
+    if (left && right) {
+      // The block was the only thing between two gaps; they become one marker.
+      removeRun(left)
+      removeRun(right)
+      const merged = { start: left.start, end: right.end, count: left.count + 1 + right.count }
+      addRun(merged)
+      delta += markerSize(merged.count) - markerSize(left.count) - markerSize(right.count)
+    } else if (left) {
+      removeRun(left)
+      const grown = { ...left, end: i, count: left.count + 1 }
+      addRun(grown)
+      delta += markerSize(grown.count) - markerSize(left.count)
+    } else if (right) {
+      removeRun(right)
+      const grown = { ...right, start: i, count: right.count + 1 }
+      addRun(grown)
+      delta += markerSize(grown.count) - markerSize(right.count)
+    } else {
+      const run = { start: i, end: i, count: 1 }
+      addRun(run)
+      delta += markerSize(1)
+    }
+
     keep[i] = false
-    total = size(blocks.filter((_, j) => keep[j])) + 60 // one marker's worth, roughly
+    total += delta
   }
 
   const out = []
@@ -52,13 +109,13 @@ function elide(blocks, budget) {
   for (let i = 0; i < blocks.length; i++) {
     if (keep[i]) {
       if (dropped) {
-        out.push({ lines: [`[...] ${dropped} step${dropped === 1 ? "" : "s"} elided to fit the budget`] })
+        out.push({ lines: [markerText(dropped)] })
         dropped = 0
       }
       out.push(blocks[i])
     } else dropped++
   }
-  if (dropped) out.push({ lines: [`[...] ${dropped} step${dropped === 1 ? "" : "s"} elided to fit the budget`] })
+  if (dropped) out.push({ lines: [markerText(dropped)] })
   return out
 }
 

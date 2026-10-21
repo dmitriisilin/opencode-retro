@@ -40,7 +40,7 @@ export const DECIDE_INPUT = {
 }
 
 export function decide({ id, status, note, changed, discovered }, { store, state, session = null }) {
-  const lesson = store.list().find((l) => l.id === id)
+  let lesson = store.list().find((l) => l.id === id)
 
   if (!lesson) {
     // Idempotent on purpose. A decided lesson has moved to the archive, and a second call
@@ -48,13 +48,26 @@ export function decide({ id, status, note, changed, discovered }, { store, state
     // agent hunting the filesystem for a tool it already had, and calling it twice more.
     const closed = store.listArchive().find((l) => l.id === id)
     if (closed) {
-      return { ok: true, already: true, detail: `\`${id}\` was already recorded as ${closed.status}` }
-    }
-    return {
-      ok: false,
-      detail: `no lesson \`${id}\` is open or archived. Open lessons: ${
-        store.list().map((l) => l.id).join(", ") || "none"
-      }`,
+      // The archive also holds open questions the cap evicted. Those were never decided, so
+      // reporting "already recorded as new" would be false and would lose the decision; put
+      // the lesson back and record what the human actually chose.
+      if (closed.status !== "new") {
+        return { ok: true, already: true, detail: `\`${id}\` was already recorded as ${closed.status ?? "closed"}` }
+      }
+      lesson = store.restore(id)
+      if (!lesson) {
+        return {
+          ok: false,
+          detail: `\`${id}\` was archived by the lesson cap, not decided, and could not be restored to record a decision.`,
+        }
+      }
+    } else {
+      return {
+        ok: false,
+        detail: `no lesson \`${id}\` is open or archived. Open lessons: ${
+          store.list().map((l) => l.id).join(", ") || "none"
+        }`,
+      }
     }
   }
 

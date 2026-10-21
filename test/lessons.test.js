@@ -1,9 +1,9 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { existsSync, mkdtempSync, readFileSync, readdirSync, writeFileSync, mkdirSync } from "node:fs"
+import { existsSync, mkdtempSync, readFileSync, readdirSync, renameSync, writeFileSync, mkdirSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { DEFAULT_CAP, DEFAULT_HALF_LIFE, createStore, freshness, score, staleSessions } from "../src/lessons.js"
+import { DEFAULT_CAP, DEFAULT_HALF_LIFE, concludedIn, createStore, freshness, score, staleSessions } from "../src/lessons.js"
 import { parseFrontmatter } from "../src/frontmatter.js"
 
 const sandbox = () => {
@@ -396,4 +396,131 @@ test("reading the same session again is not a second session", () => {
   const elsewhere = store.record([{ ...lesson, steps: [7, 9] }], { session: "ses_other" })
   assert.deepEqual(elsewhere.reopened, ["lint-skill-no-config"])
   assert.equal(store.list()[0].reopenedFrom, "accepted")
+})
+
+test("a re-read without steps does not erase the range the lesson already cites", () => {
+  // `steps` is optional in the parser, so a model can match an existing lesson and omit it.
+  // An empty list is a missing answer, not a range of zero: overwriting [9, 18] with [] made
+  // the evidence point nowhere, which is the one thing decision 18 keeps the log for.
+  const s = sandbox()
+  const store = s.store()
+  store.record([lesson()], { session: "ses_a" })
+  store.record([lesson({ steps: [] })], { session: "ses_a" })
+
+  const { data } = parseFrontmatter(readFileSync(join(s.lessons, "lint-skill-no-config.md"), "utf8"))
+  assert.deepEqual(data.evidence, [{ session: "ses_a", steps: [9, 18] }])
+})
+
+test("a lesson the cap evicted comes back as an open question, not as a failed fix", () => {
+  // The archive holds two different things: decisions, and open questions pushed out for
+  // space. Reopening the second as though it had been closed says "the fix did not hold"
+  // about a fix nobody made.
+  const root = mkdtempSync(join(tmpdir(), "retro-cap-restore-"))
+  const store = createStore({ dir: join(root, "lessons"), archive: join(root, "archive"), cap: 3 })
+  const made = (id, cost) => lesson({ id, statement: id, cost, confidence: 1 })
+
+  store.record([made("big", 100), made("mid", 50), made("mid2", 40), made("small", 1)], { session: "ses_a" })
+  assert.equal(store.listArchive()[0].id, "small")
+  assert.equal(store.listArchive()[0].status, "new", "evicted, never decided")
+
+  const result = store.record([made("small", 100)], { session: "ses_b" })
+  assert.deepEqual(result.restored, ["small"])
+  assert.deepEqual(result.reopened, [], "nothing was closed, so nothing came back")
+
+  const back = store.list().find((l) => l.id === "small")
+  assert.equal(back.recurrence, 2, "a new session still counts as a recurrence")
+  assert.equal(back.cost, 101)
+  assert.equal(back.status, "new")
+  assert.equal(back.reopenedFrom, undefined, "and it does not claim a closing decision")
+})
+
+test("a re-read restores a cap-evicted lesson when there is room, without counting the session twice", () => {
+  const root = mkdtempSync(join(tmpdir(), "retro-cap-reread-"))
+  const store = createStore({ dir: join(root, "lessons"), archive: join(root, "archive"), cap: 2 })
+  const made = (id, cost) => lesson({ id, statement: id, cost, confidence: 1 })
+
+  store.record([made("big", 100), made("mid", 50), made("small", 1)], { session: "ses_a" })
+  assert.deepEqual(store.list().map((l) => l.id).sort(), ["big", "mid"])
+  store.close("mid", "accepted", { note: "done" }) // room opens
+
+  const result = store.record([lesson({ id: "small", statement: "small", steps: [40, 44] })], { session: "ses_a" })
+
+  assert.deepEqual(result.restored, ["small"], "the same session can still get its open question back")
+  assert.deepEqual(result.reopened, [])
+  const back = store.list().find((l) => l.id === "small")
+  assert.equal(back.recurrence, 1, "a re-read is not a second session")
+  assert.equal(back.cost, 1, "nor a second cost")
+  assert.deepEqual(back.evidence, [{ session: "ses_a", steps: [40, 44] }], "but the newer range wins")
+})
+
+test("a cap-evicted lesson is not handed back as already concluded", () => {
+  // `concludedFrom` used to read every archived lesson, so an open question the cap pushed
+  // out was presented to the extractor as a decision from this session — which is exactly
+  // the material a re-read might need to restore.
+  const archived = [
+    { id: "decided", status: "accepted", statement: "a decision", evidence: [{ session: "ses_a", steps: [1, 2] }] },
+    { id: "evicted", status: "new", statement: "an open question", evidence: [{ session: "ses_a", steps: [3, 4] }] },
+    { id: "elsewhere", status: "accepted", statement: "another session", evidence: [{ session: "ses_b", steps: [5, 6] }] },
+  ]
+
+  assert.deepEqual(concludedIn(archived, "ses_a"), [
+    { id: "decided", status: "accepted", statement: "a decision" },
+  ])
+})
+
+test("two copies of a closed lesson in one extraction reopen it once, not twice", () => {
+  // The archive map was read once per batch, so after the first copy reopened (and removed
+  // the archive file), the second copy found the stale entry again, appended the same
+  // session a second time and moved recurrence by two for one session.
+  const s = sandbox()
+  const store = s.store()
+  store.record([lesson()], { session: "ses_a" })
+  store.close("lint-skill-no-config", "accepted", { note: "fixed" })
+
+  const result = store.record([lesson(), lesson()], { session: "ses_b" })
+
+  assert.deepEqual(result.reopened, ["lint-skill-no-config"], "one reopen, not two")
+  const [back] = store.list()
+  assert.equal(back.recurrence, 2, "one independent session")
+  assert.deepEqual(back.evidence, [
+    { session: "ses_a", steps: [9, 18] },
+    { session: "ses_b", steps: [9, 18] },
+  ])
+})
+
+test("an explicit match to an archived lesson beats an unrelated open lesson with the same id", () => {
+  // `matches` is the extractor saying "this is that problem". It was only consulted when the
+  // new id did not collide with an open lesson, so an unrelated lesson sharing the slug
+  // silently took the recurrence and the archived problem stayed closed.
+  const s = sandbox()
+  const store = s.store()
+  store.record([lesson({ id: "foo", statement: "an unrelated open problem" })], { session: "ses_open" })
+  store.record([lesson({ id: "bar", statement: "the archived problem" })], { session: "ses_a" })
+  store.close("bar", "accepted", { note: "fixed once" })
+
+  const result = store.record(
+    [lesson({ id: "foo", statement: "the problem came back", matches: "bar" })],
+    { session: "ses_b" },
+  )
+
+  assert.deepEqual(result.reopened, ["bar"], "the named problem is the one that comes back")
+  assert.deepEqual(result.merged, [], "the unrelated open lesson is not touched")
+  assert.deepEqual(store.list().map((l) => l.id).sort(), ["bar", "foo"])
+  assert.equal(store.list().find((l) => l.id === "foo").statement, "an unrelated open problem")
+})
+
+test("restore keeps a hand-renamed lesson's filename, so it is not copied twice", () => {
+  // Users open these files, and a renamed archive file is still the same lesson. Restoring it
+  // without its name made the next save write `<id>.md`, leaving two files with one id.
+  const s = sandbox()
+  const store = s.store()
+  store.record([lesson()], { session: "ses_a" })
+  store.close("lint-skill-no-config", "accepted", { note: "done" })
+  renameSync(join(s.archive, "lint-skill-no-config.md"), join(s.archive, "renamed.md"))
+
+  const back = store.restore("lint-skill-no-config")
+  assert.equal(back.file, "renamed.md")
+  store.write({ ...back, status: "later" })
+
+  assert.deepEqual(readdirSync(s.lessons), ["renamed.md"], "one file, not two")
 })

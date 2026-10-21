@@ -107,7 +107,18 @@ export async function extract({
    * budget only has to be comfortably under a cliff, not next to it.
    */
   const overhead = compose("").length
-  const budget = Number.isFinite(maxInput) ? Math.max(2000, maxInput - overhead) : Infinity
+  // A non-empty Log section brings its heading, a separator and, on a re-read, the blank
+  // line between the continuation note and the log. Measuring the composition with a
+  // one-character log gives exactly that frame, whether or not the section already exists.
+  // Without it the budget was a few characters too generous, and a projection that fitted
+  // `budget` produced a prompt a few characters over `maxInput`.
+  const frame = compose("x").length - overhead - 1
+  const room = maxInput - overhead - frame
+  // Spend only the room that is actually left. `max(2000, room)` used to ignore a positive
+  // room smaller than 2,000 and send more than `maxInput` anyway; 2,000 is only a floor for
+  // the case where the fixed part alone is over budget, where nothing can be honoured and a
+  // small excerpt beats an empty one.
+  const budget = Number.isFinite(maxInput) ? (room > 0 ? room : 2000) : Infinity
 
   const { from, ...ref } = model
   const ask = async (log) => {
@@ -142,7 +153,9 @@ export async function extract({
    * empty.
    */
   if (!answer.text.trim() && Number.isFinite(budget)) {
-    const smaller = project(records, { budget: Math.max(1000, Math.floor(budget / 2)) })
+    // Halve it, never round up to a minimum: when the first budget was small because little
+    // room was left, a 1,000-character floor would make the second attempt *larger*.
+    const smaller = project(records, { budget: Math.max(1, Math.floor(budget / 2)) })
     if (smaller !== log) {
       log = smaller
       answer = await ask(log)
@@ -232,6 +245,7 @@ function summarise(recorded, lessons) {
   const parts = []
   if (recorded.created?.length) parts.push(`${recorded.created.length} new (${recorded.created.join(", ")})`)
   if (recorded.reopened?.length) parts.push(`${recorded.reopened.length} came back (${recorded.reopened.join(", ")})`)
+  if (recorded.restored?.length) parts.push(`${recorded.restored.length} restored (${recorded.restored.join(", ")})`)
   if (recorded.merged?.length) parts.push(`${recorded.merged.length} recurring (${recorded.merged.join(", ")})`)
   if (recorded.archived?.length) parts.push(`${recorded.archived.length} archived`)
   return parts.join(", ") || "no change"

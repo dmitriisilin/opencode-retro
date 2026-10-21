@@ -242,3 +242,43 @@ test("the numbering is left alone, so evidence still points at real steps", () =
   // an excerpt would make those references point at the wrong steps.
   assert.match(out, /\[21\] shell/, "the last step keeps the number it has in the log")
 })
+
+test("every gap is counted, so an interleaved log is actually trimmed to the budget", () => {
+  // Assistant text between tool calls creates a gap per turn. The old estimate charged one
+  // marker (60 characters) no matter how many gaps the drops made, so a fifty-turn log over
+  // an 8,000-character budget came out at 9,130 — still long enough to hit the silent
+  // empty-reply cliff the budget exists to stay under.
+  const records = [{ k: "prompt", n: 1, text: "start" }]
+  let n = 2
+  for (let i = 0; i < 50; i++) {
+    records.push({ k: "text", n: n++, text: `assistant note ${i} `.repeat(3) })
+    records.push({
+      k: "tool",
+      n: n++,
+      tool: "shell",
+      input: { command: `c-${i}` },
+      status: "completed",
+      output: "x".repeat(600),
+    })
+  }
+
+  const out = project(records, { budget: 8000 })
+  assert.ok(out.length <= 8000, `budget respected, got ${out.length}`)
+  assert.match(out, /elided to fit the budget/)
+  assert.match(out, /assistant note 0/, "the beginning survives, where the goal is set")
+  assert.match(out, /assistant note 49/, "and the end, where the trouble shows")
+})
+
+test("eliding never makes the projection longer than the text it replaces", () => {
+  // A one-line call is shorter than the marker that would replace it. Dropping it used to
+  // grow the prompt, which is the opposite of what a budget is for.
+  const records = [
+    { k: "prompt", n: 1, text: "go" },
+    { k: "tool", n: 2, tool: "shell", input: { command: "ls" }, status: "completed", output: "ok" },
+  ]
+  const full = project(records)
+  const out = project(records, { budget: full.length - 1 })
+
+  assert.ok(out.length <= full.length, `eliding grew it: ${full.length} -> ${out.length}`)
+  assert.doesNotMatch(out, /elided to fit/, "nothing was worth dropping")
+})

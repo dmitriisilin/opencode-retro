@@ -5,7 +5,7 @@ import { createPrompts } from "./src/prompts.js"
 import { createSelfCheck } from "./src/selfcheck.js"
 import { createShadowLog, parseShadowLog } from "./src/shadowlog.js"
 import { createState } from "./src/state.js"
-import { createStore, score } from "./src/lessons.js"
+import { concludedIn, createStore, score } from "./src/lessons.js"
 import { assessCurrency, fingerprintOf } from "./src/currency.js"
 import { extract } from "./src/extract.js"
 import { pickLesson, pickOpen, renderBatch, renderFailures, renderNothing, renderProposal } from "./src/propose.js"
@@ -520,10 +520,7 @@ export default {
      * reopen as though the fix had not held, when all that happened is a second read.
      */
     function concludedFrom(sessionID) {
-      return store
-        .listArchive()
-        .filter((l) => (Array.isArray(l.evidence) ? l.evidence : [l.evidence]).some((e) => e?.session === sessionID))
-        .map((l) => ({ id: l.id, status: l.status ?? "closed", statement: l.statement ?? "" }))
+      return concludedIn(store.listArchive(), sessionID)
     }
 
     function pruneLogs(invoking = null) {

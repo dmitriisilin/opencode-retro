@@ -84,3 +84,9 @@ test("slug stays short and file-safe", () => {
   assert.equal(slug("The `lint` skill assumes eslint; no linter!"), "the-lint-skill-assumes-eslint-no")
   assert.equal(slug("!!!"), "lesson")
 })
+
+test("a scalar step is a one-step citation, not a missing one", () => {
+  const { lessons } = parseLessons(JSON.stringify({ lessons: [{ ...good, steps: 9 }] }))
+  assert.deepEqual(lessons[0].steps, [9, 9], "it used to be dropped, and cost fell to 1")
+  assert.equal(lessons[0].cost, 9, "the explicit cost is still the one that counts")
+})
