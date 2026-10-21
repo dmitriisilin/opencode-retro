@@ -1,6 +1,12 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { assess, createSelfCheck, STATUS } from "../src/selfcheck.js"
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { assess, activeCheck, createSelfCheck, STATUS } from "../src/selfcheck.js"
+import { createPrompts } from "../src/prompts.js"
+import { createStore } from "../src/lessons.js"
+import { createState } from "../src/state.js"
 
 const healthy = {
   id: "ses_x",
@@ -119,4 +125,98 @@ test("before any session ends the file says so rather than looking healthy", () 
   const text = check.render()
   assert.match(text, /Nothing measured yet/)
   assert.match(text, /registers happily and never fires/, "and says why registration is no proof")
+})
+
+test("an extraction that ran and produced something is ok, and repeats its own summary", () => {
+  const checks = assess({ ...healthy, extraction: { ok: true, detail: "1 new (lint-skill-no-config)" } })
+  const x = checks.find((c) => c.name === "extraction")
+  assert.equal(x.status, STATUS.OK)
+  assert.match(x.detail, /1 new/)
+  assert.equal(x.meaning, undefined, "nothing to explain when nothing is wrong")
+})
+
+/* ------------------------------------------------------- the active check */
+
+const activeRig = () => {
+  const root = mkdtempSync(join(tmpdir(), "retro-active-"))
+  const dir = join(root, "prompts")
+  const updates = join(dir, "updates")
+  return {
+    root,
+    dir,
+    updates,
+    ctx: {
+      tool: { hook() {}, transform() {} },
+      session: { hook() {}, synthetic() {} },
+      command: { transform() {} },
+      event: { subscribe() {} },
+      generate: { text() {} },
+    },
+    config: {},
+    prompts: createPrompts({ dir, updates, global: join(root, "global") }),
+    store: createStore({ dir: join(root, "lessons"), archive: join(root, "archive") }),
+    state: createState({ path: join(root, "state.json") }),
+  }
+}
+
+const activeStatus = (report, name) => report.checks.find((c) => c.name === name)
+
+test("the active check passes when every member the plugin depends on is present", async () => {
+  // This is the check decision 19 leans on: a missing member reads `undefined` at load,
+  // so it is the one API break a plugin can detect without waiting for traffic.
+  const r = activeRig()
+  const report = await activeCheck(r)
+
+  assert.equal(activeStatus(report, "ctx surface").status, STATUS.OK)
+  assert.match(activeStatus(report, "ctx surface").detail, /7 members present/)
+  assert.equal(activeStatus(report, "extract prompt").status, STATUS.OK)
+  assert.match(activeStatus(report, "extract prompt").detail, /^packaged \(base \d+\)$/, "and which layer is live")
+  assert.equal(activeStatus(report, "store").status, STATUS.OK)
+  assert.match(activeStatus(report, "store").detail, /0 lesson\(s\), 0 session\(s\) queued/)
+  assert.deepEqual(report.notes, [])
+})
+
+test("a missing ctx member is named, and does not stop the rest of the check", async () => {
+  const r = activeRig()
+  delete r.ctx.session.synthetic
+  r.ctx.tool.transform = "not a function"
+  const report = await activeCheck(r)
+
+  const surface = activeStatus(report, "ctx surface")
+  assert.equal(surface.status, STATUS.BROKEN)
+  assert.match(surface.detail, /tool\.transform/)
+  assert.match(surface.detail, /session\.synthetic/)
+  assert.doesNotMatch(surface.detail, /event\.subscribe/, "only what is actually missing")
+  assert.match(surface.meaning, /moved the plugin API/)
+
+  assert.equal(activeStatus(report, "extract prompt").status, STATUS.OK, "one broken member does not hide the rest")
+})
+
+test("a prompt that cannot be resolved anywhere is BROKEN, not silently defaulted", async () => {
+  const r = activeRig()
+  r.prompts = { resolve: () => null, pendingUpdates: () => [] }
+  const report = await activeCheck(r)
+
+  assert.equal(activeStatus(report, "extract prompt").status, STATUS.BROKEN)
+  assert.match(activeStatus(report, "extract prompt").detail, /could not be resolved at any layer/)
+})
+
+test("a newer default waiting on disk is named, and says nothing was changed", async () => {
+  const r = activeRig()
+  mkdirSync(r.updates, { recursive: true })
+  writeFileSync(join(r.updates, "extract.v3.md"), "a newer default\n")
+  const report = await activeCheck(r)
+
+  assert.equal(report.notes.length, 1)
+  assert.match(report.notes[0], /prompts\/updates\/extract\.v3\.md/)
+  assert.match(report.notes[0], /Nothing was changed for you/)
+})
+
+test("the stock line counts what is queued, so the review reports its own backlog", async () => {
+  const r = activeRig()
+  r.state.queue("ses_a")
+  r.state.queue("ses_b")
+  const report = await activeCheck(r)
+
+  assert.match(activeStatus(report, "store").detail, /0 lesson\(s\), 2 session\(s\) queued/)
 })

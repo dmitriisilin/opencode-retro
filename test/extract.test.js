@@ -4,7 +4,7 @@ import { mkdtempSync, readFileSync, readdirSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
-import { extract } from "../src/extract.js"
+import { DEFAULT_TIMEOUT_MS, extract } from "../src/extract.js"
 import { createStore } from "../src/lessons.js"
 import { createPrompts } from "../src/prompts.js"
 import { createState } from "../src/state.js"
@@ -327,4 +327,42 @@ test("the per-command log limit is unlimited by default and can be capped", asyn
   assert.equal(DEFAULTS.extractLimit, Infinity, "a half-analysed backlog only moves the work")
   assert.equal(resolveConfig({ options: {} }).extractLimit, Infinity)
   assert.equal(resolveConfig({ options: { extractLimit: 3 } }).extractLimit, 3, "but it is a knob")
+})
+
+test("no extract prompt at any layer refuses before spending a model call", async () => {
+  const r = rig({ reply: REPLY() })
+  r.prompts = { resolve: () => null }
+  const result = await extract({ records: live(), session: "s", ...r })
+
+  assert.equal(result.ok, false)
+  assert.match(result.detail, /no extract prompt could be resolved/)
+  assert.equal(r.calls.length, 0)
+})
+
+test("the summary says whether a lesson is new, recurring or back from the archive", async () => {
+  const r = rig({ reply: REPLY() })
+  const first = await extract({ records: live(), session: "ses_one", ...r })
+  assert.match(first.detail, /1 new \(lint-skill-no-config\)/)
+
+  const second = await extract({ records: live(), session: "ses_two", ...r })
+  assert.match(second.detail, /1 recurring \(lint-skill-no-config\)/)
+
+  r.store.close("lint-skill-no-config", "accepted", "removed the skill")
+  const third = await extract({ records: live(), session: "ses_three", ...r })
+  assert.match(third.detail, /1 came back \(lint-skill-no-config\)/, "a closed problem that returns is news, not a new lesson")
+})
+
+test("a rejected id is dropped even when the model reaches it through `matches`", async () => {
+  const r = rig({ reply: REPLY({ id: "eslint-again", matches: "lint-skill-no-config" }) })
+  r.state.reject("lint-skill-no-config", "we want eslint eventually")
+
+  const result = await extract({ records: live(), session: "ses_live", ...r })
+  assert.deepEqual(result.lessons, [])
+  assert.deepEqual(r.store.list(), [], "a near-duplicate is the same rejection")
+})
+
+test("every model call is bounded by default, because one hang used to wedge the queue", () => {
+  // The bound itself is exercised above with a short timeout; this pins the default so it
+  // cannot be quietly dropped and leave a silent stall in its place.
+  assert.equal(DEFAULT_TIMEOUT_MS, 90_000)
 })

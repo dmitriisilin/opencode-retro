@@ -1,7 +1,7 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 import { execFileSync } from "node:child_process"
-import { mkdtempSync, readFileSync, readdirSync } from "node:fs"
+import { existsSync, mkdtempSync, readFileSync, readdirSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -54,7 +54,8 @@ test("every local import in src resolves to a file that exists", () => {
     const text = readFileSync(where, "utf8")
     for (const [, spec] of text.matchAll(/from "(\.\.?\/[^"]+)"/g)) {
       const resolved = join(dirname(where), spec)
-      assert.ok(readFileSync(resolved, "utf8").length >= 0, `${file} imports missing ${spec}`)
+      assert.ok(existsSync(resolved), `${file} imports missing ${spec}`)
+      assert.ok(readFileSync(resolved, "utf8").length > 0, `${file} imports an empty ${spec}`)
     }
   }
 })

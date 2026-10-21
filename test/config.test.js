@@ -1,0 +1,95 @@
+import { test } from "node:test"
+import assert from "node:assert/strict"
+import { resolve } from "node:path"
+import { DEFAULTS, clamp, resolveConfig } from "../src/config.js"
+
+const location = { directory: "/tmp/project", project: { id: "proj_1" } }
+
+test("defaults are the documented layout, in one place", () => {
+  assert.equal(DEFAULTS.dir, ".retro")
+  assert.equal(DEFAULTS.prompts, "prompts")
+  assert.equal(DEFAULTS.keepSessions, false, "machine state is not kept unless asked")
+  assert.equal(DEFAULTS.autoExtract, false, "nothing spends money unprompted")
+  assert.equal(DEFAULTS.extractLimit, Infinity, "a half-analysed backlog only moves the work")
+})
+
+test("the layout is resolved under the project, not under the process", () => {
+  const got = resolveConfig({ location, options: {} })
+
+  assert.equal(got.directory, "/tmp/project")
+  assert.equal(got.project, "proj_1", "the stable workspace id, not a git subprocess")
+  assert.equal(got.dir, resolve("/tmp/project", ".retro"))
+  assert.equal(got.sessions, resolve(got.dir, "sessions"))
+  assert.equal(got.lessons, resolve(got.dir, "lessons"))
+  assert.equal(got.archive, resolve(got.dir, "archive"))
+  assert.equal(got.prompts, resolve(got.dir, "prompts"))
+  assert.equal(got.updates, resolve(got.dir, "prompts", "updates"))
+  assert.equal(got.selfcheck, resolve(got.dir, "selfcheck.md"))
+  assert.equal(got.state, resolve(got.dir, "state.json"))
+  assert.equal(got.pluginLog, resolve(got.dir, "plugin.log"))
+})
+
+test("an absolute dir or prompt path is used as given", () => {
+  const got = resolveConfig({ location, options: { dir: "/var/tmp/retro", prompts: "/var/tmp/prompts" } })
+  assert.equal(got.dir, "/var/tmp/retro")
+  assert.equal(got.sessions, "/var/tmp/retro/sessions")
+  assert.equal(got.prompts, "/var/tmp/prompts")
+})
+
+test("every settable option is carried through, and omitted ones take the default", () => {
+  const options = {
+    model: { providerID: "deepseek", id: "deepseek-flash" },
+    maxOutput: 100,
+    heartbeatMs: 5,
+    halfLife: 3,
+    keepSessions: true,
+    extractTimeoutMs: 250,
+    autoLimit: 2,
+    extractLimit: 4,
+    autoExtract: true,
+  }
+  const got = resolveConfig({ location, options })
+  for (const [key, value] of Object.entries(options)) assert.deepEqual(got[key], value, key)
+
+  const plain = resolveConfig({ location, options: {} })
+  assert.equal(plain.model, null, "no model is a legitimate state; extraction says how to fix it")
+  assert.equal(plain.maxOutput, DEFAULTS.maxOutput)
+  assert.equal(plain.heartbeatMs, DEFAULTS.heartbeatMs)
+  assert.equal(plain.halfLife, DEFAULTS.halfLife)
+  assert.equal(plain.extractTimeoutMs, DEFAULTS.extractTimeoutMs)
+  assert.equal(plain.autoLimit, DEFAULTS.autoLimit)
+})
+
+test("a context without a location still yields a usable layout", () => {
+  const got = resolveConfig({})
+  assert.equal(got.directory, process.cwd())
+  assert.equal(got.project, null)
+  assert.equal(got.dir, resolve(process.cwd(), ".retro"))
+  assert.equal(got.model, null)
+})
+
+test("clamp keeps the head and the tail, and says how much went missing", () => {
+  const text = "START" + "x".repeat(200) + "END"
+  const got = clamp(text, 40)
+
+  assert.equal(got.truncated, true)
+  assert.equal(got.originalLength, text.length)
+  assert.match(got.text, /^START/)
+  assert.match(got.text, /END$/)
+  assert.match(got.text, /\[\d+ characters elided\]/)
+  assert.ok(got.text.length < text.length, "the point is to save room")
+})
+
+test("short text and non-strings are handed back untouched", () => {
+  assert.deepEqual(clamp("hi", 10), { text: "hi", truncated: false })
+  assert.deepEqual(clamp(null, 10), { text: null, truncated: false })
+  assert.deepEqual(clamp("", 0), { text: "", truncated: false })
+})
+
+test("clamp refuses to elide when the notice would cost more than it saves", () => {
+  // A tiny budget plus a long notice is longer than the original. Returning it truncated
+  // would be a lie about the only thing clamp is for.
+  const got = clamp("abcdefghij", 1)
+  assert.equal(got.text, "abcdefghij")
+  assert.equal(got.truncated, false)
+})

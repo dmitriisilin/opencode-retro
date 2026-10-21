@@ -34,3 +34,16 @@ test("it is seeded once and never rewritten", () => {
   assert.equal(seedGitignore({ dir }).seeded, false)
   assert.equal(readFileSync(join(dir, ".gitignore"), "utf8"), "mine\n", "after the first run it is the user's file")
 })
+
+test("a seed that cannot happen is reported, not thrown", () => {
+  // First run is exactly when this file matters, and a read-only or obstructed directory
+  // must degrade to no .gitignore rather than break setup.
+  const root = sandbox()
+  writeFileSync(join(root, "blocked"), "not a directory\n")
+  const errors = []
+  const result = seedGitignore({ dir: join(root, "blocked", ".retro"), onError: (where) => errors.push(where) })
+
+  assert.equal(result.seeded, false)
+  assert.match(result.error, /ENOTDIR|EEXIST|not a directory/)
+  assert.deepEqual(errors, ["gitignore.seed"])
+})

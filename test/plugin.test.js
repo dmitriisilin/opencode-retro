@@ -23,6 +23,19 @@ function fakeOpenCode({ options = {}, directory, reply } = {}) {
   const sessions = []
   let created = 0
 
+  // A push-driven event stream, so the end-of-session trigger can actually be fired.
+  // Before this the iterator never yielded and handleEvent was only ever tested by writing
+  // state.json by hand — which is exactly the part of the plugin that is not under test.
+  const queue = []
+  let wake = null
+  const emit = (event) => {
+    if (wake) {
+      const resolve = wake
+      wake = null
+      resolve({ value: event, done: false })
+    } else queue.push(event)
+  }
+
   const ctx = {
     app: { version: "2.0.32" },
     location: { directory, project: { id: "proj" } },
@@ -50,7 +63,19 @@ function fakeOpenCode({ options = {}, directory, reply } = {}) {
       remove: async ({ sessionID }) => void live.delete(sessionID),
     },
     command: { transform: async (fn) => fn({ add: (c) => commands.set(c.name, c) }) },
-    event: { subscribe: () => ({ [Symbol.asyncIterator]: () => ({ next: () => new Promise(() => {}) }) }) },
+    event: {
+      subscribe: () => ({
+        [Symbol.asyncIterator]: () => ({
+          next: () =>
+            queue.length
+              ? Promise.resolve({ value: queue.shift(), done: false })
+              : new Promise((resolve) => {
+                  wake = resolve
+                }),
+          return: () => Promise.resolve({ value: undefined, done: true }),
+        }),
+      }),
+    },
     model: { default: async () => ({ data: { providerID: "fake", modelID: "fake-model" } }) },
     generate: {
       text: async () => {
@@ -58,7 +83,7 @@ function fakeOpenCode({ options = {}, directory, reply } = {}) {
       },
     },
   }
-  return { ctx, commands, tools, hooks, synthetic, generated, live, sessions }
+  return { ctx, commands, tools, hooks, synthetic, generated, live, sessions, emit }
 }
 
 const sandbox = () => {
@@ -88,6 +113,15 @@ async function workSession(fake, session) {
   }
 }
 
+/** state.json only exists once something changed it, so a missing file is a clean state. */
+const savedState = (directory) => {
+  try {
+    return JSON.parse(readFileSync(join(directory, ".retro", "state.json"), "utf8"))
+  } catch {
+    return { sessions: 0, pending: [], rejected: [], extracted: {} }
+  }
+}
+
 /** The sessions whose logs a command was asked to analyse, in order. */
 const analysed = (fake) => fake.generated.map((g) => (g.prompt.match(/id: (ses_\w+)/) ?? [])[1])
 
@@ -104,6 +138,9 @@ const queue = (directory, sessions) =>
   )
 
 const MODEL = { providerID: "deepseek", id: "deepseek-flash" }
+
+/** The event loop is a promise chain, not a callback, so give it a turn to run. */
+const tick = () => new Promise((resolve) => setTimeout(resolve, 20))
 
 const REPLY = JSON.stringify({
   lessons: [
@@ -260,11 +297,33 @@ test("an edited review prompt is what reaches the agent", async () => {
 })
 
 test("a command that throws reports itself instead of vanishing into a 500", async () => {
+  // Gotcha 13: a throwing command body surfaces as an HTTP 500 and nowhere else. This
+  // drives the wrapper itself, which the unit tests over exports can never reach. A
+  // hand-edited lesson with a non-string `change` is enough to make the renderer throw.
+  const directory = sandbox()
+  mkdirSync(join(directory, ".retro", "lessons"), { recursive: true })
+  writeFileSync(
+    join(directory, ".retro", "lessons", "broken.md"),
+    "---\nid: broken\nstatement: something\ncost: 5\nrecurrence: 1\nconfidence: 1\nstatus: new\nproposal:\n  target: AGENTS.md\n  change: 42\n---\n\nbody\n",
+  )
+
+  const fake = fakeOpenCode({ directory, options: { model: MODEL } })
+  const cleanup = await plugin.setup(fake.ctx)
+  await fake.commands.get("retro").execute({ sessionID: "ses_x", prompt: { text: "" } })
+
+  const log = readFileSync(join(directory, ".retro", "plugin.log"), "utf8")
+  assert.match(log, /command\.retro:/, "the failure reaches the log, where it can be read later")
+  assert.equal(fake.synthetic.length, 1, "and the session is told, rather than shown a 500")
+  assert.match(fake.synthetic[0].text, /`\/retro` failed/)
+  assert.match(fake.synthetic[0].text, /plugin\.log/, "with where to look next")
+  await cleanup?.()
+})
+
+test("deciding on a lesson that does not exist fails clearly through the registered tool", async () => {
   const directory = sandbox()
   const fake = fakeOpenCode({ directory, options: { model: MODEL } })
   const cleanup = await plugin.setup(fake.ctx)
 
-  // retro_decide on a lesson that is not there is the cheapest reachable failure.
   const result = await fake.tools.get("retro_decide").execute({ id: "nope", status: "accepted" })
   assert.equal(result.output.ok, false)
   assert.match(result.content, /no lesson/)
@@ -302,9 +361,16 @@ test("a log survives while a lesson cites it, and goes once that lesson is decid
   // The lesson's evidence points at this log, and review may ask what happened at those
   // steps, so the reference has to still resolve.
   assert.ok(existsSync(logPath), "the log outlives extraction while a lesson cites it")
+  const report = readFileSync(join(directory, ".retro", "selfcheck.md"), "utf8")
+  assert.match(report, /1 log kept in `sessions\/` because open lessons cite it/, "the report says why it is still there")
 
   await fresh.tools.get("retro_decide").execute({ id: "lint-skill-no-config", status: "accepted" })
   assert.ok(!existsSync(logPath), "and goes once nothing open refers to it")
+  assert.doesNotMatch(
+    readFileSync(join(directory, ".retro", "selfcheck.md"), "utf8"),
+    /because open lessons cite/,
+    "and the report is recomputed rather than left stale",
+  )
 
   await cleanup?.()
   await cleanup2?.()
@@ -655,4 +721,180 @@ test("extractLimit caps what one command analyses and leaves the rest queued", a
 
   await cleanup?.()
   await cleanup2?.()
+})
+
+test("a finished session is queued by the event stream, and the report proves the hooks ran", async () => {
+  // The end-of-session trigger is the plugin's whole capture pipeline: verify the hooks,
+  // count the session, queue the log. Until now every test wrote state.json by hand, so
+  // handleEvent — the one function that turns traffic into work — was never executed.
+  const directory = sandbox()
+  const session = "ses_ended"
+  const fake = fakeOpenCode({ directory, options: { model: MODEL } })
+  const cleanup = await plugin.setup(fake.ctx)
+
+  await fake.hooks.get("session.prompt")({ sessionID: session, messageID: "m1", prompt: { text: "do it" } })
+  await fake.hooks.get("tool.execute.before")({ sessionID: session, id: "c1", tool: "shell", input: { command: "x" } })
+  fake.emit({
+    type: "session.tool.called",
+    durable: { seq: 4 },
+    data: { sessionID: session, id: "c1", input: { command: "x" } },
+  })
+  await fake.hooks.get("tool.execute.after")({
+    sessionID: session,
+    id: "c1",
+    tool: "shell",
+    input: { command: "x" },
+    status: "completed",
+    result: { output: { exit: 1, output: "no" }, metadata: { exit: 1 } },
+  })
+
+  fake.emit({ type: "session.execution.succeeded", durable: { seq: 7 }, data: { sessionID: session } })
+  await tick()
+
+  const state = savedState(directory)
+  assert.deepEqual(state.pending.map((p) => p.session), [session], "the finished session is owed an analysis")
+  assert.equal(state.sessions, 1, "and the session counter moved, which freshness is measured against")
+
+  const report = readFileSync(join(directory, ".retro", "selfcheck.md"), "utf8")
+  assert.match(report, /verified\s+\d{4}-\d{2}-\d{2}/, "the end-of-session trigger is proven, not assumed")
+  assert.match(report, /ok\s+prompt hook\s+1 prompt seen/)
+  assert.match(report, /ok\s+tool hook\s+1 tool-call events \/ 1 hook calls/)
+  assert.match(report, /ok\s+shadow log\s+sessions\/ses_ended\.jsonl, \d+ entries/)
+  assert.match(report, /ok\s+trigger\s+session\.execution\.succeeded/)
+  assert.match(report, /queued; `\/retro` analyses it/)
+
+  // A duplicate end event must not count the same session twice.
+  fake.emit({ type: "session.execution.succeeded", data: { sessionID: session } })
+  await tick()
+  const again = savedState(directory)
+  assert.equal(again.sessions, 1)
+  assert.equal(again.pending.length, 1)
+  await cleanup?.()
+})
+
+test("events the hooks never received are reported as a dead hook, with numbers", async () => {
+  // Decision 19's measured failure: a renamed hook registers happily and never fires. The
+  // event stream and the hook are two independent paths to the same fact, and only the
+  // comparison can name which one broke.
+  const directory = sandbox()
+  const session = "ses_drift"
+  const fake = fakeOpenCode({ directory, options: { model: MODEL } })
+  const cleanup = await plugin.setup(fake.ctx)
+
+  await fake.hooks.get("session.prompt")({ sessionID: session, messageID: "m1", prompt: { text: "do it" } })
+  for (const id of ["c1", "c2"]) {
+    fake.emit({
+      type: "session.tool.called",
+      durable: { seq: 3 },
+      data: { sessionID: session, id, input: { command: "x" } },
+    })
+  }
+  // Only one of the two calls ever reached the hook.
+  await fake.hooks.get("tool.execute.after")({
+    sessionID: session,
+    id: "c1",
+    tool: "shell",
+    input: { command: "x" },
+    status: "completed",
+    result: { output: { exit: 1, output: "no" }, metadata: { exit: 1 } },
+  })
+
+  fake.emit({ type: "session.execution.succeeded", data: { sessionID: session } })
+  await tick()
+
+  const report = readFileSync(join(directory, ".retro", "selfcheck.md"), "utf8")
+  assert.match(report, /BROKEN\s+tool hook\s+2 tool-call events \/ 1 hook calls/)
+  assert.match(report, /the tool hook is dead/)
+  assert.match(report, /needs an update/)
+  await cleanup?.()
+})
+
+test("a subagent's own instruction is absorbed when session.created reveals the parent", async () => {
+  // The other route to the same fact. The instruction lands under the child's id first, and
+  // the child's end event must not be counted as a session of its own.
+  const directory = sandbox()
+  const parent = "ses_parent"
+  const child = "ses_child"
+  const fake = fakeOpenCode({ directory, options: { model: MODEL } })
+  const cleanup = await plugin.setup(fake.ctx)
+
+  await fake.hooks.get("session.prompt")({
+    sessionID: child,
+    messageID: "m1",
+    prompt: { text: "You are a subagent spawned by another session.\nLook at src/sum.js." },
+  })
+  assert.ok(existsSync(join(directory, ".retro", "sessions", `${child}.jsonl`)), "it starts out in the wrong place")
+
+  fake.emit({
+    type: "session.created",
+    durable: { seq: 0 },
+    data: { sessionID: child, parentID: parent, agent: "explore", title: "look" },
+  })
+  await tick()
+
+  assert.ok(!existsSync(join(directory, ".retro", "sessions", `${child}.jsonl`)), "the orphan log is gone")
+  const records = readFileSync(join(directory, ".retro", "sessions", `${parent}.jsonl`), "utf8")
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line))
+  assert.match(records.find((r) => r.k === "prompt").text, /subagent spawned/)
+
+  fake.emit({ type: "session.execution.succeeded", data: { sessionID: child } })
+  await tick()
+
+  const state = savedState(directory)
+  assert.equal(state.sessions, 0, "a delegation is a step, not a session")
+  assert.deepEqual(state.pending, [], "and it is never queued for its own analysis")
+  await cleanup?.()
+})
+
+test("the model the user is actually working with is the one used for analysis", async () => {
+  // The middle rung of resolveModel. It existed and was untested: the suite covered a
+  // pinned `options.model` and the workspace default, and nothing in between.
+  const directory = sandbox()
+  const session = "ses_work"
+  mkdirSync(join(directory, ".retro"), { recursive: true })
+  writeFileSync(
+    join(directory, ".retro", "state.json"),
+    JSON.stringify({ version: 1, rejected: [], extracted: {}, sessions: 1, pending: [{ session, queuedAt: "now", attempts: 0 }] }),
+  )
+
+  const fake = fakeOpenCode({ directory, options: {} })
+  const cleanup = await plugin.setup(fake.ctx)
+  await fake.hooks.get("session.model.request")({
+    kind: "primary",
+    sessionID: "ses_current",
+    model: { providerID: "anthropic", id: "claude-sonnet" },
+  })
+  await workSession(fake, session)
+  // The queue above is already loaded; this only writes the log the command will read.
+  await fake.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
+
+  assert.equal(fake.generated.length, 1)
+  assert.deepEqual(fake.sessions[0].model, { providerID: "anthropic", id: "claude-sonnet" })
+  await cleanup?.()
+})
+
+test("a workspace default that cannot be read refuses with the remedy, not a hang", async () => {
+  const directory = sandbox()
+  const session = "ses_nomodel"
+  mkdirSync(join(directory, ".retro"), { recursive: true })
+  writeFileSync(
+    join(directory, ".retro", "state.json"),
+    JSON.stringify({ version: 1, rejected: [], extracted: {}, sessions: 1, pending: [{ session, queuedAt: "now", attempts: 0 }] }),
+  )
+
+  const fake = fakeOpenCode({ directory, options: {} })
+  fake.ctx.model.default = async () => {
+    throw new Error("no default model in this workspace")
+  }
+  const cleanup = await plugin.setup(fake.ctx)
+  await workSession(fake, session)
+  await fake.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
+
+  assert.equal(fake.generated.length, 0, "no model, no call")
+  assert.equal(fake.sessions.length, 0, "and no analysis session was left behind")
+  assert.match(fake.synthetic[0].text, /could not analyse `ses_nomodel`/i)
+  assert.match(fake.synthetic[0].text, /options\.model/, "the message names the way out")
+  await cleanup?.()
 })

@@ -84,3 +84,82 @@ test("with one agent throughout, nothing is labelled", () => {
   ])
   assert.doesNotMatch(text, /\(/)
 })
+
+test("a failed call shows why, instead of an empty result", () => {
+  const text = project([{ k: "tool", n: 4, tool: "shell", status: "error", error: { message: "boom" } }])
+  assert.match(text, /\[4\] shell:/)
+  assert.match(text, /-> error: \{"message":"boom"\}/)
+})
+
+test("a skill says which SKILL.md it came from, so a proposal has a target", () => {
+  const text = project([
+    {
+      k: "tool",
+      n: 3,
+      tool: "skill",
+      status: "completed",
+      input: {},
+      skill: { name: "lint", directory: "/p/.opencode/skills/lint" },
+    },
+  ])
+  assert.match(text, /\[3\] skill: lint/)
+  assert.match(text, /-> skill from \/p\/\.opencode\/skills\/lint/)
+})
+
+test("a clean exit is silence; a non-zero one is the failure status hides", () => {
+  const clean = project([{ k: "tool", n: 1, tool: "shell", status: "completed", exit: 0 }])
+  const failed = project([{ k: "tool", n: 2, tool: "shell", status: "completed", exit: 2 }])
+
+  assert.doesNotMatch(clean, /-> exit 0/)
+  assert.match(failed, /-> exit 2/)
+})
+
+test("assistant text and the session start are readable, because intent lives there too", () => {
+  const text = project([
+    { k: "session", n: 1, event: "start" },
+    { k: "prompt", n: 2, text: "do the thing" },
+    { k: "text", n: 3, text: "Done. It needed a config file." },
+  ])
+  assert.match(text, /--- session start/)
+  assert.match(text, /\[2\] user:\n {4}do the thing/)
+  assert.match(text, /\[3\] assistant:\n {4}Done\. It needed a config file\./)
+})
+
+test("an unknown tool is shown compactly, and its input is cut rather than dropped", () => {
+  const text = project([{ k: "tool", n: 1, tool: "webfetch", status: "completed", input: { url: "x".repeat(300) } }])
+  const line = text.split("\n")[0]
+  assert.match(line, /^\[1\] webfetch: \{/)
+  assert.match(line, /…$/)
+  assert.ok(line.length < 220, "one unknown tool cannot flood the prompt")
+})
+
+test("a tool with an input that cannot be serialised is still a step, not a crash", () => {
+  const input = { url: "https://example.test" }
+  input.self = input
+  const text = project([{ k: "tool", n: 1, tool: "webfetch", status: "completed", input }])
+  assert.match(text, /\[1\] webfetch: /)
+})
+
+test("the read and glob forms are addressable by what they looked at", () => {
+  const text = project([
+    { k: "tool", n: 1, tool: "read", status: "completed", input: { path: "src/sum.js" } },
+    { k: "tool", n: 2, tool: "glob", status: "completed", input: { pattern: "src/**/*.js" } },
+    { k: "tool", n: 3, tool: "edit", status: "completed", input: { path: "src/sum.js" }, files: [] },
+  ])
+  assert.match(text, /\[1\] read: src\/sum\.js/)
+  assert.match(text, /\[2\] glob: src\/\*\*\/\*\.js/)
+  assert.match(text, /\[3\] edit: src\/sum\.js/)
+})
+
+test("the two budgets are honoured: tool output is trimmed, prompts are kept whole longer", () => {
+  const records = [
+    { k: "prompt", n: 1, text: "p".repeat(500) },
+    { k: "tool", n: 2, tool: "shell", status: "completed", output: "o".repeat(500) },
+  ]
+  const text = project(records, { maxToolOutput: 60, maxPromptChars: 120 })
+
+  const result = text.slice(text.indexOf("[2] shell:"))
+  assert.match(result, /characters elided/, "output still gets a notice")
+  assert.ok(result.length < 200, "and is cut to the budget")
+  assert.equal((text.match(/characters elided/g) ?? []).length, 2, "both budgets were applied")
+})

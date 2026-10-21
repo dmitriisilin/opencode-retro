@@ -87,3 +87,40 @@ status: later
 `)
   assert.deepEqual(data, { id: "x", status: "later" })
 })
+
+test("a `|-` block scalar keeps its lines and drops the trailing newline", () => {
+  const { data } = parseFrontmatter("---\nnote: |-\n  one\n  two\n---\n")
+  assert.equal(data.note, "one\ntwo")
+})
+
+test("an inline array is a list, and a one-item list stays a list", () => {
+  assert.deepEqual(parseFrontmatter("---\nsteps: [41, 58]\n---\n").data.steps, [41, 58])
+  assert.deepEqual(parseFrontmatter("---\ntags: [only]\n---\n").data.tags, ["only"])
+  assert.deepEqual(parseFrontmatter("---\ntags: []\n---\n").data.tags, [])
+})
+
+test("a list item with more than one key keeps all of them", () => {
+  // A hand-edited evidence entry grows a note. Losing it silently would lose the reason.
+  const { data } = parseFrontmatter(`---
+evidence:
+  - session: a81f
+    steps: [41, 58]
+    note: the second attempt
+---
+`)
+  assert.deepEqual(data.evidence, [{ session: "a81f", steps: [41, 58], note: "the second attempt" }])
+})
+
+test("scalars that look like other things are typed, and `~` is null", () => {
+  const { data } = parseFrontmatter("---\na: true\nb: 12\nc: 0.5\nd: ~\ne: 2026-10-19\n---\n")
+  assert.equal(data.a, true)
+  assert.equal(data.b, 12)
+  assert.equal(data.c, 0.5)
+  assert.equal(data.d, null)
+  assert.equal(data.e, "2026-10-19", "a date is kept as text, not guessed into a Date")
+})
+
+test("a stray deeper line with no key above it is skipped, not guessed at", () => {
+  const { data } = parseFrontmatter("---\nid: x\n      mystery\nstatus: new\n---\n")
+  assert.deepEqual(data, { id: "x", status: "new" })
+})

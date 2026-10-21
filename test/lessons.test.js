@@ -1,9 +1,9 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { mkdtempSync, readFileSync, readdirSync, writeFileSync, mkdirSync } from "node:fs"
+import { existsSync, mkdtempSync, readFileSync, readdirSync, writeFileSync, mkdirSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { createStore, freshness, score, staleSessions } from "../src/lessons.js"
+import { DEFAULT_CAP, DEFAULT_HALF_LIFE, createStore, freshness, score, staleSessions } from "../src/lessons.js"
 import { parseFrontmatter } from "../src/frontmatter.js"
 
 const sandbox = () => {
@@ -98,7 +98,7 @@ test("a ruling the user already made is not reopened by recurrence", () => {
   const after = parseFrontmatter(readFileSync(file, "utf8")).data
   assert.equal(after.status, "later")
   assert.equal(after.recurrence, 2, "it still counts, it just does not reset the decision")
-  assert.ok(data.id && body !== undefined)
+  assert.match(body, /Step 9 invoked the skill/, "and the narrative survives the status rewrite")
 })
 
 test("two different lessons with the same slug do not overwrite each other", () => {
@@ -215,4 +215,122 @@ test("record keeps a fingerprint of the target so currency can be checked later"
   const store = createStore({ dir: join(root, "lessons"), archive: join(root, "archive") })
   store.record([lesson()], { session: "ses_a", fingerprint: (t) => (t ? "abc123" : undefined) })
   assert.equal(store.list()[0].targetFingerprint, "abc123")
+})
+
+test("two problems that slug to the same name get honest distinct ids", () => {
+  const s = sandbox()
+  s.store().record(
+    [lesson({ id: "same", statement: "The first problem." }), lesson({ id: "same", statement: "The second problem." })],
+    { session: "ses_a" },
+  )
+
+  assert.deepEqual(readdirSync(s.lessons).sort(), ["same-2.md", "same.md"], "one file did not overwrite the other")
+  const statements = readdirSync(s.lessons).map((f) => parseFrontmatter(readFileSync(join(s.lessons, f), "utf8")).data.statement)
+  assert.deepEqual(statements.sort(), ["The first problem.", "The second problem."])
+})
+
+test("closing a lesson that is not open returns null rather than an empty record", () => {
+  const s = sandbox()
+  assert.equal(s.store().close("nope", "accepted"), null)
+  assert.ok(!existsSync(s.archive), "and writes nothing, not even an empty archive")
+})
+
+test("close takes a bare note too, so an older outcome shape still records", () => {
+  const s = sandbox()
+  const store = s.store()
+  store.record([lesson()], { session: "ses_a" })
+  const closed = store.close("lint-skill-no-config", "accepted", "done by hand")
+
+  assert.equal(closed.note, "done by hand")
+  const [archived] = store.listArchive()
+  assert.equal(archived.note, "done by hand")
+})
+
+test("a lesson that matches an archived id reopens that lesson, not a new one", () => {
+  // The `matches` hint can name a lesson that was decided while this one was being
+  // extracted. It is the same problem plus the news that the closing did not hold.
+  const s = sandbox()
+  const store = s.store()
+  store.record([lesson()], { session: "ses_a" })
+  store.close("lint-skill-no-config", "accepted", "removed the skill")
+
+  const result = store.record([lesson({ id: "eslint-again", matches: "lint-skill-no-config" })], { session: "ses_b" })
+  assert.deepEqual(result.reopened, ["lint-skill-no-config"])
+  assert.deepEqual(result.created, [], "a differently named slug is not a new lesson")
+  assert.deepEqual(store.listArchive(), [])
+
+  const [back] = store.list()
+  assert.equal(back.recurrence, 2)
+  assert.equal(back.reopenedFrom, "accepted")
+  assert.match(back.note, /removed the skill/, "the closing reason travels with it, as history")
+})
+
+test("the store's score, freshness and staleness all use its own session counter", () => {
+  const root = mkdtempSync(join(tmpdir(), "retro-store-clock-"))
+  let seen = 20
+  const store = createStore({ dir: join(root, "lessons"), archive: join(root, "archive"), sessions: () => seen })
+  store.record([lesson({ cost: 10, confidence: 1 })], { session: "ses_a" })
+  assert.equal(store.list()[0].lastSeen, 20)
+
+  seen = 30
+  assert.equal(store.freshness({ lastSeen: 20 }), 0.5, "ten sessions is one half-life")
+  assert.equal(store.staleSessions({ lastSeen: 20 }), 10)
+  assert.equal(store.score({ cost: 10, recurrence: 1, confidence: 1, lastSeen: 20 }), 5)
+})
+
+test("write puts one lesson on disk under its id, body and all", () => {
+  const s = sandbox()
+  const store = s.store()
+  assert.equal(store.write({ id: "hand-made", statement: "typed by a human", cost: 3, confidence: 1, body: "why it matters" }), true)
+
+  const { data, body } = parseFrontmatter(readFileSync(join(s.lessons, "hand-made.md"), "utf8"))
+  assert.equal(data.id, "hand-made")
+  assert.equal(body, "why it matters")
+  assert.deepEqual(store.list().map((l) => l.id), ["hand-made"])
+})
+
+test("a merge keeps the fingerprint taken when the lesson was first recorded", () => {
+  const root = mkdtempSync(join(tmpdir(), "retro-fp-merge-"))
+  const store = createStore({ dir: join(root, "lessons"), archive: join(root, "archive") })
+  store.record([lesson()], { session: "ses_a", fingerprint: () => "first-hash" })
+  store.record([lesson()], { session: "ses_b", fingerprint: () => "would-have-been-second" })
+
+  // The recorded hash is the baseline a later review compares against; silently moving it
+  // forward on every recurrence would make "changed since" unanswerable.
+  assert.equal(store.list()[0].targetFingerprint, "first-hash")
+})
+
+test("the documented cap and half-life are the defaults, not just exported numbers", () => {
+  assert.equal(DEFAULT_CAP, 30)
+  assert.equal(DEFAULT_HALF_LIFE, 10)
+
+  // The cap does the work: with no cap passed, 31 lessons leave one in the archive.
+  const root = mkdtempSync(join(tmpdir(), "retro-default-cap-"))
+  const store = createStore({ dir: join(root, "lessons"), archive: join(root, "archive") })
+  const batch = Array.from({ length: DEFAULT_CAP + 1 }, (_, i) =>
+    lesson({ id: `l${i}`, statement: `problem ${i}`, cost: DEFAULT_CAP - i + 1, confidence: 1 }),
+  )
+  const result = store.record(batch, { session: "ses_a" })
+
+  assert.equal(store.list().length, DEFAULT_CAP)
+  assert.equal(result.archived.length, 1)
+  assert.deepEqual(store.listArchive().map((l) => l.id), [`l${DEFAULT_CAP}`], "the lowest score goes")
+
+  // And freshness counts in half-lives of ten sessions unless told otherwise.
+  assert.equal(score({ cost: 1, recurrence: 1, confidence: 1, lastSeen: 0 }, { sessions: 10 }), 0.5)
+})
+
+test("a store that cannot create its directory reports it and carries on", () => {
+  const root = mkdtempSync(join(tmpdir(), "retro-store-blocked-"))
+  writeFileSync(join(root, "blocked"), "not a directory\n")
+  const errors = []
+  const store = createStore({
+    dir: join(root, "blocked", "lessons"),
+    archive: join(root, "archive"),
+    onError: (where) => errors.push(where),
+  })
+
+  assert.equal(store.write({ id: "x", statement: "a problem" }), false)
+  assert.deepEqual(errors, ["lessons.mkdir"])
+  assert.deepEqual(store.list(), [], "and a store that cannot be written reads as empty")
 })

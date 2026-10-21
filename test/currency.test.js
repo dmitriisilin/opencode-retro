@@ -66,3 +66,15 @@ test("the fingerprint is stable and content-addressed", () => {
   assert.notEqual(a, s.fingerprint(s.target))
   assert.equal(s.fingerprint("nope.md"), undefined)
 })
+
+test("an absolute target is checked where it is, not joined to the project", () => {
+  const s = sandbox()
+  const absolute = join(s.root, "elsewhere.md")
+  writeFileSync(absolute, "a file outside the project\n")
+
+  const got = assessCurrency(
+    { proposal: { target: absolute, change: "x" }, targetFingerprint: fingerprintOf("/")(absolute) },
+    { directory: s.root },
+  )
+  assert.equal(got.state, "unchanged")
+})

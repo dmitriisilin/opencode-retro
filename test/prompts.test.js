@@ -164,3 +164,21 @@ test("the review prompts ask the currency question without prescribing how", () 
   assert.match(s.prompts.resolve("review").text, /Change nothing until they have decided/)
   assert.match(s.prompts.resolve("review-auto").text, /one plan/)
 })
+
+test("a prompt that cannot be seeded reports it and leaves nothing behind", () => {
+  const s = sandbox()
+  writeFileSync(join(s.root, "blocked"), "not a directory\n")
+  const errors = []
+  const prompts = createPrompts({
+    dir: join(s.root, "blocked", "prompts"),
+    updates: join(s.root, "blocked", "prompts", "updates"),
+    global: s.global,
+    onError: (where) => errors.push(where),
+  })
+
+  const result = prompts.seed("extract")
+  assert.equal(result.seeded, false)
+  assert.match(result.error, /ENOTDIR|EEXIST|not a directory/)
+  assert.deepEqual(errors, ["prompts.seed extract"])
+  assert.equal(prompts.resolve("extract").layer, "packaged", "and the packaged default still runs")
+})

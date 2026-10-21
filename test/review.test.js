@@ -3,7 +3,20 @@ import assert from "node:assert/strict"
 import { mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { DECIDE_INPUT, decide, pickLesson, pickOpen, renderBatch, renderNothing, renderProposal } from "../src/review.js"
+import {
+  AUTO_LIMIT,
+  DECIDE_INPUT,
+  asLeadIn,
+  backlogLine,
+  decide,
+  hintLines,
+  pickLesson,
+  pickOpen,
+  renderBatch,
+  renderFailures,
+  renderNothing,
+  renderProposal,
+} from "../src/review.js"
 import { createStore } from "../src/lessons.js"
 import { createState } from "../src/state.js"
 
@@ -251,4 +264,67 @@ test("an outcome with nothing to add does not litter the record", () => {
 test("the decision tool asks for both, since only the work can produce them", () => {
   assert.match(DECIDE_INPUT.properties.changed.description, /not what the proposal named/)
   assert.match(DECIDE_INPUT.properties.discovered.description, /only exists because the work happened/)
+})
+
+test("a lesson that has gone unseen for a while says so, in sessions not days", () => {
+  const text = renderProposal(lesson({ lastSeen: 5 }), { sessions: 20 })
+  assert.match(text, /Last seen 15 sessions ago\./)
+
+  const one = renderProposal(lesson({ lastSeen: 9 }), { sessions: 10 })
+  assert.match(one, /Last seen 1 session ago\./, "and counts one session as one session")
+})
+
+test("the recorded date is offered as a fact to bound the check with, not a verdict", () => {
+  assert.deepEqual(hintLines({ recordedAt: "2026-10-19T20:29:00.000Z" }, null), [
+    "_Worth knowing before you check: recorded 2026-10-19_",
+  ])
+  assert.deepEqual(hintLines({}, { hint: "`AGENTS.md` has changed." }), [
+    "_Worth knowing before you check: `AGENTS.md` has changed._",
+  ])
+  assert.deepEqual(hintLines({}, null), [], "nothing known, nothing said")
+  assert.deepEqual(
+    hintLines({ recordedAt: "2026-10-19T00:00:00Z" }, { hint: "`AGENTS.md` has changed." }),
+    ["_Worth knowing before you check: recorded 2026-10-19; `AGENTS.md` has changed._"],
+    "both facts in one line, not two paragraphs",
+  )
+})
+
+test("a single proposal also names the backlog behind it", () => {
+  // A proposal in hand is exactly when someone assumes the backlog is done.
+  const text = renderProposal(lesson(), { queued: 2 })
+  assert.match(text, /2 logs not analysed yet\. Run `\/retro` again to pick them up\./)
+})
+
+test("a batch names a single backlog log in the singular", () => {
+  const text = renderBatch([lesson()], { queued: 1 })
+  assert.match(text, /1 log not analysed yet\. Run `\/retro` again to pick it up\./)
+})
+
+test("the batch limit has a default, so nothing has to pass one", () => {
+  const many = Array.from({ length: AUTO_LIMIT + 2 }, (_, i) => lesson({ id: `l${i}`, cost: 20 - i }))
+  const text = renderBatch(many)
+
+  assert.match(text, new RegExp(`# retro — ${AUTO_LIMIT} lessons waiting`))
+  assert.match(text, /2 more below the cut/)
+})
+
+test("a hand-edited lesson with one evidence entry instead of a list is still cited", () => {
+  const text = renderProposal(lesson({ evidence: { session: "ses_solo", steps: [3, 4] } }))
+  assert.match(text, /sessions\/ses_solo\.jsonl` steps 3–4/)
+})
+
+test("the small pieces both messages share say the same thing the same way", () => {
+  assert.equal(asLeadIn("  My own wording.  ", "fallback"), "_opencode-retro — how to hand this over:_\n\nMy own wording.")
+  assert.equal(asLeadIn(null, "fallback"), "fallback")
+  assert.equal(asLeadIn("   ", "fallback"), "fallback", "whitespace is not a prompt")
+
+  assert.equal(backlogLine(1), "1 log not analysed yet. Run `/retro` again to pick it up.")
+  assert.match(backlogLine(3), /^3 logs not analysed yet/)
+
+  assert.equal(renderFailures(null), "", "no failures, nothing to say")
+  assert.equal(renderFailures({ failures: [] }), "")
+  assert.match(
+    renderFailures({ failures: [{ session: "ses_bad", detail: "unparseable reply" }] }),
+    /could not analyse `ses_bad`: unparseable reply/,
+  )
 })
