@@ -116,3 +116,23 @@ test("the self-check requires exactly the ctx surface the plugin calls", () => {
     "the self-check watches something the plugin does not call",
   )
 })
+
+test("nothing after setup returns is a binding, because a binding there is never initialised", () => {
+  // `/retro` shipped broken for a commit on exactly this: `const currencyOf = …` written
+  // below setup's `return`, so every call threw "Cannot access 'currencyOf' before
+  // initialization" while the unit tests passed. It happened again with `isLive`. Function
+  // declarations hoist out of the dead region; `const` and `let` do not, and the failure is
+  // invisible until a command actually runs.
+  const source = read("index.js")
+  const lines = source.split("\n")
+  const ret = lines.findIndex((l) => /^ {4}return \(\) =>/.test(l))
+  assert.ok(ret > 0, "setup's return should be at one indent inside setup")
+
+  const offenders = lines
+    .slice(ret + 1)
+    .map((line, i) => [ret + i + 2, line])
+    .filter(([, line]) => /^ {4}(const|let|var) /.test(line))
+    .map(([n, line]) => `${n}: ${line.trim().slice(0, 60)}`)
+
+  assert.deepEqual(offenders, [], "declare it as `function name() {}` or move it above the return")
+})

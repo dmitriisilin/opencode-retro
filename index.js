@@ -79,6 +79,12 @@ export default {
 
     /** Sessions we have seen an end event for, so a stray late event cannot re-verify. */
     const ended = new Set()
+    /**
+     * Sessions working right now, so that `/retro` can read their logs without touching
+     * them. A session that started and has not ended still has something to add, so its log
+     * is not ours to settle or to delete — see `processQueue`.
+     */
+    const started = new Set()
     /** Evidence from each finished session, kept so a later extraction can complete its report. */
     const lastVerified = new Map()
     let lastBeat = 0
@@ -267,6 +273,10 @@ export default {
       if (foreign.has(event?.data?.sessionID)) return
       ingest.event(event)
 
+      if (event.type === "session.execution.started" && event.data?.sessionID && !parents.has(event.data.sessionID)) {
+        started.add(event.data.sessionID)
+      }
+
       // session.idle never fires outside the TUI (AGENTS.md Gotcha 2), so the end of work
       // is session.execution.*.
       const done =
@@ -280,6 +290,7 @@ export default {
       // A subagent finishing is a step in its parent's task, not a session to analyse.
       if (parents.has(sessionID)) return
       ended.add(sessionID)
+      started.delete(sessionID)
 
       const verified = {
         id: sessionID,
@@ -368,11 +379,26 @@ export default {
      * Growth is bounded by the number of open lessons, which is capped, rather than by how
      * long the project has existed. `keepSessions` keeps everything.
      */
+    /**
+     * A session that started and has not ended is still writing its log.
+     *
+     * A function declaration, not a `const`: everything from here down sits after `setup`
+     * has returned, where a `const` is never initialised and every use throws
+     * "Cannot access 'isLive' before initialization" — which is how `/retro` once shipped
+     * broken for a commit (AGENTS.md Gotcha 13). Declarations hoist; bindings do not.
+     */
+    function isLive(id, invoking = null) {
+      return id === invoking || (started.has(id) && !ended.has(id))
+    }
+
     function pruneLogs() {
       if (config.keepSessions) return
       const cited = citedSessions()
       const owed = new Set(state.pending.map((p) => p.session))
       for (const id of log.list()) {
+        // Never a session that is working. Its log is the only record of what is happening
+        // right now, it is still being appended to, and nothing about it is settled.
+        if (isLive(id)) continue
         if (!cited.has(id) && !owed.has(id)) log.remove(id)
       }
     }
@@ -445,6 +471,7 @@ export default {
      */
     async function processQueue(sessionID) {
       const done = []
+      const reread = []
       const failures = []
       // A log that fails is set aside for this run rather than ending it. Stopping at the
       // first failure meant one unreadable reply hid every log behind it, and the message
@@ -454,6 +481,16 @@ export default {
       // queue of failing logs could otherwise spend without limit under a limit that only
       // ever counted the ones that worked.
       let attempted = 0
+
+      // "Everything accumulated to now" has to mean everything. A log whose session is over
+      // but whose end never reached us — a server that stops takes its sessions with it, and
+      // no event arrives — would otherwise sit on disk for ever, never analysed and never
+      // removed. It is not live, so it is finished, so it joins the queue.
+      for (const id of log.list()) {
+        if (isLive(id, sessionID) || state.wasExtracted(id) || state.isPending(id)) continue
+        state.queue(id)
+      }
+
       while (attempted < config.extractLimit) {
         const owed = state.nextPending(sessionID, skip)
         if (!owed) break
@@ -466,8 +503,37 @@ export default {
         }
         done.push(owed.session)
       }
+
+      /**
+       * Then the sessions still working, this one included.
+       *
+       * They are read and never settled: a session that has not finished will have more to
+       * say, so marking its log extracted would throw away everything after this moment, and
+       * deleting it would take the only record of what is happening right now. Lessons it
+       * produces are recorded normally — `record()` keys evidence by session, so when the
+       * session ends and is analysed in full, recurrence does not move for having read it
+       * twice.
+       *
+       * The gate is growth, not a clock: a log no larger than when we last read it has
+       * nothing new in it. That also settles the abandoned case — a log nobody will ever
+       * append to again is read once and then left alone, at no further cost.
+       */
+      for (const id of log.list()) {
+        if (attempted >= config.extractLimit) break
+        if (!isLive(id, sessionID) || state.wasExtracted(id)) continue
+        const size = log.stat(id).size
+        if (size <= state.looked(id)) continue
+        attempted++
+        // Recorded before the call, not after: a failure on these bytes will fail again on
+        // the same bytes, and the session will grow soon enough to earn another attempt.
+        state.look(id, size)
+        const result = await runExtraction(id, { settle: false })
+        if (!result?.ok) failures.push({ session: id, detail: result?.detail ?? "unknown failure" })
+        else if (!result.skipped) reread.push(id)
+      }
+
       const left = state.pending.filter((p) => p.session !== sessionID).length
-      return { analysed: done.length, left, failures }
+      return { analysed: done.length, live: reread.length, left, failures }
     }
 
     async function runReview(sessionID) {
@@ -562,9 +628,9 @@ export default {
       return null
     }
 
-    async function runExtraction(sessionID) {
+    async function runExtraction(sessionID, { settle = true } = {}) {
       if (state.wasExtracted(sessionID)) return { ok: true, already: true }
-      state.attempt(sessionID)
+      if (settle) state.attempt(sessionID)
 
       let records = null
       try {
@@ -607,7 +673,10 @@ export default {
         onError(`extract.${sessionID}`, result.reply ? `${result.detail}\n--- reply ---\n${result.reply}` : result.detail)
       }
 
-      if (result.ok || state.pending.find((p) => p.session === sessionID)?.attempts >= 3) {
+      // Nothing is settled for a session that is still working: not marked extracted, so the
+      // rest of it is still analysed when it ends, and not pruned, because it is being
+      // written to as we read it.
+      if (settle && (result.ok || state.pending.find((p) => p.session === sessionID)?.attempts >= 3)) {
         state.markExtracted(sessionID, { ok: result.ok, detail: result.detail })
         if (result.ok) pruneLogs()
       }

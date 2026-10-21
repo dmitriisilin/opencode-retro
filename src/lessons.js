@@ -191,8 +191,13 @@ export function createStore({ dir, archive, cap = DEFAULT_CAP, halfLife = DEFAUL
         const target = explicit ?? sameId
         if (target) {
           const evidence = [...(asArray(target.evidence) ?? [])]
-          const already = evidence.some((e) => e?.session === session)
-          if (!already) evidence.push({ session, steps: lesson.steps })
+          const at = evidence.findIndex((e) => e?.session === session)
+          const already = at >= 0
+          // The same session read twice is one session: recurrence and cost stay where they
+          // are. Its step range does not — a live log is read while it grows, and the newer,
+          // longer read is the one that knows where the problem actually is.
+          if (already) evidence[at] = { ...evidence[at], steps: lesson.steps ?? evidence[at].steps }
+          else evidence.push({ session, steps: lesson.steps })
 
           const updated = {
             ...target,

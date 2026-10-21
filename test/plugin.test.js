@@ -297,7 +297,7 @@ test("an edited review prompt is what reaches the agent", async () => {
 })
 
 test("a command that throws reports itself instead of vanishing into a 500", async () => {
-  // Gotcha 13: a throwing command body surfaces as an HTTP 500 and nowhere else. This
+  // Gotcha 14: a throwing command body surfaces as an HTTP 500 and nowhere else. This
   // drives the wrapper itself, which the unit tests over exports can never reach. A
   // hand-edited lesson with a non-string `change` is enough to make the renderer throw.
   const directory = sandbox()
@@ -518,6 +518,98 @@ test("a log that failed stays queued, and is tried again on the next command", a
 
   const after = JSON.parse(readFileSync(join(directory, ".retro", "state.json"), "utf8"))
   assert.equal(after.pending[0].attempts, 2, "one more go, then it is given up on")
+
+  await cleanup?.()
+})
+
+test("a session still working is read, and nothing about it is settled", async () => {
+  // `/retro` looks at everything accumulated to the moment it is run, which includes the
+  // sessions that have not finished -- their friction is the most recent there is. But an
+  // unfinished session will have more to say, so marking its log extracted would discard
+  // everything after this moment and deleting it would take the only record of what is
+  // happening right now.
+  const directory = sandbox()
+  const fake = fakeOpenCode({ directory, options: { model: MODEL } })
+  const cleanup = await plugin.setup(fake.ctx)
+  const session = "ses_working"
+
+  fake.emit({ type: "session.execution.started", durable: { seq: 1 }, data: { sessionID: session } })
+  await tick()
+  await workSession(fake, session)
+
+  await fake.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
+
+  assert.deepEqual(analysed(fake), [session], "it was read")
+  const state = savedState(directory)
+  assert.equal(state.extracted[session], undefined, "and not settled: the session is not over")
+  assert.deepEqual(state.pending, [], "nor queued as though it were finished")
+  assert.ok(state.looked[session] > 0, "how much of it was read is remembered")
+  assert.equal(
+    existsSync(join(directory, ".retro", "sessions", `${session}.jsonl`)),
+    true,
+    "and the log is still there, because it is still being written to",
+  )
+
+  const [delivered] = fake.synthetic
+  assert.match(delivered.text, /# retro — `lint-skill-no-config`/, "the lesson is handed over as any other")
+
+  await cleanup?.()
+})
+
+test("a working session is not read again until its log has grown", async () => {
+  // The gate is size, not a clock. Re-reading the same bytes costs the same money for the
+  // same answer, and it also settles the abandoned case: a log nobody will append to again
+  // is read once and then left alone.
+  const directory = sandbox()
+  const fake = fakeOpenCode({ directory, options: { model: MODEL }, reply: "nothing to learn here" })
+  const cleanup = await plugin.setup(fake.ctx)
+  const session = "ses_growing"
+
+  fake.emit({ type: "session.execution.started", durable: { seq: 1 }, data: { sessionID: session } })
+  await tick()
+  await workSession(fake, session)
+
+  await fake.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
+  assert.equal(fake.generated.length, 1, "read once")
+
+  await fake.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
+  assert.equal(fake.generated.length, 1, "nothing new in it, so nothing paid for")
+
+  // The session says something more.
+  await fake.hooks.get("session.prompt")({ sessionID: session, messageID: "m9", prompt: { text: "try again" } })
+  await fake.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
+  assert.equal(fake.generated.length, 2, "it grew, so it is read again")
+
+  assert.equal(
+    existsSync(join(directory, ".retro", "sessions", `${session}.jsonl`)),
+    true,
+    "and no lesson cites it, yet it is never pruned while the session is working",
+  )
+
+  await cleanup?.()
+})
+
+test("a log left behind by a server that stopped is finished, and is treated as such", async () => {
+  // A server that stops takes its sessions with it, so no end event ever arrives and the log
+  // is neither queued nor live. It used to sit on disk for ever: never analysed, never
+  // removed. It is not live, so it is over.
+  const directory = sandbox()
+  mkdirSync(join(directory, ".retro", "sessions"), { recursive: true })
+  writeFileSync(
+    join(directory, ".retro", "sessions", "ses_orphan.jsonl"),
+    [
+      JSON.stringify({ v: 1, n: 1, t: 1, k: "prompt", text: "fix the lint skill" }),
+      JSON.stringify({ v: 1, n: 2, t: 2, k: "tool", id: "c1", tool: "shell", input: { command: "npx eslint ." }, status: "completed", exit: 2 }),
+    ].join("\n") + "\n",
+  )
+
+  const fake = fakeOpenCode({ directory, options: { model: MODEL } })
+  const cleanup = await plugin.setup(fake.ctx)
+  await fake.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
+
+  assert.deepEqual(analysed(fake), ["ses_orphan"], "picked up without being asked twice")
+  const state = savedState(directory)
+  assert.equal(state.extracted.ses_orphan?.ok, true, "and settled, so it is not paid for again")
 
   await cleanup?.()
 })

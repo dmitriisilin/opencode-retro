@@ -37,6 +37,8 @@ When a session ends its log is kept, and by default nothing further happens unti
 
 Each log is analysed in a session of its own, created for that one call and removed afterwards: the log goes in, no agent, no history and no tools are involved, and text comes out. The agent that did the work is deliberately excluded, since it would defend its own decisions.
 
+Sessions that have not finished are read as well, including the one the command was run in: their friction is the most recent there is. Nothing about them is settled, though. The log is not marked analysed, because the session will have more to say, and it is not removed while the session is working. A working session is read again only once its log has grown, so running `/retro` twice costs nothing for a session that has said nothing new.
+
 A session is skipped without a call only when it cannot contain evidence of anything: one instruction, one answer, nothing done. A conversation with no tool calls at all is still analysed, because that is exactly where a wrong instruction file shows up — a wrong answer and a correction, with nothing executed.
 
 `options.autoExtract` moves the analysis of a finished session to the start of the next session instead, for anyone who would rather have lessons ready before asking.
@@ -49,7 +51,7 @@ That call receives a compressed view of the session. Tool output is trimmed hard
 
 The answer is a list of lessons in `.retro/lessons/`.
 
-A log is analysed once; a failed reply is retried on the next two runs and then set aside. By default, a project in which `/retro` is never run is never analysed.
+A finished log is analysed once; a failed reply is retried on the next two runs and then set aside. By default, a project in which `/retro` is never run is never analysed.
 
 ### What guides the extraction
 

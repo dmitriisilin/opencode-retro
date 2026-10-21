@@ -7,7 +7,7 @@ import { dirname } from "node:path"
  * sessions have already been extracted (so a restart does not pay twice).
  */
 export function createState({ path, onError }) {
-  let data = { version: 1, rejected: [], extracted: {}, pending: [], sessions: 0 }
+  let data = { version: 1, rejected: [], extracted: {}, pending: [], sessions: 0, looked: {} }
 
   try {
     const parsed = JSON.parse(readFileSync(path, "utf8"))
@@ -17,6 +17,7 @@ export function createState({ path, onError }) {
       if (!Array.isArray(data.pending)) data.pending = []
       if (!data.extracted || typeof data.extracted !== "object") data.extracted = {}
       if (typeof data.sessions !== "number") data.sessions = 0
+      if (!data.looked || typeof data.looked !== "object") data.looked = {}
     }
   } catch {
     /* absent or hand-broken: start clean rather than refuse to run */
@@ -42,6 +43,22 @@ export function createState({ path, onError }) {
       }
     },
     wasExtracted: (session) => Boolean(data.extracted[session]),
+    isPending: (session) => data.pending.some((p) => p.session === session),
+
+    /**
+     * How large a log was the last time it was read.
+     *
+     * A session still running cannot be settled — it will have more to say — so its log is
+     * read without being marked extracted, and `/retro` would otherwise pay to re-read the
+     * same bytes every time it is run. Size, not a clock: a log that has not grown has
+     * nothing new in it, which also means a session abandoned by a crashed server is read
+     * once and then left alone for good.
+     */
+    looked: (session) => data.looked[session] ?? 0,
+    look(session, size) {
+      data.looked[session] = size
+      save()
+    },
 
     /**
      * Extraction cannot run where it is triggered: `generate.text` hangs when called from
@@ -95,6 +112,7 @@ export function createState({ path, onError }) {
     markExtracted(session, summary) {
       data.extracted[session] = { at: new Date().toISOString(), ...summary }
       data.pending = data.pending.filter((p) => p.session !== session)
+      delete data.looked[session]
       save()
     },
   }

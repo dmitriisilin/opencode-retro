@@ -1,4 +1,4 @@
-<!-- translated-from: README.md@4935c8ad0bc4 -->
+<!-- translated-from: README.md@3a789a47ad15 -->
 # opencode-retro
 
 [English](README.md) | [Русский](README.ru.md) | [简体中文](README.zh-CN.md) | **Español** | [日本語](README.ja.md)
@@ -40,6 +40,8 @@ Cuando una sesión termina, su log se conserva y, por omisión, no ocurre nada m
 
 Cada log se analiza en una sesión propia, creada para esa única llamada y eliminada después: entra el log, no intervienen agente, historial ni herramientas, y sale texto. El agente que hizo el trabajo queda excluido a propósito, porque defendería sus propias decisiones.
 
+Las sesiones que aún no han terminado también se leen, incluida aquella en la que se ejecutó el comando: su fricción es la más reciente que hay. Nada queda zanjado sobre ellas, eso sí. El log no se marca como analizado, porque la sesión todavía tiene algo que decir, y no se elimina mientras la sesión siga trabajando. Una sesión en curso se vuelve a leer solo cuando su log ha crecido, así que ejecutar `/retro` dos veces no cuesta nada para una sesión que no ha dicho nada nuevo.
+
 Solo se omite sin llamada la sesión que no puede contener evidencia de nada: una instrucción, una respuesta, nada hecho. Una conversación sin ninguna llamada a herramientas sí se analiza, porque es justo ahí donde se manifiesta un archivo de instrucciones equivocado: una respuesta errónea y una corrección, sin nada ejecutado.
 
 `options.autoExtract` traslada el análisis de una sesión terminada al inicio de la sesión siguiente, para quien prefiera tener las lecciones listas antes de pedirlas.
@@ -52,7 +54,7 @@ Esa llamada recibe una vista comprimida de la sesión: la salida de las herramie
 
 La respuesta es una lista de lecciones en `.retro/lessons/`.
 
-Un log se analiza una vez; una respuesta fallida se reintenta en las dos ejecuciones siguientes y luego se deja de lado. Por omisión, un proyecto en el que nunca se ejecuta `/retro` no se analiza nunca.
+Un log terminado se analiza una vez; una respuesta fallida se reintenta en las dos ejecuciones siguientes y luego se deja de lado. Por omisión, un proyecto en el que nunca se ejecuta `/retro` no se analiza nunca.
 
 ### Qué guía la extracción
 

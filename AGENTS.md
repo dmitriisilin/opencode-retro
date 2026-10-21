@@ -30,7 +30,7 @@ Motivating example: a project carries a `lint` skill borrowed from another harne
 15.1. **The decision is the third artifact, and it records the work, not the proposal.** Raw log, lesson, decision — and the decision is where `retro_decide` writes what actually happened: `status`, `note`, the files really changed (`changed`, often not the ones the lesson named), and `discovered`, anything the work turned up that is not in the lesson. That last field exists because the review produces knowledge the log never contained — in one live run the agent found that deleting a skill would leave an `AGENTS.md` line pointing at nothing, which was in neither the lesson nor the proposal. Without recording it, that disappears when the session ends, and the accept/reject record that decision 11 wants autonomy to be earned from is too thin to learn from.
 16. **A lesson is checked for currency before it is proposed.** A lesson can sit for weeks, and by the time anyone looks the thing it complains about may be fixed, moved or gone. Proposing a fix for a problem that no longer exists wastes the attention this plugin exists to save. So `/retro` runs a cheap deterministic check first — is the target file gone, or changed since the lesson was recorded (a content fingerprint taken at extraction time) — and when it has, the proposal carries that warning at the top. It never decides on its own: a changed file is a reason to look, not proof. The other half is the agent receiving the proposal, which is told to verify the claims against the repository before relaying them, and does it well.
 17. **Decided means closed, and closed means archived.** `lessons/` holds open questions only; accepting or rejecting moves the file to `archive/`. Nothing is deleted, because recurrence consults the archive: a problem that comes back after being closed is the same problem *plus* the news that the fix did not hold, so it is reopened with its history and a `reopenedFrom` marker rather than started over at recurrence 1. `later` stays open.
-18. **A log lives as long as an open lesson cites it.** Every lesson carries `evidence` as a session id and a step range, and during review the human may ask what actually happened at those steps — a summary cannot answer that and the log can, so the reference has to resolve. Once every lesson citing a log has been decided and archived, nothing will ask about it again and the log is removed. Growth is therefore bounded by the number of open lessons, which is capped, rather than by the age of the project. `keepSessions: true` keeps everything, which is how `fixtures/sessions/` gets filled. *Replaces "deleted once extracted", which made the evidence reference a dead link and threw away the only thing that could answer a follow-up question.*
+18. **A log lives as long as an open lesson cites it — and always while its session works.** Every lesson carries `evidence` as a session id and a step range, and during review the human may ask what actually happened at those steps — a summary cannot answer that and the log can, so the reference has to resolve. Once every lesson citing a log has been decided and archived, nothing will ask about it again and the log is removed. Growth is therefore bounded by the number of open lessons, which is capped, rather than by the age of the project. `keepSessions: true` keeps everything, which is how `fixtures/sessions/` gets filled. *Replaces "deleted once extracted", which made the evidence reference a dead link and threw away the only thing that could answer a follow-up question.*
 19. **The plugin must prove it is alive, in a file.** `.retro/selfcheck.md`. Registration proves nothing (see "Gotchas": wrong hook names register happily), so the report asserts *liveness*, not setup. It carries three timestamps — `loaded`, `heartbeat`, `verified` — because they fail separately and the gaps between them name which half broke.
 20. **Everything the file needs to be understood is in the file.** `selfcheck.md` states its own cadence, its own staleness threshold, what each failing line means, what to run next, and the version and repo it came from. Nobody reads documentation to interpret a diagnostic, and a diagnostic that needs documentation is not one. Same rule for `.retro/prompts/updates/`: each update file explains in its own header what it is and that nothing was changed on the user's behalf.
 
@@ -248,17 +248,22 @@ plugin needed — and it gets the `sessionID`, so it can drive the review conver
    `resume: true` the message sits there until the user happens to type something, so they
    never see what they asked for. With it, the session resumes, the agent receives the text
    and answers — which for `/retro` is the point.
-13. **A command that throws is invisible.** It surfaces as an HTTP 500 to whoever called it
+13. **Everything below `setup`'s `return` is a dead region for bindings.** Function
+   declarations hoist out of it and work; a `const` or `let` there is never initialised, and
+   every use throws `Cannot access 'x' before initialization` at call time only. `/retro`
+   shipped broken for one commit on `currencyOf` this way, and `isLive` repeated it while
+   248 tests passed. `test/consistency.test.js` now refuses any binding after that return.
+14. **A command that throws is invisible.** It surfaces as an HTTP 500 to whoever called it
    and nowhere else — not in `plugin.log`, not in the session. `/retro` shipped broken this
    way for one commit ("currencyOf is not defined") while 118 unit tests passed, because
    none of them ran a command. Command bodies are now wrapped: the failure reaches
    `plugin.log` and the session. The lesson for this repo is narrower than "write tests":
    unit tests over exported functions cannot see a plugin that registers and dies, so
    `test/plugin.test.js` drives the real entry point against a fake OpenCode.
-14. **Nothing tells the user a plugin failed to load.** A bad path, a throwing `setup`, a
+15. **Nothing tells the user a plugin failed to load.** A bad path, a throwing `setup`, a
    module that does not import — the session just runs without us. Hence "if `selfcheck.md`
    is older than your last session, the plugin is not running".
-15. **`opencode run "/retro all"` does not run the command.** The text arrives as an
+16. **`opencode run "/retro all"` does not run the command.** The text arrives as an
    ordinary prompt and the registered command never fires; the agent in that session reads
    "/retro all" as an instruction and improvises. Observed while dogfooding: the session's
    first move was `git status`, not our batch. Headless, a command has to be posted to a
@@ -470,6 +475,21 @@ which turned out to be what we wanted anyway.
 command then compresses what has accumulated, turns it into lessons, and only then looks
 for something to hand over. A command's `execute` is a working context, so the call is
 simply awaited: no fire-and-forget, no draining guard, no race.
+
+**"Everything accumulated" includes the sessions that have not finished** — this one among
+them. Their friction is the most recent there is, so there is no reason to wait for a
+session to end before reading it. But an unfinished session will have more to say, so
+nothing about it is settled: its log is not marked extracted, which would discard everything
+after this moment, and it is never pruned, which would take the only record of what is
+happening right now. When the session does end it is analysed in full, and `record()` keys
+evidence by session, so recurrence does not move for having read it twice — only the step
+range follows the newer, longer read.
+
+The gate on re-reading is **growth, not a clock**: a log no larger than when it was last read
+has nothing new in it. That also disposes of the abandoned case. A server that stops takes
+its sessions with it and no end event ever arrives, so the log is neither queued nor live; it
+used to sit on disk for ever, never analysed and never removed. Not live means over, so it
+joins the queue and is settled like any other.
 
 The reason is not the API, it is the bill. A model call costs money, and nothing else in
 this plugin spends the user's money without being asked. Lessons sitting unextracted and
