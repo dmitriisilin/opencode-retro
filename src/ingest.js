@@ -73,6 +73,7 @@ export function createIngest({ emit, maxOutput, now = () => Date.now(), parentOf
 
     prompt(p) {
       const s = session(owner(p.sessionID))
+      s.owned = true
       s.counts.prompts++
       append(p.sessionID, {
         k: "prompt",
@@ -84,7 +85,9 @@ export function createIngest({ emit, maxOutput, now = () => Date.now(), parentOf
     },
 
     toolBefore(p) {
-      session(owner(p.sessionID)).pending.set(p.id, {
+      const before = session(owner(p.sessionID))
+      before.owned = true
+      before.pending.set(p.id, {
         id: p.id,
         tool: p.tool,
         input: p.input,
@@ -96,6 +99,7 @@ export function createIngest({ emit, maxOutput, now = () => Date.now(), parentOf
 
     toolAfter(p) {
       const s = session(owner(p.sessionID))
+      s.owned = true
       s.counts.toolHook++
       const started = s.pending.get(p.id)
       s.pending.delete(p.id)
@@ -113,11 +117,23 @@ export function createIngest({ emit, maxOutput, now = () => Date.now(), parentOf
       })
     },
 
-    /** Everything we take from the event stream rather than from a hook. */
+    /**
+     * Everything we take from the event stream rather than from a hook.
+     *
+     * An event may annotate a session we already own; it may never open one. The hooks fire
+     * only for sessions belonging to this location, while `ctx.event.subscribe` reaches
+     * every session in the project — including one running in a git worktree of it. Both
+     * instances used to write a log for that session: two files under the same id, with
+     * different contents, since the worktree's copy had the prompt and ours did not. Ours
+     * then reported `BROKEN prompt hook — most likely renamed upstream` about a session
+     * that was perfectly healthy, queued it for analysis, and counted it towards freshness.
+     * A hook having fired is what makes a session ours, so that is the gate.
+     */
     event(e) {
       const sessionID = e?.data?.sessionID
       if (!sessionID) return
-      const s = session(owner(sessionID))
+      const s = sessions.get(owner(sessionID))
+      if (!s?.owned) return
       const seq = e?.durable?.seq ?? null
 
       switch (e.type) {

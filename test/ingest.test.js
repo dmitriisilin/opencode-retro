@@ -193,6 +193,9 @@ test("an event with no session is ignored rather than crashing the stream", () =
 
 test("text and step events keep what the projection and the score need", () => {
   const { out, ingest } = collector()
+  // A hook first: a session is ours because a hook fired for it, and the event stream can
+  // only annotate a log that already exists.
+  ingest.prompt({ sessionID: "s", messageID: "m0", prompt: { text: "go" } })
   ingest.event({
     type: "session.text.ended",
     durable: { seq: 5 },
@@ -212,21 +215,53 @@ test("text and step events keep what the projection and the score need", () => {
     },
   })
 
-  assert.deepEqual(out[0], {
+  assert.deepEqual(out[1], {
     sessionID: "s",
     v: 1,
-    n: 1,
+    n: 2,
     t: 1000,
     k: "text",
     seq: 5,
     message: "m1",
     text: "Done.",
   })
-  assert.equal(out[1].k, "step")
-  assert.equal(out[1].finish, "stop")
-  assert.equal(out[1].snapshot, "abc123")
-  assert.deepEqual(out[1].files, ["src/sum.js"])
-  assert.equal(out[1].cost, 0.02)
+  assert.equal(out[2].k, "step")
+  assert.equal(out[2].finish, "stop")
+  assert.equal(out[2].snapshot, "abc123")
+  assert.deepEqual(out[2].files, ["src/sum.js"])
+  assert.equal(out[2].cost, 0.02)
+})
+
+test("a session no hook ever fired for is not ours, and gets no log at all", () => {
+  // Measured, not hypothetical: a session run in a git worktree of this project reaches
+  // every instance through the event stream, but the hooks fire only for the location the
+  // session belongs to. Both instances wrote a log under the same session id with different
+  // contents, ours missing the prompt entirely — so ours reported `BROKEN prompt hook,
+  // most likely renamed upstream` about a healthy session, queued it, and counted it.
+  const { out, ingest } = collector()
+
+  for (const type of [
+    "session.execution.started",
+    "session.text.ended",
+    "session.step.ended",
+    "session.execution.succeeded",
+  ]) {
+    ingest.event({ type, durable: { seq: 2 }, data: { sessionID: "ses_elsewhere", text: "hi" } })
+  }
+
+  assert.deepEqual(out, [], "no record, so no file, so nothing to queue or verify")
+})
+
+test("once a hook has fired, the event stream annotates that same session", () => {
+  const { out, ingest } = collector()
+  ingest.prompt({ sessionID: "ses_ours", messageID: "m0", prompt: { text: "go" } })
+  ingest.event({ type: "session.execution.succeeded", durable: { seq: 9 }, data: { sessionID: "ses_ours" } })
+
+  assert.deepEqual(
+    out.map((r) => r.k),
+    ["prompt", "session"],
+    "the end of our own session is still recorded",
+  )
 })
 
 test("counts are the self-check's evidence, and forgetting a session clears them", () => {

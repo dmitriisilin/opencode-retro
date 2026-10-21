@@ -239,10 +239,32 @@ export default {
       }
     })()
 
+    /**
+     * Sessions that belong to another checkout of this project, by their own account.
+     *
+     * `ctx.event.subscribe` reaches every session in the project, and a git worktree is the
+     * same project in a different directory — so a session running there arrives here in
+     * full. `session.created` carries `location.directory`, which settles whose it is.
+     * Measured: a worktree session reached this instance with the worktree's directory and
+     * the shared projectID.
+     *
+     * We do not see `session.created` for our own first session, because plugins load
+     * lazily per location (Gotcha 7) and the event has already gone by. That asymmetry is
+     * the right way round: a directory we are told about and that is not ours means foreign,
+     * and silence means ours — so a hook that genuinely stopped firing still reports BROKEN
+     * instead of being excused as somebody else's session.
+     */
+    const foreign = new Set()
+
     function handleEvent(event) {
-      if (event.type === "session.created" && event.data?.parentID && event.data?.sessionID) {
-        adopt(event.data.sessionID, event.data.parentID)
+      if (event.type === "session.created" && event.data?.sessionID) {
+        const directory = event.data?.location?.directory
+        if (directory && ctx.location?.directory && directory !== ctx.location.directory) {
+          foreign.add(event.data.sessionID)
+        }
+        if (event.data?.parentID) adopt(event.data.sessionID, event.data.parentID)
       }
+      if (foreign.has(event?.data?.sessionID)) return
       ingest.event(event)
 
       // session.idle never fires outside the TUI (AGENTS.md Gotcha 2), so the end of work

@@ -522,6 +522,40 @@ test("a log that failed stays queued, and is tried again on the next command", a
   await cleanup?.()
 })
 
+test("a session from another checkout of this project is not ours", async () => {
+  // A git worktree is the same project in a different directory, and the event stream
+  // reaches every session in the project. Measured: both instances wrote a log under the
+  // same session id with different contents -- ours had no prompt in it, because the hooks
+  // fire only for the location the session belongs to. Ours then reported `BROKEN prompt
+  // hook, most likely renamed upstream` about a healthy session, queued its partial log for
+  // analysis, and counted it towards freshness.
+  const directory = sandbox()
+  const fake = fakeOpenCode({ directory, options: { model: MODEL } })
+  const cleanup = await plugin.setup(fake.ctx)
+  const session = "ses_in_a_worktree"
+
+  fake.emit({
+    type: "session.created",
+    durable: { seq: 0 },
+    data: { sessionID: session, location: { directory: `${directory}-worktree` }, projectID: "proj" },
+  })
+  fake.emit({ type: "session.execution.started", durable: { seq: 1 }, data: { sessionID: session } })
+  fake.emit({
+    type: "session.text.ended",
+    durable: { seq: 4 },
+    data: { sessionID: session, assistantMessageID: "m1", text: "done" },
+  })
+  fake.emit({ type: "session.execution.succeeded", durable: { seq: 7 }, data: { sessionID: session } })
+  await tick()
+
+  assert.equal(existsSync(join(directory, ".retro", "sessions", `${session}.jsonl`)), false, "no log of our own")
+  const state = savedState(directory)
+  assert.deepEqual(state.pending, [], "nothing to analyse: the log is the other checkout's")
+  assert.equal(state.sessions, 0, "and it is not counted, so freshness is not moved twice")
+
+  await cleanup?.()
+})
+
 test("a log that cannot be read is reported as a failure, not as a clean analysis", async () => {
   // It used to be marked extracted the moment the read threw, which took it out of
   // `pending` — and `pending` was how processQueue decided whether a log had worked. So
