@@ -395,6 +395,9 @@ export default {
         // The synthetic goes to the session's inbox; without `resume` it sits there until
         // the user happens to type something, and they never see what they asked for.
         await ctx.session.synthetic({ sessionID, text, description: "opencode-retro", resume: true })
+        // Written to the log ourselves, because a synthetic does not fire the prompt hook:
+        // without this the session's own log shows the work and not the instruction behind it.
+        ingest.handover(sessionID, text)
       } catch (err) {
         onError("session.synthetic", err)
       }

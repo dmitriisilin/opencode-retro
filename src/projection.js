@@ -142,6 +142,12 @@ function render(records, { maxToolOutput, maxPromptChars }) {
         break
       }
 
+      case "handover": {
+        const { text } = clamp(r.text ?? "", maxPromptChars)
+        push([`[${r.n}] opencode-retro handed a lesson over:`, indent(text)])
+        break
+      }
+
       case "text": {
         const { text } = clamp(r.text ?? "", maxPromptChars)
         push([`[${r.n}] assistant:`, indent(text)])

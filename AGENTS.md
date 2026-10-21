@@ -262,10 +262,16 @@ plugin needed — and it gets the `sessionID`, so it can drive the review conver
    settled blocked every later drain for the life of the process — silently. Every model
    call is now bounded (`extractTimeoutMs`, default 90 s) so a hang becomes a reported
    failure and a retry instead of a stall.
-12. **`session.synthetic` writes to the session's inbox, not to its messages.** Without
-   `resume: true` the message sits there until the user happens to type something, so they
-   never see what they asked for. With it, the session resumes, the agent receives the text
-   and answers — which for `/retro` is the point.
+12. **`session.synthetic` writes to the session's inbox, not to its messages, and does not
+   fire the `session.prompt` hook.** Without `resume: true` the message sits in the inbox
+   until the user happens to type something, so they never see what they asked for. With it,
+   the session resumes, the agent receives the text and answers — which for `/retro` is the
+   point. But the hook never fires for it: measured across every session whose only input
+   arrived that way, the log held tool calls, assistant text and steps and **not one prompt
+   record**. So a review session's log showed an agent reading files and editing them for no
+   stated reason, with the instruction that caused all of it missing — and an analysis of that
+   log reads it as work nobody asked for. We are the sender, so `say()` writes the hand-over
+   into the log itself, as `k: "handover"` rather than as a prompt it is not.
 13. **Everything below `setup`'s `return` is a dead region for bindings.** Function
    declarations hoist out of it and work; a `const` or `let` there is never initialised, and
    every use throws `Cannot access 'x' before initialization` at call time only. `/retro`

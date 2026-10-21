@@ -1,0 +1,10 @@
+{"v":1,"n":1,"t":1792592338698,"k":"prompt","message":"msg_15ed45ef7001SPGY70piKOL5TL","delivery":"steer","text":"\"Reply with just: one\"","files":[]}
+{"v":1,"n":2,"t":1792592338716,"k":"session","seq":2,"event":"start"}
+{"v":1,"n":3,"t":1792592340905,"k":"text","seq":9,"message":"msg_15ed4603a001w4stS9f6Aa1XLF","text":"one"}
+{"v":1,"n":4,"t":1792592340958,"k":"step","seq":11,"message":"msg_15ed4603a001w4stS9f6Aa1XLF","finish":"stop","snapshot":"768180b0e2c45d7a335a065cdc0b3a0eaa9ae533","files":[],"tokens":{"input":169,"output":2,"reasoning":0,"cache":{"read":25088,"write":0}},"cost":0.000101814}
+{"v":1,"n":5,"t":1792592340959,"k":"session","seq":12,"event":"end","outcome":"succeeded"}
+{"v":1,"n":6,"t":1792592341465,"k":"prompt","message":"msg_15ed469cb001sB47bK2haO5taN","delivery":"steer","text":"\"Reply with just: two\"","files":[]}
+{"v":1,"n":7,"t":1792592341590,"k":"session","seq":14,"event":"start"}
+{"v":1,"n":8,"t":1792592343091,"k":"text","seq":18,"message":"msg_15ed46a2b0016qb7FHUhGXLvel","text":"two"}
+{"v":1,"n":9,"t":1792592343131,"k":"step","seq":20,"message":"msg_15ed46a2b0016qb7FHUhGXLvel","finish":"stop","snapshot":"768180b0e2c45d7a335a065cdc0b3a0eaa9ae533","files":[],"tokens":{"input":182,"output":2,"reasoning":0,"cache":{"read":25088,"write":0}},"cost":0.00010376399999999999}
+{"v":1,"n":10,"t":1792592343131,"k":"session","seq":21,"event":"end","outcome":"succeeded"}

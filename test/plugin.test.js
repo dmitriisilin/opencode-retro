@@ -2,8 +2,10 @@ import { test } from "node:test"
 import assert from "node:assert/strict"
 import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { dirname, join } from "node:path"
+import { fileURLToPath } from "node:url"
 import plugin from "../index.js"
+import { parseShadowLog } from "../src/shadowlog.js"
 
 /**
  * Drives the real plugin against a fake OpenCode.
@@ -1497,3 +1499,52 @@ test("deciding a lesson never prunes the log of the session it was decided in", 
   await cleanup?.()
 })
 
+
+test("the hand-over the plugin delivers is in the session's own log", async () => {
+  // Measured: `session.synthetic` does not fire the `session.prompt` hook, so every session
+  // whose only input arrived that way had a log of tool calls, text and steps with not one
+  // prompt record in it. The log of a review session therefore showed an agent reading and
+  // editing for no stated reason, with the instruction that caused all of it missing. We are
+  // the sender, so we write it — as a hand-over, not as the user's prompt.
+  const directory = sandbox()
+  const fake = fakeOpenCode({ directory, options: { model: MODEL } })
+  const cleanup = await plugin.setup(fake.ctx)
+
+  mkdirSync(join(directory, ".retro", "lessons"), { recursive: true })
+  writeFileSync(
+    join(directory, ".retro", "lessons", "lint-skill-no-config.md"),
+    "---\nid: lint-skill-no-config\nstatement: eslint is not configured here\ncost: 9\nrecurrence: 2\nconfidence: 0.9\nstatus: new\n---\n\nbody\n",
+  )
+
+  await fake.commands.get("retro").execute({ sessionID: "ses_reviewer", prompt: { text: "" } })
+
+  const [delivered] = fake.synthetic
+  assert.match(delivered.text, /lint-skill-no-config/, "it was handed over")
+
+  const log = readFileSync(join(directory, ".retro", "sessions", "ses_reviewer.jsonl"), "utf8")
+    .trim()
+    .split("\n")
+    .map((l) => JSON.parse(l))
+  const handover = log.find((r) => r.k === "handover")
+  assert.ok(handover, "and the session's own log says so")
+  assert.match(handover.text, /lint-skill-no-config/)
+  assert.equal(log.some((r) => r.k === "prompt"), false, "without pretending the user typed it")
+})
+
+test("a two-turn session is one session with two executions", () => {
+  // The fixture that settles what an execution is, saved from a real run rather than argued
+  // about: `opencode run -s <id>` twice, one log, two start/end pairs. The liveness rules read
+  // an execution as a session before this was measured.
+  const records = parseShadowLog(
+    readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "fixtures", "sessions", "two-turns.jsonl"), "utf8"),
+  )
+
+  assert.equal(records.filter((r) => r.k === "prompt").length, 2, "two prompts")
+  assert.equal(records.filter((r) => r.k === "session" && r.event === "start").length, 2, "and two executions")
+  assert.equal(records.filter((r) => r.k === "session" && r.event === "end").length, 2)
+  assert.deepEqual(
+    records.map((r) => r.n),
+    [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+    "numbered once through, not restarted per turn",
+  )
+})

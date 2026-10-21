@@ -164,6 +164,24 @@ export function createIngest({
     },
 
     /**
+     * What the plugin itself said to a session.
+     *
+     * A hand-over is delivered with `session.synthetic`, and that does **not** fire the
+     * `session.prompt` hook — measured: every session whose only input arrived that way has
+     * a log with tool calls, text and steps in it and not one prompt record. So the log of a
+     * review session showed an agent reading files and editing them for no stated reason,
+     * with the instruction that caused all of it missing. We are the sender, so we can write
+     * it ourselves; it is not the user's prompt and does not pretend to be one.
+     *
+     * It also marks the session as ours, which it is: the command ran in it.
+     */
+    handover(sessionID, text) {
+      const s = session(owner(sessionID))
+      s.owned = true
+      append(sessionID, { k: "handover", text: text ?? "" })
+    },
+
+    /**
      * Everything we take from the event stream rather than from a hook.
      *
      * An event may annotate a session we already own; it may never open one. The hooks fire
