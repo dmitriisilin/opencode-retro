@@ -428,11 +428,16 @@ export default {
       // first failure meant one unreadable reply hid every log behind it, and the message
       // said to run `/retro` again — which would fail on the same log.
       const skip = new Set()
-      while (done.length < config.extractLimit) {
+      // The cap counts attempts, not successes: an attempt is what costs a model call, so a
+      // queue of failing logs could otherwise spend without limit under a limit that only
+      // ever counted the ones that worked.
+      let attempted = 0
+      while (attempted < config.extractLimit) {
         const owed = state.nextPending(sessionID, skip)
         if (!owed) break
+        attempted++
         const result = await runExtraction(owed.session)
-        if (state.pending.some((p) => p.session === owed.session)) {
+        if (!result?.ok) {
           failures.push({ session: owed.session, detail: result?.detail ?? "unknown failure" })
           skip.add(owed.session)
           continue
@@ -539,32 +544,37 @@ export default {
       if (state.wasExtracted(sessionID)) return { ok: true, already: true }
       state.attempt(sessionID)
 
-      let records
+      let records = null
       try {
         records = parseShadowLog(readFileSync(log.path(sessionID), "utf8"))
       } catch (err) {
         onError("extract.read", err)
-        const detail = "shadow log could not be read"
-        state.markExtracted(sessionID, { ok: false, detail })
-        return { ok: false, detail }
       }
 
-      let result
-      try {
-        result = await extract({
-          records,
-          session: sessionID,
-          generate: analyse,
-          model: await resolveModel(),
-          prompts,
-          store,
-          state,
-          fingerprint,
-          timeoutMs: config.extractTimeoutMs,
-        })
-      } catch (err) {
-        onError("extract", err)
-        result = { ok: false, detail: `threw: ${String(err?.message ?? err)}` }
+      // A log we could not read is a failure like any other, and it reaches the same retry
+      // policy below. It used to be marked extracted here and returned early, which did two
+      // wrong things at once: the log was never retried although the brief says a failed
+      // extraction keeps its log, and `processQueue` — which reads success off the queue —
+      // counted it as analysed. `/retro` then reported "analysed 1 session, nothing to learn
+      // from it" about a log it had not read.
+      let result = { ok: false, detail: "shadow log could not be read" }
+      if (records) {
+        try {
+          result = await extract({
+            records,
+            session: sessionID,
+            generate: analyse,
+            model: await resolveModel(),
+            prompts,
+            store,
+            state,
+            fingerprint,
+            timeoutMs: config.extractTimeoutMs,
+          })
+        } catch (err) {
+          onError("extract", err)
+          result = { ok: false, detail: `threw: ${String(err?.message ?? err)}` }
+        }
       }
 
       // A transient model failure is worth one more go on the next prompt; a third

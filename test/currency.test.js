@@ -78,3 +78,19 @@ test("an absolute target is checked where it is, not joined to the project", () 
   )
   assert.equal(got.state, "unchanged")
 })
+
+test("a target that cannot be read reads as unknown, never as unchanged", () => {
+  // The file is there and the read failed, so nothing is known about it. This used to fall
+  // through to "unchanged": a diagnostic stating the result of a check it had not made,
+  // which is the one thing it must never do.
+  const s = sandbox()
+
+  const got = assessCurrency(lesson({ targetFingerprint: "9f2a1c4ddddddddd" }), {
+    directory: s.root,
+    fingerprint: () => undefined,
+  })
+
+  assert.equal(got.state, "unknown")
+  assert.equal(got.hint, undefined, "nothing to tell the agent, so nothing is said")
+  assert.doesNotMatch(got.detail, /unchanged/)
+})

@@ -55,7 +55,13 @@ export function assessCurrency(lesson, { directory, fingerprint = fingerprintOf(
   }
 
   const now = fingerprint(target)
-  if (now && now !== before) {
+  // The file is there and we could not read it, so we know nothing about it. Falling through
+  // to "unchanged" claimed a check that had not happened, which is the one thing a
+  // diagnostic must never do.
+  if (!now) {
+    return { state: "unknown", detail: `\`${target}\` could not be read` }
+  }
+  if (now !== before) {
     return {
       state: "target-changed",
       target,

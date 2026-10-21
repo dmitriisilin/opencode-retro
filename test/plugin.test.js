@@ -522,6 +522,33 @@ test("a log that failed stays queued, and is tried again on the next command", a
   await cleanup?.()
 })
 
+test("a log that cannot be read is reported as a failure, not as a clean analysis", async () => {
+  // It used to be marked extracted the moment the read threw, which took it out of
+  // `pending` — and `pending` was how processQueue decided whether a log had worked. So
+  // `/retro` said it had analysed a session and found nothing to learn, about a log it had
+  // never opened, and the log was closed for good instead of retried.
+  const directory = sandbox()
+  mkdirSync(join(directory, ".retro"), { recursive: true })
+  queue(directory, ["ses_vanished"])
+
+  const fake = fakeOpenCode({ directory, options: { model: MODEL } })
+  const cleanup = await plugin.setup(fake.ctx)
+  await fake.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
+
+  const [delivered] = fake.synthetic
+  assert.match(delivered.text, /Could not analyse `ses_vanished`/)
+  assert.match(delivered.text, /shadow log could not be read/, "with the reason, not a shrug")
+  assert.doesNotMatch(delivered.text, /nothing to learn/, "it learned nothing because it read nothing")
+  assert.equal(fake.generated.length, 0, "and spent nothing on a log that was not there")
+
+  const state = savedState(directory)
+  assert.equal(state.pending.length, 1, "kept queued — a failed extraction keeps its log")
+  assert.equal(state.pending[0].attempts, 1, "and the attempt is counted towards the cap")
+  assert.equal(state.extracted.ses_vanished, undefined, "nothing claims it is done")
+
+  await cleanup?.()
+})
+
 test("`/retro all` is reachable as an argument to the one command", async () => {
   const directory = sandbox()
   mkdirSync(join(directory, ".retro", "lessons"), { recursive: true })
