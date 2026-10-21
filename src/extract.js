@@ -26,6 +26,10 @@ export async function extract({
   fingerprint,
   timeoutMs = DEFAULT_TIMEOUT_MS,
   maxInput = Infinity,
+  /** The last step of this session already turned into lessons; 0 for a first look. */
+  analysedUpTo = 0,
+  /** Lessons already decided from this very session, so the same ground is not covered twice. */
+  concluded = [],
 }) {
   // Skip only a session that cannot contain evidence of anything: one instruction, one
   // answer, nothing done. Everything else is analysed.
@@ -61,11 +65,26 @@ export async function extract({
   if (!prompt) return { ok: false, detail: "no extract prompt could be resolved" }
 
   const existing = store.list().filter((l) => l.status !== "rejected")
+
+  /**
+   * A session that is left open and returned to is never "finished", so its log is read more
+   * than once — and the second read must not cover the ground the first one did. Saying which
+   * steps are new is what stops the same lessons being derived again from material that was
+   * already turned into them and decided on.
+   */
+  const continued =
+    analysedUpTo > 0
+      ? `Steps up to ${analysedUpTo} of this session were analysed before and what came of them ` +
+        `is below. What follows is the rest of it. The session's instructions are repeated in ` +
+        `full, because they say what it was for; everything else is new since that analysis.`
+      : null
+
   const compose = (log) =>
     [
       prompt.text,
       section("Session", `id: ${session}`),
-      section("Log", log),
+      section("Log", [continued, log].filter(Boolean).join("\n\n")),
+      section("Already concluded from this session", renderConcluded(concluded)),
       section("Lessons already recorded", renderExisting(existing)),
       section("Rejected — do not propose these again", renderRejected(state.rejected)),
       OUTPUT_CONTRACT,
@@ -188,6 +207,18 @@ function renderExisting(lessons) {
   if (!lessons.length) return "None yet."
   return lessons
     .map((l) => `- \`${l.id}\` (seen in ${l.recurrence ?? 1}): ${l.statement}`)
+    .join("\n")
+}
+
+/**
+ * What was already settled from this session. Without it the extractor re-derives a lesson
+ * that was accepted and archived weeks ago, and the store then reopens it as though the fix
+ * had not held — when all that happened is that the same log was read twice.
+ */
+function renderConcluded(concluded) {
+  if (!concluded?.length) return null
+  return concluded
+    .map((l) => `- \`${l.id}\` (${l.status}): ${l.statement}`)
     .join("\n")
 }
 

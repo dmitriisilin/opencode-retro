@@ -55,9 +55,14 @@ export function createState({ path, onError }) {
         data.extracted = { ...(disk.extracted ?? {}), ...data.extracted }
         data.sessions = Math.max(data.sessions ?? 0, typeof disk.sessions === "number" ? disk.sessions : 0)
 
-        const looked = { ...(disk.looked ?? {}) }
-        for (const [id, size] of Object.entries(data.looked ?? {})) {
-          looked[id] = Math.max(size, looked[id] ?? 0)
+        // Both marks are maxima, and both shapes exist: a state.json written before the
+        // step offset has a bare byte count here.
+        const asMark = (v) => (typeof v === "number" ? { n: 0, size: v } : { n: v?.n ?? 0, size: v?.size ?? 0 })
+        const looked = {}
+        for (const id of new Set([...Object.keys(disk.looked ?? {}), ...Object.keys(data.looked ?? {})])) {
+          const a = asMark(disk.looked?.[id])
+          const b = asMark(data.looked?.[id])
+          looked[id] = { n: Math.max(a.n, b.n), size: Math.max(a.size, b.size) }
         }
         data.looked = looked
 
@@ -85,17 +90,31 @@ export function createState({ path, onError }) {
     isPending: (session) => data.pending.some((p) => p.session === session),
 
     /**
-     * How large a log was the last time it was read.
+     * How much of a session's log has already been dealt with. Two numbers, because they
+     * answer two questions and move at different times.
      *
-     * A session still running cannot be settled — it will have more to say — so its log is
-     * read without being marked extracted, and `/retro` would otherwise pay to re-read the
-     * same bytes every time it is run. Size, not a clock: a log that has not grown has
-     * nothing new in it, which also means a session abandoned by a crashed server is read
-     * once and then left alone for good.
+     * `n` is the last step that has actually been turned into lessons, so the next analysis
+     * starts after it. This matters most for the way sessions are really used: they are left
+     * open and come back to, so a log is never "finished" and `/retro` a fortnight later
+     * would otherwise re-read all of it, pay for all of it, and re-derive the lessons that
+     * were already integrated. It only moves when an analysis succeeded.
+     *
+     * `size` is the largest log already sent, success or not. A log no bigger than that has
+     * nothing new in it, so nothing is spent on asking again — which also means a session
+     * abandoned by a server that stopped is read once and then left alone for good.
      */
-    looked: (session) => data.looked[session] ?? 0,
-    look(session, size) {
-      data.looked[session] = size
+    looked(session) {
+      const mark = data.looked[session]
+      // Was a bare byte count before the offset existed; an old state.json still has one.
+      if (typeof mark === "number") return { n: 0, size: mark }
+      return { n: mark?.n ?? 0, size: mark?.size ?? 0 }
+    },
+    look(session, { n, size }) {
+      const before = this.looked(session)
+      data.looked[session] = {
+        n: Math.max(n ?? 0, before.n),
+        size: Math.max(size ?? 0, before.size),
+      }
       save()
     },
 

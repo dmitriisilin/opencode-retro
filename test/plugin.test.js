@@ -574,7 +574,8 @@ test("a session still working is read, and nothing about it is settled", async (
   const state = savedState(directory)
   assert.equal(state.extracted[session], undefined, "and not settled: the session is not over")
   assert.deepEqual(state.pending, [], "nor queued as though it were finished")
-  assert.ok(state.looked[session] > 0, "how much of it was read is remembered")
+  assert.ok(state.looked[session].size > 0, "how much of it was read is remembered")
+  assert.ok(state.looked[session].n > 0, "and how far the lessons got, so the next read starts there")
   assert.equal(
     existsSync(join(directory, ".retro", "sessions", `${session}.jsonl`)),
     true,
@@ -583,6 +584,57 @@ test("a session still working is read, and nothing about it is settled", async (
 
   const [delivered] = fake.synthetic
   assert.match(delivered.text, /# retro — `lint-skill-no-config`/, "the lesson is handed over as any other")
+
+  await cleanup?.()
+})
+
+test("a second look at a session reads only what is new since the first", async () => {
+  // This is how these sessions are actually used: left open and returned to, never finished.
+  // So a log is read more than once, and without a mark `/retro` a fortnight later re-reads
+  // all of it, pays for all of it, and re-derives the lessons that were already integrated.
+  const directory = sandbox()
+  // A parseable reply, because the mark only moves on success: a failed analysis must not
+  // skip the material it failed on.
+  const fake = fakeOpenCode({ directory, options: { model: MODEL } })
+  const cleanup = await plugin.setup(fake.ctx)
+  const session = "ses_returned_to"
+
+  fake.emit({ type: "session.execution.started", durable: { seq: 1 }, data: { sessionID: session } })
+  await tick()
+  await fake.hooks.get("session.prompt")({ sessionID: session, messageID: "m1", prompt: { text: "the original instruction" } })
+  for (const id of ["early-1", "early-2"]) {
+    await fake.hooks.get("tool.execute.before")({ sessionID: session, id, tool: "shell", input: { command: `old ${id}` } })
+    await fake.hooks.get("tool.execute.after")({
+      sessionID: session, id, tool: "shell", input: { command: `old ${id}` },
+      status: "completed", result: { output: { exit: 0, output: "ok" }, metadata: { exit: 0 } },
+    })
+  }
+
+  await fake.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
+  const first = fake.generated.at(-1).prompt
+  assert.match(first, /old early-1/, "the whole session, the first time")
+  assert.doesNotMatch(first, /Steps up to/, "and no claim that anything came before")
+
+  const markAfterFirst = savedState(directory).looked[session].n
+  assert.ok(markAfterFirst > 0, "how far the lessons got is remembered")
+
+  // The session is picked up again, days later as far as the plugin is concerned.
+  await fake.hooks.get("session.prompt")({ sessionID: session, messageID: "m2", prompt: { text: "and now this" } })
+  await fake.hooks.get("tool.execute.before")({ sessionID: session, id: "late-1", tool: "shell", input: { command: "new late-1" } })
+  await fake.hooks.get("tool.execute.after")({
+    sessionID: session, id: "late-1", tool: "shell", input: { command: "new late-1" },
+    status: "completed", result: { output: { exit: 2, output: "no config" }, metadata: { exit: 2 } },
+  })
+
+  await fake.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
+  const second = fake.generated.at(-1).prompt
+
+  assert.match(second, new RegExp(`Steps up to ${markAfterFirst} of this session were analysed before`))
+  assert.match(second, /new late-1/, "the new work is there")
+  assert.doesNotMatch(second, /old early-1/, "and the material already turned into lessons is not")
+  assert.match(second, /the original instruction/, "but the instructions stay, or the excerpt says nothing about why")
+  assert.match(second, /and now this/)
+  assert.ok(savedState(directory).looked[session].n > markAfterFirst, "and the mark moved on")
 
   await cleanup?.()
 })

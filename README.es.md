@@ -1,4 +1,4 @@
-<!-- translated-from: README.md@21bd0c114154 -->
+<!-- translated-from: README.md@c987944e129a -->
 # opencode-retro
 
 [English](README.md) | [Русский](README.ru.md) | [简体中文](README.zh-CN.md) | **Español** | [日本語](README.ja.md)
@@ -40,7 +40,7 @@ Cuando una sesión termina, su log se conserva y, por omisión, no ocurre nada m
 
 Cada log se analiza en una sesión propia, creada para esa única llamada y eliminada después: entra el log, no intervienen agente, historial ni herramientas, y sale texto. El agente que hizo el trabajo queda excluido a propósito, porque defendería sus propias decisiones.
 
-Las sesiones que aún no han terminado también se leen, incluida aquella en la que se ejecutó el comando: su fricción es la más reciente que hay. Nada queda zanjado sobre ellas, eso sí. El log no se marca como analizado, porque la sesión todavía tiene algo que decir, y no se elimina mientras la sesión siga trabajando. Una sesión en curso se vuelve a leer solo cuando su log ha crecido, así que ejecutar `/retro` dos veces no cuesta nada para una sesión que no ha dicho nada nuevo.
+Las sesiones que aún no han terminado también se leen, incluida aquella en la que se ejecutó el comando: su fricción es la más reciente que hay. Nada queda zanjado sobre ellas, eso sí. El log no se marca como analizado, porque la sesión todavía tiene algo que decir, y no se elimina mientras la sesión siga trabajando. Una sesión en curso se vuelve a leer solo cuando su log ha crecido, y entonces solo la parte nueva: lo que ya se convirtió en lección no se analiza otra vez. Lo normal es dejar las sesiones abiertas y volver a ellas, así que de otro modo un `/retro` semanas después releería todo y volvería a deducir lecciones sobre las que ya se trabajó.
 
 Solo se omite sin llamada la sesión que no puede contener evidencia de nada: una instrucción, una respuesta, nada hecho. Una conversación sin ninguna llamada a herramientas sí se analiza, porque es justo ahí donde se manifiesta un archivo de instrucciones equivocado: una respuesta errónea y una corrección, sin nada ejecutado.
 

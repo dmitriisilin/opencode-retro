@@ -144,3 +144,28 @@ test("the decision tool asks for both, since only the work can produce them", ()
   assert.match(DECIDE_INPUT.properties.discovered.description, /only exists because the work happened/)
 })
 
+
+test("the archive records which session decided it", () => {
+  // The lesson is the record of a problem and the archive is the record of what was done; the
+  // session that did the deciding is the one place a later reader can see the conversation it
+  // came out of.
+  const r = rig()
+  r.store.record([{ ...lesson(), steps: [9, 18], matches: null, why: "b" }], { session: "ses_a" })
+
+  decide({ id: "lint-skill-no-config", status: "accepted", note: "done" }, { ...r, session: "ses_review" })
+
+  const [archived] = r.store.listArchive()
+  assert.equal(archived.decidedIn, "ses_review")
+  assert.equal(archived.status, "accepted")
+})
+
+test("a decision made without a session still records cleanly", () => {
+  const r = rig()
+  r.store.record([{ ...lesson(), steps: [9, 18], matches: null, why: "b" }], { session: "ses_a" })
+
+  decide({ id: "lint-skill-no-config", status: "later", note: "not now" }, r)
+
+  const [open] = r.store.list()
+  assert.equal(open.status, "later")
+  assert.equal("decidedIn" in open, false, "an absent session is absent, not null in the file")
+})

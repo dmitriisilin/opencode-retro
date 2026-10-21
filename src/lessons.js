@@ -117,13 +117,16 @@ export function createStore({ dir, archive, cap = DEFAULT_CAP, halfLife = DEFAUL
     close(id, status, outcome = {}) {
       const lesson = list().find((l) => l.id === id)
       if (!lesson) return null
-      const { note, changed, discovered } = typeof outcome === "string" ? { note: outcome } : outcome
+      // Spread, not re-listed field by field. `decide` assembles the outcome and this used to
+      // pick three names back out of it, so a fourth was silently dropped on the way to the
+      // archive — `decidedIn` was, and the test for it failed with `undefined` while nothing
+      // else noticed. `status` and `closedAt` come after, because they are ours to set.
+      const fields = typeof outcome === "string" ? { note: outcome } : (outcome ?? {})
       const closed = {
         ...lesson,
+        ...fields,
+        note: fields.note ?? lesson.note,
         status,
-        note: note ?? lesson.note,
-        ...(changed?.length ? { changed } : {}),
-        ...(discovered ? { discovered } : {}),
         closedAt: new Date().toISOString(),
       }
       if (!ensure(archive)) return null
@@ -168,6 +171,13 @@ export function createStore({ dir, archive, cap = DEFAULT_CAP, halfLife = DEFAUL
         // one file away from being lost — it was, here — and the archive is the record of the
         // decision itself. "Do not propose this again" has to survive both.
         if (buried?.status === "rejected") continue
+
+        // Nor does a second look at the same session reopen anything. Recurrence is defined
+        // as the number of *independent* sessions a problem appeared in (decision 8), and a
+        // log that is read again — because the session was left open and returned to — is
+        // one session, not two. Without this, an accepted lesson comes back marked "the fix
+        // did not hold" when all that held is the old evidence.
+        if (buried && asArray(buried.evidence).some((e) => e?.session === session)) continue
 
         if (buried) {
           const reopened = {

@@ -193,3 +193,24 @@ test("an entry the file says is extracted leaves our queue on the next save", ()
   const saved = JSON.parse(readFileSync(path, "utf8"))
   assert.deepEqual(saved.pending.map((p) => p.session), ["ses_b"], "no work is done twice")
 })
+
+test("the step mark only moves forward, and an old byte-count file still loads", () => {
+  const dir = mkdtempSync(join(tmpdir(), "retro-mark-"))
+  const path = join(dir, "state.json")
+
+  // A state.json written before the offset existed holds a bare byte count.
+  writeFileSync(path, JSON.stringify({ version: 1, rejected: [], extracted: {}, pending: [], sessions: 3, looked: { ses_a: 4096 } }))
+  const state = createState({ path })
+  assert.deepEqual(state.looked("ses_a"), { n: 0, size: 4096 }, "read as 'nothing analysed, this much sent'")
+
+  state.look("ses_a", { n: 30, size: 8192 })
+  assert.deepEqual(state.looked("ses_a"), { n: 30, size: 8192 })
+
+  // A later read that got further in bytes but failed to produce lessons must not move `n`.
+  state.look("ses_a", { size: 9000 })
+  assert.deepEqual(state.looked("ses_a"), { n: 30, size: 9000 })
+
+  // And neither number ever goes backwards.
+  state.look("ses_a", { n: 2, size: 10 })
+  assert.deepEqual(state.looked("ses_a"), { n: 30, size: 9000 })
+})

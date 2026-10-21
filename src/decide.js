@@ -39,7 +39,7 @@ export const DECIDE_INPUT = {
   additionalProperties: false,
 }
 
-export function decide({ id, status, note, changed, discovered }, { store, state }) {
+export function decide({ id, status, note, changed, discovered }, { store, state, session = null }) {
   const lesson = store.list().find((l) => l.id === id)
 
   if (!lesson) {
@@ -63,6 +63,10 @@ export function decide({ id, status, note, changed, discovered }, { store, state
 
   const outcome = {
     note: note ?? lesson.note,
+    // Where it was decided. A lesson is a record of a problem and the archive is the record
+    // of what was done about it, so the session that did the deciding belongs in it: it is
+    // the one place a later reader can go to see the conversation the decision came out of.
+    ...(session ? { decidedIn: session } : {}),
     ...(changed?.length ? { changed } : {}),
     ...(discovered ? { discovered } : {}),
   }

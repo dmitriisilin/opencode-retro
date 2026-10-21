@@ -37,7 +37,7 @@ When a session ends its log is kept, and by default nothing further happens unti
 
 Each log is analysed in a session of its own, created for that one call and removed afterwards: the log goes in, no agent, no history and no tools are involved, and text comes out. The agent that did the work is deliberately excluded, since it would defend its own decisions.
 
-Sessions that have not finished are read as well, including the one the command was run in: their friction is the most recent there is. Nothing about them is settled, though. The log is not marked analysed, because the session will have more to say, and it is not removed while the session is working. A working session is read again only once its log has grown, so running `/retro` twice costs nothing for a session that has said nothing new.
+Sessions that have not finished are read as well, including the one the command was run in: their friction is the most recent there is. Nothing about them is settled, though. The log is not marked analysed, because the session will have more to say, and it is not removed while the session is working. A working session is read again only once its log has grown, and then only the part that is new: what has already become a lesson is not analysed a second time. Sessions that are left open and returned to are the normal case, so without that a `/retro` weeks later would re-read everything and re-derive lessons that were already acted on.
 
 A session is skipped without a call only when it cannot contain evidence of anything: one instruction, one answer, nothing done. A conversation with no tool calls at all is still analysed, because that is exactly where a wrong instruction file shows up — a wrong answer and a correction, with nothing executed.
 

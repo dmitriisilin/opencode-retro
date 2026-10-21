@@ -248,8 +248,8 @@ export default {
             "it never edits the harness itself. Calling it twice for the same lesson is safe " +
             "and reports that the decision was already recorded.",
           input: DECIDE_INPUT,
-          execute: async (input) => {
-            const result = decide(input, { store, state })
+          execute: async (input, context) => {
+            const result = decide(input, { store, state, session: context?.sessionID ?? null })
             pruneLogs()
             writeSelfCheck()
             return { output: result, content: result.detail }
@@ -422,6 +422,18 @@ export default {
       return id === invoking || (started.has(id) && !ended.has(id))
     }
 
+    /**
+     * What this session has already been concluded to mean. Told to the extractor so it does
+     * not re-derive a lesson that was accepted and archived — which the store would then
+     * reopen as though the fix had not held, when all that happened is a second read.
+     */
+    function concludedFrom(sessionID) {
+      return store
+        .listArchive()
+        .filter((l) => (Array.isArray(l.evidence) ? l.evidence : [l.evidence]).some((e) => e?.session === sessionID))
+        .map((l) => ({ id: l.id, status: l.status ?? "closed", statement: l.statement ?? "" }))
+    }
+
     function pruneLogs() {
       if (config.keepSessions) return
       const cited = citedSessions()
@@ -553,11 +565,11 @@ export default {
         if (attempted >= config.extractLimit) break
         if (!isLive(id, sessionID) || state.wasExtracted(id)) continue
         const size = log.stat(id).size
-        if (size <= state.looked(id)) continue
+        if (size <= state.looked(id).size) continue
         attempted++
-        // Recorded before the call, not after: a failure on these bytes will fail again on
-        // the same bytes, and the session will grow soon enough to earn another attempt.
-        state.look(id, size)
+        // The size is recorded whatever happens, so a failure on these bytes is not paid for
+        // twice; the step mark only moves on success, inside runExtraction.
+        state.look(id, { size })
         const result = await runExtraction(id, { settle: false })
         if (!result?.ok) failures.push({ session: id, detail: result?.detail ?? "unknown failure" })
         else if (!result.skipped) reread.push(id)
@@ -676,11 +688,26 @@ export default {
       // extraction keeps its log, and `processQueue` — which reads success off the queue —
       // counted it as analysed. `/retro` then reported "analysed 1 session, nothing to learn
       // from it" about a log it had not read.
+      /**
+       * Only the part that has not been turned into lessons yet.
+       *
+       * Sessions here are left open and returned to rather than finished, so a log is read
+       * more than once — and without a mark, `/retro` a fortnight later re-reads all of it,
+       * pays for all of it, and re-derives the lessons that were already integrated. The
+       * prompts are kept whatever their step, because they say what the session was for and
+       * an excerpt without them is a list of commands with no account of why.
+       */
+      const mark = state.looked(sessionID)
+      const fresh = mark.n > 0 && records ? records.filter((r) => r.n > mark.n || r.k === "prompt") : records
+      const lastN = records?.length ? Math.max(...records.map((r) => r.n ?? 0)) : 0
+
       let result = { ok: false, detail: "shadow log could not be read" }
       if (records) {
         try {
           result = await extract({
-            records,
+            records: fresh,
+            analysedUpTo: mark.n,
+            concluded: concludedFrom(sessionID),
             session: sessionID,
             generate: analyse,
             model: await resolveModel(),
@@ -708,6 +735,10 @@ export default {
       // Nothing is settled for a session that is still working: not marked extracted, so the
       // rest of it is still analysed when it ends, and not pruned, because it is being
       // written to as we read it.
+      // The mark moves only on success: a failed analysis must not skip the material it
+      // failed on. The size was already recorded by the caller, so nothing is paid twice.
+      if (result.ok && lastN > 0) state.look(sessionID, { n: lastN, size: log.stat(sessionID).size })
+
       if (settle && (result.ok || state.pending.find((p) => p.session === sessionID)?.attempts >= 3)) {
         state.markExtracted(sessionID, { ok: result.ok, detail: result.detail })
         if (result.ok) pruneLogs()

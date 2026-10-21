@@ -373,3 +373,27 @@ test("a lesson that was accepted and comes back is reopened, because the fix did
   assert.deepEqual(again.reopened, ["build-script-missing"], "this one does come back")
   assert.equal(store.list()[0].reopenedFrom, "accepted")
 })
+
+test("reading the same session again is not a second session", () => {
+  // How these sessions are really used: left open, returned to, never finished — so a log is
+  // read more than once. Recurrence is the number of *independent* sessions a problem showed
+  // up in (decision 8), so a second look at one session must not reopen a lesson that was
+  // accepted, which would say the fix did not hold when nothing of the sort happened.
+  const root = mkdtempSync(join(tmpdir(), "retro-reread-"))
+  const store = createStore({ dir: join(root, "lessons"), archive: join(root, "archive") })
+  const lesson = { id: "lint-skill-no-config", statement: "eslint is not configured here", steps: [1, 2], cost: 3, confidence: 0.8, why: "x" }
+
+  store.record([lesson], { session: "ses_open" })
+  store.close("lint-skill-no-config", "accepted", { note: "added the precondition" })
+
+  const again = store.record([{ ...lesson, steps: [40, 44] }], { session: "ses_open" })
+
+  assert.deepEqual(again.reopened, [], "the same session, so not news")
+  assert.deepEqual(again.created, [])
+  assert.deepEqual(store.list(), [], "and it stays decided")
+
+  // A different session is a different matter.
+  const elsewhere = store.record([{ ...lesson, steps: [7, 9] }], { session: "ses_other" })
+  assert.deepEqual(elsewhere.reopened, ["lint-skill-no-config"])
+  assert.equal(store.list()[0].reopenedFrom, "accepted")
+})
