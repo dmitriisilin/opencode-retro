@@ -50,7 +50,13 @@ export function resolveConfig(ctx) {
     lessons: join(dir, "lessons"),
     archive: join(dir, "archive"),
     prompts: isAbsolute(options.prompts ?? "") ? options.prompts : resolve(dir, options.prompts ?? DEFAULTS.prompts),
-    updates: join(dir, DEFAULTS.prompts, "updates"),
+    // Beside the prompts they are news about, not beside where the prompts would have been.
+    // With `options.prompts` pointing elsewhere, update notices used to land in a directory
+    // the user had just stopped using, which makes them notices nobody sees.
+    updates: join(
+      isAbsolute(options.prompts ?? "") ? options.prompts : resolve(dir, options.prompts ?? DEFAULTS.prompts),
+      "updates",
+    ),
     selfcheck: join(dir, "selfcheck.md"),
     state: join(dir, "state.json"),
     pluginLog: join(dir, "plugin.log"),

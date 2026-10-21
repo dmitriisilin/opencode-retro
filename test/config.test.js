@@ -1,6 +1,6 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { resolve } from "node:path"
+import { join, resolve } from "node:path"
 import { DEFAULTS, clamp, resolveConfig } from "../src/config.js"
 
 const location = { directory: "/tmp/project", project: { id: "proj_1" } }
@@ -92,4 +92,19 @@ test("clamp refuses to elide when the notice would cost more than it saves", () 
   const got = clamp("abcdefghij", 1)
   assert.equal(got.text, "abcdefghij")
   assert.equal(got.truncated, false)
+})
+
+test("update notices land beside the prompts, including when the directory is overridden", () => {
+  // They are news about the prompts you have. Pointed at a shared directory, the notices used
+  // to be written to `<dir>/prompts/updates` — the place the user had just stopped using, so
+  // the one file meant to be noticed went where nobody looks.
+  const plain = resolveConfig({ location: { directory: "/w" } })
+  assert.equal(plain.updates, join(plain.prompts, "updates"))
+
+  const relative = resolveConfig({ location: { directory: "/w" }, options: { prompts: "shared/prompts" } })
+  assert.equal(relative.prompts, "/w/.retro/shared/prompts")
+  assert.equal(relative.updates, "/w/.retro/shared/prompts/updates")
+
+  const absolute = resolveConfig({ location: { directory: "/w" }, options: { prompts: "/etc/retro/prompts" } })
+  assert.equal(absolute.updates, "/etc/retro/prompts/updates")
 })

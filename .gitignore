@@ -10,3 +10,7 @@ dist/
 .retro/selfcheck.md
 .retro/state.json
 .retro/plugin.log
+
+# Per-machine: the plugin path must be absolute (a relative one hangs startup), so this
+# file cannot be shared. AGENTS.md says what to put in it.
+opencode.json

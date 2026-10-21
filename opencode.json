@@ -1,9 +1,0 @@
-{
-  "$schema": "https://opencode.ai/config.json",
-  "plugins": [
-    {
-      "package": "/home/di735/opencode-retro",
-      "options": { "model": { "providerID": "deepseek", "id": "deepseek-flash" } }
-    }
-  ]
-}
