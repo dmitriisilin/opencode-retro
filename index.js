@@ -537,6 +537,10 @@ export default {
         // start event was never seen: deleting the log under the session that asked is the
         // worst possible answer.
         if (isLive(id, invoking)) continue
+        // Nor one that was only partly read: an excerpt covers a prefix and leaves a gap,
+        // and deleting the file would make the gap unanswerable for ever. The next `/retro`
+        // finishes it and only then may the log go.
+        if (markOf(id).open) continue
         if (!cited.has(id) && !owed.has(id) && log.remove(id)) {
           // The mark described a file that no longer exists. Leaving it would make the next
           // log written under this id look already read, because size only moves forward.
@@ -561,10 +565,17 @@ export default {
       observedSessions.delete(child)
       const stray = log.read(child)
       ingest.absorb(child, stray)
-      if (stray.length) log.remove(child)
+      // Unconditionally: this log belongs to a delegation now, whether or not its records
+      // could be parsed. Leaving an unreadable orphan behind lets `processQueue` treat the
+      // child as a session of its own — the one thing a delegation must never become.
+      log.remove(child)
       // Its end may already have been processed, before the link was known: a delegation is a
-      // step in its parent's task, so there is nothing of its own to analyse.
+      // step in its parent's task, so there is nothing of its own to analyse — and if that end
+      // was counted before we knew, the count has to come back out, or freshness moves for
+      // work that is never a session. `uncountSession` keeps the id, so a writer holding the
+      // old count cannot put it back.
       state.unqueue(child)
+      state.uncountSession(child)
       // The self-check may have been measuring the child's log, which no longer exists.
       observe(rootOf(parent), { force: true })
     }
@@ -642,8 +653,16 @@ export default {
       // records the outcome of the last settle; the byte mark is what decides the cost.
       for (const id of log.list()) {
         if (isLive(id, sessionID) || state.isPending(id)) continue
+        // A delegation is a step in its parent's task, never a session of its own. Its log
+        // is absorbed and removed when the link is learned; if a failed removal or a late
+        // write left one behind, it still must not be analysed on its own.
+        if (parents.has(id)) continue
         const size = log.stat(id).size
-        if (size <= markOf(id).size) continue
+        const mark = markOf(id)
+        // Bytes already sent are not the same as steps turned into lessons: an excerpt sends
+        // the whole file but covers only its unbroken prefix, and the rest has to be read
+        // again without waiting for growth that a finished session will never produce.
+        if (size <= mark.size && !mark.open) continue
         state.queue(id, size)
       }
 
@@ -658,6 +677,10 @@ export default {
           continue
         }
         done.push(owed.session)
+        // An excerpted read is progress, not completion. It stays owed (so the log is not
+        // pruned and the stock line tells the truth) but is not picked again in this same
+        // command, which would just send the same excerpt back to the model.
+        if (state.looked(owed.session).open) skip.add(owed.session)
       }
 
       /**
@@ -677,8 +700,10 @@ export default {
       for (const id of log.list()) {
         if (attempted >= config.extractLimit) break
         if (!isLive(id, sessionID)) continue
+        if (parents.has(id)) continue
         const size = log.stat(id).size
-        if (size <= markOf(id).size) continue
+        const mark = markOf(id)
+        if (size <= mark.size && !mark.open) continue
         attempted++
         const result = await runExtraction(id, { settle: false })
         if (!result?.ok) failures.push({ session: id, detail: result?.detail ?? "unknown failure" })
@@ -800,8 +825,6 @@ export default {
     }
 
     async function runExtraction(sessionID, { settle = true, invoking = null } = {}) {
-      if (settle) state.attempt(sessionID)
-
       // The mark is checked against the file that is actually there first: a log that was
       // pruned and written again is smaller than the mark that described the old one.
       let mark = markOf(sessionID)
@@ -835,7 +858,9 @@ export default {
 
       // These bytes have been read, or were there to be read: either way a failure must not
       // pay for the same material twice. The step mark below still moves only on success.
-      if (readSize > 0) state.look(sessionID, { size: readSize })
+      // `open` is cleared first so a failed retry falls back to the queue's attempt budget
+      // instead of re-reading the same excerpt on every command for ever.
+      if (readSize > 0) state.look(sessionID, { size: readSize, open: false })
 
       // A log we could not read is a failure like any other, and it reaches the same retry
       // policy below. It used to be marked extracted here and returned early, which did two
@@ -881,7 +906,10 @@ export default {
       // attempt would just keep charging for the same answer.
       // The whole reply goes to plugin.log on a failure: the message carries an excerpt, and
       // the difference between prose and truncated JSON is only visible in the rest of it.
+      // Only a failure spends the retry budget. A successful excerpt is progress, and
+      // charging it against the budget of three would retire the rest of the log.
       if (!result.ok) {
+        state.attempt(sessionID)
         onError(`extract.${sessionID}`, result.reply ? `${result.detail}\n--- reply ---\n${result.reply}` : result.detail)
       }
 
@@ -894,12 +922,23 @@ export default {
       // marking the last step *seen* would jump over the elided middle and nothing would ever
       // read it — the silent kind of loss this plugin exists to avoid.
       const through = Math.min(result.through ?? lastN, lastN)
-      if (result.ok && through > 0) state.look(sessionID, { n: through })
+      // `open` is the other half of that rule. Stopping the mark at the gap is only useful if
+      // the next command actually reads from there; the size gate would otherwise call a log
+      // whose bytes were all sent "already read" and the gap would never be visited. It is
+      // only recorded when the read made progress, so a projection that cannot get past its
+      // own first gap fails once and stops rather than billing for the same excerpt again.
+      const open = Boolean(result.ok && through < lastN && through > mark.n)
+      if (result.ok && through > 0) state.look(sessionID, { n: through, open })
 
-      if (settle && (result.ok || state.pending.find((p) => p.session === sessionID)?.attempts >= 3)) {
+      // An excerpt leaves the debt open: the gap has not been turned into lessons, so the
+      // entry stays and the next command reads from the mark. Only a complete read (or a
+      // run of real failures) settles the entry, and only a complete read may prune.
+      const exhausted = (state.pending.find((p) => p.session === sessionID)?.attempts ?? 0) >= 3
+      if (settle && ((result.ok && !open) || (!result.ok && exhausted))) {
         // `size` is what this settle actually covered, so a queue entry for later material
         // is not mistaken for one this extraction already answered.
         state.markExtracted(sessionID, { ok: result.ok, detail: result.detail, size: readSize })
+        // Only a complete success releases the log; a failure keeps it, as decision 18 says.
         if (result.ok) pruneLogs(invoking)
       }
 

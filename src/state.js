@@ -7,7 +7,18 @@ import { dirname } from "node:path"
  * sessions have already been extracted (so a restart does not pay twice).
  */
 export function createState({ path, onError }) {
-  let data = { version: 1, rejected: [], extracted: {}, pending: [], sessions: 0, looked: {}, counted: {} }
+  let data = {
+    version: 1,
+    rejected: [],
+    extracted: {},
+    pending: [],
+    sessions: 0,
+    looked: {},
+    counted: {},
+    anonymous: 0,
+    uncounted: [],
+    unqueued: [],
+  }
 
   try {
     const parsed = JSON.parse(readFileSync(path, "utf8"))
@@ -19,6 +30,14 @@ export function createState({ path, onError }) {
       if (typeof data.sessions !== "number") data.sessions = 0
       if (!data.looked || typeof data.looked !== "object") data.looked = {}
       if (!data.counted || typeof data.counted !== "object") data.counted = {}
+      if (!Array.isArray(data.uncounted)) data.uncounted = []
+      if (!Array.isArray(data.unqueued)) data.unqueued = []
+      // A file written before the identity list existed has only the number. Recover the
+      // anonymous part rather than trusting a total we can no longer decompose.
+      if (typeof data.anonymous !== "number") {
+        data.anonymous = Math.max(0, data.sessions - Object.keys(data.counted).length)
+      }
+      data.sessions = Math.max(0, data.anonymous + Object.keys(data.counted).length)
     }
   } catch {
     /* absent or hand-broken: start clean rather than refuse to run */
@@ -30,12 +49,6 @@ export function createState({ path, onError }) {
    * described the old file, so a rebase has to be stated explicitly for one save.
    */
   let rebased = new Set()
-  /**
-   * Sessions taken out of the queue on purpose, which the union below must not bring back.
-   * Entries otherwise leave only through an extraction, and the coverage filter expresses
-   * that; a deliberate removal has nothing in the data to express it, so it is said here.
-   */
-  let unqueued = new Set()
 
   /**
    * Written by merging with whatever is on disk, not by overwriting it.
@@ -47,10 +60,9 @@ export function createState({ path, onError }) {
    * must outlive the lesson it belongs to (decision 9).
    *
    * Only the append-only parts are merged, because only they have a safe answer: rejections,
-   * extractions and counted sessions are unions, the session counter and each `looked` size
-   * are maxima. The queue is not append-only, so the writer's own view of it wins — minus
-   * anything the disk says has since been extracted, which is the one way another writer
-   * removes an entry.
+   * extractions and counted sessions are unions, each `looked` mark takes the newer view.
+   * The queue is a union as well, with deliberate removals carried as persisted tombstones —
+   * a writer's older copy must not be able to bring back a child it never learned about.
    *
    * A rebase is the exception to the maxima: when the log a mark described is gone, the
    * writer knows something the disk does not, and resurrecting the old number would make the
@@ -71,24 +83,72 @@ export function createState({ path, onError }) {
         for (const r of data.rejected) if (!rejected.some((o) => o?.id === r.id)) rejected.push(r)
         data.rejected = rejected
 
-        data.extracted = { ...(disk.extracted ?? {}), ...data.extracted }
-        data.sessions = Math.max(data.sessions ?? 0, typeof disk.sessions === "number" ? disk.sessions : 0)
-        data.counted = { ...(disk.counted ?? {}), ...data.counted }
+        const ownExtracted = data.extracted ?? {}
+        data.extracted = { ...(disk.extracted ?? {}), ...ownExtracted }
+
+        /**
+         * Counted sessions are identities, and the number is derived from them.
+         *
+         * The old merge took the maximum of two counters, which is only right when both
+         * writers counted the same sessions. Two instances that each counted a different
+         * session each moved their own counter by one, the maximum kept one, and the
+         * workspace aged by one session less than it had lived — exactly the direction that
+         * makes everything look fresher than it is. Distinct ids are merged, then the
+         * anonymous calls (which have no id to merge by) take the maximum.
+         */
+        const ownCounted = data.counted ?? {}
+        const uncounted = [
+          ...new Set([
+            ...(Array.isArray(disk.uncounted) ? disk.uncounted : []),
+            ...(Array.isArray(data.uncounted) ? data.uncounted : []),
+          ]),
+        ]
+        const counted = { ...(disk.counted ?? {}), ...ownCounted }
+        for (const id of uncounted) delete counted[id]
+        data.counted = counted
+        data.uncounted = uncounted
+        data.anonymous = Math.max(
+          typeof data.anonymous === "number" ? data.anonymous : 0,
+          typeof disk.anonymous === "number"
+            ? disk.anonymous
+            : Math.max(0, (disk.sessions ?? 0) - Object.keys(disk.counted ?? {}).length),
+        )
+        data.sessions = data.anonymous + Object.keys(counted).length
 
         // Both marks are maxima, and both shapes exist: a state.json written before the
-        // step offset has a bare byte count here.
-        const asMark = (v) => (typeof v === "number" ? { n: 0, size: v } : { n: v?.n ?? 0, size: v?.size ?? 0 })
+        // step offset has a bare byte count here. `open` is different: it records that the
+        // last successful read stopped before the end of the log, and it must survive so the
+        // next command reads the elided middle rather than treating the bytes sent as steps
+        // covered. The newer mark decides; at the same step the writer's own view does.
+        const asMark = (v) => ({
+          present: v !== undefined,
+          n: typeof v === "number" ? 0 : (v?.n ?? 0),
+          size: typeof v === "number" ? v : (v?.size ?? 0),
+          open: typeof v === "number" ? false : Boolean(v?.open),
+        })
+        const ownLooked = data.looked ?? {}
         const looked = {}
-        for (const id of new Set([...Object.keys(disk.looked ?? {}), ...Object.keys(data.looked ?? {})])) {
+        for (const id of new Set([...Object.keys(disk.looked ?? {}), ...Object.keys(ownLooked)])) {
+          if (rebased.has(id)) {
+            // The disk mark describes a file that was replaced. Only a mark this writer made
+            // after the rebase may be used; the old number must not come back.
+            if (!(id in ownLooked)) continue
+            const own = asMark(ownLooked[id])
+            looked[id] = own.open ? { n: own.n, size: own.size, open: true } : { n: own.n, size: own.size }
+            continue
+          }
           const a = asMark(disk.looked?.[id])
-          const b = asMark(data.looked?.[id])
-          looked[id] = { n: Math.max(a.n, b.n), size: Math.max(a.size, b.size) }
+          const b = asMark(ownLooked[id])
+          const n = Math.max(a.n, b.n)
+          const size = Math.max(a.size, b.size)
+          const open = b.present && b.n >= a.n ? b.open : a.open
+          looked[id] = open ? { n, size, open: true } : { n, size }
         }
         // The extraction describes the file that was replaced, so its byte size no longer
         // covers anything: a new log may be smaller than the old one and still be new work.
+        // A writer that has extracted again since the rebase has a newer fact of its own.
         for (const id of rebased) {
-          delete looked[id]
-          if (data.extracted[id]) data.extracted[id] = { ...data.extracted[id], size: 0 }
+          if (!(id in ownExtracted) && data.extracted[id]) data.extracted[id] = { ...data.extracted[id], size: 0 }
         }
         data.looked = looked
 
@@ -104,11 +164,17 @@ export function createState({ path, onError }) {
         }
         // The queue is a union too, not the writer's own. Two instances on one project used
         // to lose each other's entries, which means a session nobody analyses: the log sits
-        // there, and nothing is owed for it. Entries only ever leave through an extraction,
-        // and the filter below is what expresses that, so a union cannot resurrect one that
-        // was deliberately removed. For a session both writers hold, the higher attempt count
+        // there, and nothing is owed for it. Entries leave through an extraction, which the
+        // coverage filter expresses, or through a deliberate removal, which the persisted
+        // `unqueued` list expresses. For a session both writers hold, the higher attempt count
         // wins — otherwise a retry budget resets — and the smaller queued size, so the
         // coverage comparison stays conservative.
+        const ownUnqueued = Array.isArray(data.unqueued) ? data.unqueued : []
+        const unqueued = [
+          ...new Set([...(Array.isArray(disk.unqueued) ? disk.unqueued : []), ...ownUnqueued]),
+        ]
+        data.unqueued = unqueued
+        const excluded = new Set(unqueued)
         const queued = new Map()
         for (const entry of [...(Array.isArray(disk.pending) ? disk.pending : []), ...data.pending]) {
           if (!entry?.session) continue
@@ -125,14 +191,17 @@ export function createState({ path, onError }) {
           )
         }
         data.pending = [...queued.values()]
-          .filter((p) => !unqueued.has(p.session))
+          .filter((p) => !excluded.has(p.session))
           .filter((p) => !data.extracted[p.session] || (p.size ?? 0) > coveredSizeOf(p.session))
       }
+
+      // The tombstone has to hold even when there is no file to merge with yet.
+      const excluded = new Set(Array.isArray(data.unqueued) ? data.unqueued : [])
+      if (excluded.size) data.pending = data.pending.filter((p) => !excluded.has(p.session))
 
       mkdirSync(dirname(path), { recursive: true })
       writeFileSync(path, JSON.stringify(data, null, 2) + "\n")
       rebased = new Set()
-      unqueued = new Set()
     } catch (err) {
       onError?.("state.save", err)
     }
@@ -152,8 +221,8 @@ export function createState({ path, onError }) {
     isPending: (session) => data.pending.some((p) => p.session === session),
 
     /**
-     * How much of a session's log has already been dealt with. Two numbers, because they
-     * answer two questions and move at different times.
+     * How much of a session's log has already been dealt with. Two numbers and a flag,
+     * because they answer three questions and move at different times.
      *
      * `n` is the last step that has actually been turned into lessons, so the next analysis
      * starts after it. This matters most for the way sessions are really used: they are left
@@ -165,19 +234,28 @@ export function createState({ path, onError }) {
      * the file's length at some later moment. A log no bigger than that has nothing new in
      * it, so nothing is spent on asking again — which also means a session abandoned by a
      * server that stopped is read once and then left alone for good.
+     *
+     * `open` is the exception to that last sentence: a successful read that had to excerpt
+     * the log covered only its unbroken prefix, so there is still material behind the gap.
+     * The bytes were sent, but the steps were not covered, and the log has to be read again
+     * without waiting for it to grow. It is cleared when a later read reaches the end.
      */
     looked(session) {
       const mark = data.looked[session]
       // Was a bare byte count before the offset existed; an old state.json still has one.
       if (typeof mark === "number") return { n: 0, size: mark }
-      return { n: mark?.n ?? 0, size: mark?.size ?? 0 }
+      return { n: mark?.n ?? 0, size: mark?.size ?? 0, ...(mark?.open ? { open: true } : {}) }
     },
-    look(session, { n, size }) {
+    look(session, { n, size, open }) {
       const before = this.looked(session)
-      rebased.delete(session) // a fresh mark supersedes any rebase still waiting to be saved
+      // A rebase is deliberately *not* deleted here. Until a save has carried the rebase to
+      // the file, the old mark is still on disk; letting this fresh (necessarily smaller)
+      // mark be maxed against it would resurrect the number that described the replaced log.
+      const nextOpen = open === undefined ? Boolean(before.open) : Boolean(open)
       data.looked[session] = {
         n: Math.max(n ?? 0, before.n),
         size: Math.max(size ?? 0, before.size),
+        ...(nextOpen ? { open: true } : {}),
       }
       save()
     },
@@ -216,10 +294,41 @@ export function createState({ path, onError }) {
       return data.sessions
     },
     countSession(session) {
-      if (session && data.counted[session]) return data.sessions
-      if (session) data.counted[session] = true
-      data.sessions++
+      if (session) {
+        if (data.counted[session]) return data.sessions
+        data.counted[session] = true
+      } else {
+        data.anonymous = (data.anonymous ?? 0) + 1
+      }
+      data.sessions = (data.anonymous ?? 0) + Object.keys(data.counted).length
       save()
+      return data.sessions
+    },
+
+    /**
+     * Take a session back out of the counter, because it turned out to be a delegation.
+     *
+     * A child's end can be processed before the parent link is known, and that counts it.
+     * "A delegation is a step, not a session" has to survive finding out afterwards, or
+     * freshness is moved by work that will never be analysed on its own. The id is kept in
+     * `uncounted` so a writer that still has the old count cannot put it back.
+     */
+    uncountSession(session) {
+      let changed = false
+      if (!data.uncounted.includes(session)) {
+        data.uncounted.push(session)
+        changed = true
+      }
+      if (data.counted[session]) {
+        delete data.counted[session]
+        changed = true
+      }
+      const sessions = (data.anonymous ?? 0) + Object.keys(data.counted).length
+      if (sessions !== data.sessions) {
+        data.sessions = sessions
+        changed = true
+      }
+      if (changed) save()
       return data.sessions
     },
 
@@ -239,18 +348,30 @@ export function createState({ path, onError }) {
      * a step, not a session to analyse.
      */
     unqueue(session) {
-      unqueued.add(session)
+      let changed = false
+      if (!data.unqueued.includes(session)) {
+        data.unqueued.push(session)
+        changed = true
+      }
       const before = data.pending.length
       data.pending = data.pending.filter((p) => p.session !== session)
-      if (data.pending.length !== before) save()
-      else unqueued.delete(session)
+      if (data.pending.length !== before) changed = true
+      // Saved even when our copy had nothing to remove: the entry may exist only on disk,
+      // and a tombstone that never reaches the file is no tombstone at all.
+      if (changed) save()
     },
     queue(session, size = 0) {
-      unqueued.delete(session) // queued again on purpose, so the tombstone no longer applies
+      let changed = false
+      const at = data.unqueued.indexOf(session)
+      if (at >= 0) {
+        data.unqueued.splice(at, 1) // queued again on purpose, so the tombstone no longer applies
+        changed = true
+      }
       if (!data.pending.some((p) => p.session === session)) {
         data.pending.push({ session, queuedAt: new Date().toISOString(), attempts: 0, size })
-        save()
+        changed = true
       }
+      if (changed) save()
     },
     get pending() {
       return data.pending.map((p) => ({ ...p }))

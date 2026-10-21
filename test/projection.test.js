@@ -311,6 +311,23 @@ test("an excerpt reports how far it actually goes, not how far it looked", () =>
   )
 })
 
+test("a truncation reports only the steps that survived the cut", () => {
+  // The last-resort truncation takes the end of the text. Reporting the unbroken prefix as
+  // cover would mark the cut material as analysed — and assistant text is not re-sent on a
+  // re-read the way prompts are, so that material would never be looked at again.
+  const records = Array.from({ length: 60 }, (_, i) => ({
+    k: "prompt", n: i + 1, text: `instruction ${i} `.repeat(300),
+  }))
+  records.push({ k: "text", n: 61, text: "THE FINAL ANSWER, where it went wrong" })
+
+  const out = projected(records, { budget: 4000 })
+
+  assert.ok(out.text.length <= 4000, "the budget still holds")
+  assert.match(out.text, /truncated to fit the budget/)
+  assert.doesNotMatch(out.text, /THE FINAL ANSWER/, "the end was cut")
+  assert.ok(out.through < 61, `the cut material is not claimed as covered, got ${out.through}`)
+})
+
 test("prompts are shortened before a projection is allowed over budget", () => {
   // Prompts and replies are never dropped, which is right. But over budget is where the model
   // answers with an empty string, so when they alone exceed it they are shortened instead.

@@ -55,9 +55,31 @@ export function projected(records, { maxToolOutput = 600, maxPromptChars = 4000,
   if (Number.isFinite(budget) && out.text.length > budget) {
     // Last resort, so the contract holds whatever the log contains: cut it, and say so.
     const notice = "\n[...] truncated to fit the budget\n"
-    return { text: out.text.slice(0, Math.max(0, budget - notice.length)) + notice, through: out.through }
+    const room = Math.max(0, budget - notice.length)
+    return { text: out.text.slice(0, room) + notice, through: throughWithin(blocks, room) }
   }
   return out
+}
+
+/**
+ * The last step whose text survives a truncation of `limit` characters.
+ *
+ * The cut takes the end of the text, so a log that fitted only as an excerpt can lose the
+ * very steps the unbroken prefix claimed. Reporting the prefix as covered would then make
+ * the mark skip what was cut, and nothing would ever read it — the same silent loss the
+ * first-gap rule exists to prevent. Whole blocks only, and never past a gap.
+ */
+function throughWithin(blocks, limit) {
+  let used = 0
+  let through = 0
+  for (const b of blocks) {
+    if (b.gap) break
+    const length = b.lines.reduce((n, line) => n + line.length + 1, 0)
+    if (used + length > limit) break
+    used += length
+    if (Number.isFinite(b.n)) through = Math.max(through, b.n)
+  }
+  return through
 }
 
 /** The text, plus the last step of its unbroken prefix. */

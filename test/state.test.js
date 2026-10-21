@@ -1,6 +1,6 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs"
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { createState } from "../src/state.js"
@@ -312,4 +312,98 @@ test("two writers' queues are merged, so neither loses what the other owed", () 
     "both writers' debts survive",
   )
   assert.equal(saved.pending.find((p) => p.session === "ses_a").attempts, 1, "and the attempt count is not reset")
+})
+
+test("two writers counting different sessions count two, not one", () => {
+  // The counter used to be merged as a maximum. Two instances that each counted a different
+  // session each moved their own copy to 1, the maximum kept 1, and a workspace that had
+  // lived two sessions aged by one — the direction that makes every lesson look fresher
+  // than it is.
+  const path = join(mkdtempSync(join(tmpdir(), "retro-count-merge-")), "state.json")
+  const mine = createState({ path })
+  const theirs = createState({ path })
+
+  mine.countSession("ses_a")
+  theirs.countSession("ses_b")
+
+  const saved = JSON.parse(readFileSync(path, "utf8"))
+  assert.equal(saved.sessions, 2, "both sessions are in the count")
+  assert.deepEqual(Object.keys(saved.counted).sort(), ["ses_a", "ses_b"])
+})
+
+test("a session discovered to be a subagent is taken back out of the counter", () => {
+  // Its end can be processed before the parent link is known, which counts it. A delegation
+  // is a step, not a session, and that has to remain true when we find out afterwards.
+  const path = join(mkdtempSync(join(tmpdir(), "retro-uncount-")), "state.json")
+  const state = createState({ path })
+  state.countSession("ses_child")
+  // A second writer loaded the count before the link was known.
+  const stale = createState({ path })
+
+  assert.equal(state.uncountSession("ses_child"), 0)
+  assert.deepEqual(state.looked("ses_child"), { n: 0, size: 0 }, "and no mark is invented")
+
+  stale.countSession("ses_other")
+
+  const saved = JSON.parse(readFileSync(path, "utf8"))
+  assert.equal(saved.sessions, 1, "only the real session is left")
+  assert.equal(saved.counted.ses_child, undefined, "and the stale writer cannot put it back")
+  assert.deepEqual(Object.keys(saved.counted), ["ses_other"])
+})
+
+test("a session removed from the queue stays removed even if another writer queued it", () => {
+  // The removal tombstone used to be cleared when *our* copy had no entry to remove. The
+  // entry can exist only on disk — the other instance queued the child before we learned it
+  // was a child — and the queue union would then bring it straight back.
+  const path = join(mkdtempSync(join(tmpdir(), "retro-unqueue-merge-")), "state.json")
+  const mine = createState({ path })
+  const theirs = createState({ path })
+  theirs.queue("ses_child", 100)
+
+  mine.unqueue("ses_child")
+  mine.countSession("ses_x") // any later save
+
+  const saved = JSON.parse(readFileSync(path, "utf8"))
+  assert.deepEqual(saved.pending, [], "the child is not owed an analysis")
+  assert.deepEqual(createState({ path }).pending, [], "and a reload agrees")
+})
+
+test("a rebase whose save failed is not undone by the next look", () => {
+  // `look` used to clear the rebase tombstone before saving. If the rebase itself could not
+  // be written, the next successful merge maxed the new, smaller mark against the old one
+  // still on disk and the replaced log became invisible for ever.
+  const dir = mkdtempSync(join(tmpdir(), "retro-rebase-fail-"))
+  const path = join(dir, "state.json")
+  const errors = []
+  const state = createState({ path, onError: (where) => errors.push(where) })
+
+  state.look("ses_a", { n: 40, size: 9000 })
+  const old = readFileSync(path, "utf8")
+
+  rmSync(path)
+  mkdirSync(path) // makes the rebase's write fail with EISDIR
+  state.rebase("ses_a")
+  assert.deepEqual(state.looked("ses_a"), { n: 0, size: 0 }, "forgotten in memory")
+  assert.deepEqual(errors, ["state.save"], "and the failure was reported, not thrown")
+
+  rmSync(path, { recursive: true })
+  writeFileSync(path, old) // the old mark survives on disk, as it would after a failed write
+  state.look("ses_a", { n: 3, size: 120 })
+
+  assert.deepEqual(state.looked("ses_a"), { n: 3, size: 120 }, "the new file's own mark, not the old one")
+  assert.deepEqual(createState({ path }).looked("ses_a"), { n: 3, size: 120 }, "and the write wins")
+})
+
+test("an open mark survives a save and is cleared by a read that reaches the end", () => {
+  // An excerpt sends the bytes but covers only its unbroken prefix. Without the mark the
+  // next command sees a log no larger than what was sent and never reads the gap.
+  const s = sandbox()
+  const state = createState({ path: s.path })
+  state.look("ses_a", { n: 5, size: 100, open: true })
+
+  assert.deepEqual(state.looked("ses_a"), { n: 5, size: 100, open: true })
+  assert.equal(createState({ path: s.path }).looked("ses_a").open, true, "and it is on disk")
+
+  state.look("ses_a", { n: 9, size: 200, open: false })
+  assert.deepEqual(state.looked("ses_a"), { n: 9, size: 200 }, "a complete read closes it")
 })

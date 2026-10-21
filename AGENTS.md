@@ -329,15 +329,21 @@ plugin needed — and it gets the `sessionID`, so it can drive the review conver
   for staying on disk. Not urgent — and `state.json` now merges with the file on every save
   rather than overwriting it, because it is read once at load and used from memory, so a
   second writer was silently clobbered. Measured: a rejection recorded out of band vanished
-  when a long-running instance saved its older copy. Only the append-only parts merge —
-  rejections, extractions and counted sessions as unions, the session counter and each
-  `looked` size as maxima. The queue is a union as well, with the higher attempt count and the
-  smaller queued size: it used to be the writer's own, and two instances on one project then
-  lost each other's entries, which means a session nobody analyses — the log sits there and
-  nothing is owed for it. A union is only safe because entries leave in exactly two ways, and
-  both say so in the data: an extraction that covers the size the entry was queued at, and an
-  explicit `unqueue` (a session that turned out to be a subagent), which leaves a tombstone
-  for the same reason `rebase` does.
+  when a long-running instance saved its older copy. The merge is by identity where it can
+  be: rejections, extractions and counted sessions are unions, and the session counter is
+  derived from the counted ids plus the anonymous calls (which take the maximum), rather than
+  being a maximum itself. Two instances that each counted a different session each moved their
+  own copy to one, and the maximum lost one — a workspace aged by less than it had lived. Each
+  `looked` mark takes the newer view, and carries `open` when the last successful read stopped
+  at an excerpt, so the next command reads the gap instead of calling the bytes "already sent".
+  The queue is a union as well, with the higher attempt count and the smaller queued size: it
+  used to be the writer's own, and two instances on one project then lost each other's entries,
+  which means a session nobody analyses — the log sits there and nothing is owed for it. A
+  union is only safe because entries leave in exactly two ways, and both say so in the data: an
+  extraction that covers the size the entry was queued at, and an explicit `unqueue` (a session
+  that turned out to be a subagent), which is persisted until `queue` deliberately reverses it.
+  A rebase is still a one-save tombstone, because only the writer that saw the file replaced
+  can say the old mark is gone.
 - Whether `/api/experimental/session/{id}/log` (the durable event log) makes the shadow log
   redundant. Decision 3 says keep our own; worth a look before M1 ships.
 

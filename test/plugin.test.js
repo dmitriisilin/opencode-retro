@@ -674,6 +674,69 @@ test("a working session is not read again until its log has grown", async () => 
   await cleanup?.()
 })
 
+test("an excerpted log is read again without growing, and is not pruned first", async () => {
+  // `through` stops at the first gap so the elided middle is not skipped. But the growth gate
+  // compared bytes sent, not steps covered: the whole file had been read and sent, so the log
+  // looked finished, and a successful extraction then pruned a file whose middle had never
+  // been analysed. The next command must read it again even though nothing was appended.
+  const directory = sandbox()
+  const session = "ses_excerpt"
+  const logPath = join(directory, ".retro", "sessions", `${session}.jsonl`)
+  mkdirSync(join(directory, ".retro", "sessions"), { recursive: true })
+
+  const records = [{ v: 1, n: 1, t: 1, k: "prompt", text: "fix the lint trap" }]
+  for (let i = 0; i < 100; i++) {
+    records.push({
+      v: 1,
+      n: i + 2,
+      t: i + 2,
+      k: "tool",
+      id: `c${i}`,
+      tool: "shell",
+      input: { command: `step-${i}` },
+      status: "completed",
+      exit: 0,
+      output: "x".repeat(300),
+    })
+  }
+  records.push({ v: 1, n: 102, t: 102, k: "text", text: "the end of the session" })
+  writeFileSync(logPath, records.map((r) => JSON.stringify(r)).join("\n") + "\n")
+
+  const fake = fakeOpenCode({
+    directory,
+    options: { model: MODEL, maxInput: 9000 },
+    reply: JSON.stringify({ lessons: [] }),
+  })
+  const cleanup = await plugin.setup(fake.ctx)
+  await fake.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
+
+  assert.equal(fake.generated.length, 1, "the log was read")
+  const first = fake.generated[0].prompt
+  assert.match(first, /steps elided to fit the budget/, "as an excerpt")
+  const mark = savedState(directory).looked[session]
+  assert.equal(mark.open, true, "and the gap is remembered")
+  assert.ok(mark.n < 102, "the mark stops at the gap, not at the end that was also sent")
+  assert.ok(existsSync(logPath), "a log with an unread gap is not pruned as finished work")
+
+  await fake.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
+
+  assert.equal(fake.generated.length, 2, "read again without a single byte being appended")
+  assert.ok(
+    savedState(directory).looked[session].n > mark.n,
+    "and it got further than the first read, so the gap is being worked through",
+  )
+
+  // And it keeps working through the gap, command after command, until the whole log has
+  // been covered. This also crosses the failure-retry budget, which a successful excerpt
+  // must not spend: the log is being read, just not in one piece.
+  for (let i = 0; i < 40 && existsSync(logPath); i++) {
+    await fake.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
+  }
+  assert.ok(!existsSync(logPath), "the excerpt was finished and only then pruned")
+
+  await cleanup?.()
+})
+
 test("a log left behind by a server that stopped is finished, and is treated as such", async () => {
   // A server that stops takes its sessions with it, so no end event ever arrives and the log
   // is neither queued nor live. It used to sit on disk for ever: never analysed, never
@@ -883,6 +946,38 @@ test("the subagent's own instruction is not lost to the race that reveals its pa
   await cleanup?.()
 })
 
+test("an unreadable orphan log for a child is removed, not analysed as a session", async () => {
+  // `adopt` used to remove the orphan only when it had parsed records. A half-written or
+  // corrupt log parsed to nothing, so it stayed on disk — and `processQueue` would later
+  // read the child as a session of its own, with no delegation instruction behind it.
+  const directory = sandbox()
+  const parent = "ses_parent"
+  const child = "ses_child_unreadable"
+  mkdirSync(join(directory, ".retro", "sessions"), { recursive: true })
+  const logPath = join(directory, ".retro", "sessions", `${child}.jsonl`)
+  writeFileSync(logPath, "this line is not a shadow-log record\n")
+
+  const fake = fakeOpenCode({ directory, options: { model: MODEL } })
+  const cleanup = await plugin.setup(fake.ctx)
+
+  await fake.hooks.get("session.prompt")({ sessionID: parent, messageID: "m1", prompt: { text: "delegate" } })
+  await fake.hooks.get("tool.execute.after")({
+    sessionID: parent,
+    id: "d1",
+    tool: "subagent",
+    input: { agent: "explore", description: "look", prompt: "go" },
+    status: "completed",
+    result: { output: { output: "done" }, metadata: { sessionID: child } },
+  })
+
+  assert.ok(!existsSync(logPath), "the child's log is gone even though nothing in it parsed")
+
+  await fake.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
+  assert.ok(!analysed(fake).includes(child), "and it was never analysed on its own")
+
+  await cleanup?.()
+})
+
 test("keepSessions keeps a log that nothing cites, because losing it is not recoverable", async () => {
   const directory = sandbox()
   const session = "ses_kept"
@@ -1083,6 +1178,87 @@ test("a subagent's own instruction is absorbed when session.created reveals the 
   const state = savedState(directory)
   assert.equal(state.sessions, 0, "a delegation is a step, not a session")
   assert.deepEqual(state.pending, [], "and it is never queued for its own analysis")
+  await cleanup?.()
+})
+
+test("a delegation inside a delegation is folded into the root when the links arrive out of order", async () => {
+  // A subagent can spawn one of its own. The leaf's link to the middle may be learned before
+  // the middle is known to be a child of the root, so the leaf is absorbed into the middle's
+  // log first and has to move again when the middle is adopted. Neither the middle nor the
+  // leaf is a session: no log of its own is left, neither is queued, and neither moves the
+  // freshness counter even though both ends were processed before the links were known.
+  const directory = sandbox()
+  const fake = fakeOpenCode({ directory, options: { model: MODEL } })
+  const cleanup = await plugin.setup(fake.ctx)
+  const root = "ses_root"
+  const middle = "ses_middle"
+  const leaf = "ses_leaf"
+
+  await fake.hooks.get("session.prompt")({ sessionID: root, messageID: "m0", prompt: { text: "the task" } })
+  await fake.hooks.get("session.prompt")({
+    sessionID: middle,
+    messageID: "m1",
+    prompt: { text: "You are a subagent spawned by another session.\nMiddle task" },
+  })
+  await fake.hooks.get("session.prompt")({
+    sessionID: leaf,
+    messageID: "m2",
+    prompt: { text: "You are a subagent spawned by another session.\nLeaf task" },
+  })
+  await fake.hooks.get("tool.execute.before")({ sessionID: leaf, id: "l1", tool: "read", input: { path: "src/sum.js" } })
+  await fake.hooks.get("tool.execute.after")({
+    sessionID: leaf,
+    id: "l1",
+    tool: "read",
+    agent: "explore",
+    input: { path: "src/sum.js" },
+    status: "completed",
+    result: { output: { output: "export function sum" } },
+  })
+
+  // Both ends are processed while each still looks like a session of its own.
+  fake.emit({ type: "session.execution.succeeded", durable: { seq: 5 }, data: { sessionID: leaf } })
+  fake.emit({ type: "session.execution.succeeded", durable: { seq: 6 }, data: { sessionID: middle } })
+  await tick()
+  assert.deepEqual(savedState(directory).pending.map((p) => p.session).sort(), [leaf, middle])
+  assert.equal(savedState(directory).sessions, 2)
+
+  // Leaf -> middle is learned first, before middle -> root.
+  await fake.hooks.get("tool.execute.after")({
+    sessionID: middle,
+    id: "d-leaf",
+    tool: "subagent",
+    input: { agent: "explore", description: "look", prompt: "go" },
+    status: "completed",
+    result: { output: { output: "done" }, metadata: { sessionID: leaf } },
+  })
+  assert.ok(!existsSync(join(directory, ".retro", "sessions", `${leaf}.jsonl`)), "the leaf log moved into the middle")
+
+  await fake.hooks.get("tool.execute.after")({
+    sessionID: root,
+    id: "d-middle",
+    tool: "subagent",
+    input: { agent: "explore", description: "middle", prompt: "go" },
+    status: "completed",
+    result: { output: { output: "done" }, metadata: { sessionID: middle } },
+  })
+
+  for (const id of [middle, leaf]) {
+    assert.ok(!existsSync(join(directory, ".retro", "sessions", `${id}.jsonl`)), `${id} has no log of its own`)
+  }
+  const records = readFileSync(join(directory, ".retro", "sessions", `${root}.jsonl`), "utf8")
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line))
+  const texts = records.filter((r) => r.k === "prompt").map((r) => r.text)
+  assert.ok(texts.some((t) => /Middle task/.test(t)), "the middle's instruction reached the root")
+  assert.ok(texts.some((t) => /Leaf task/.test(t)), "and so did the leaf's")
+  assert.ok(records.some((r) => r.tool === "read"), "the leaf's work is in the root's log")
+
+  const state = savedState(directory)
+  assert.deepEqual(state.pending, [], "neither delegation is owed an analysis")
+  assert.equal(state.sessions, 0, "and neither ages a lesson")
+
   await cleanup?.()
 })
 
@@ -1575,6 +1751,7 @@ test("a session that turns out to be a subagent leaves the queue", async () => {
   })
 
   assert.deepEqual(savedState(directory).pending, [], "and then it is not a session to analyse")
+  assert.equal(savedState(directory).sessions, 0, "nor a session freshness should age by")
   assert.equal(existsSync(join(directory, ".retro", "sessions", `${child}.jsonl`)), false, "its log went to the parent")
 
   await cleanup?.()
