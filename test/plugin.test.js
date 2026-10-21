@@ -168,7 +168,7 @@ test("setup registers the commands and the decision tool, and seeds the prompts"
   assert.ok(fake.hooks.has("tool.execute.before"))
   assert.ok(fake.hooks.has("tool.execute.after"))
 
-  for (const name of ["extract", "review", "review-auto"]) {
+  for (const name of ["extract", "propose", "propose-all"]) {
     assert.ok(existsSync(join(directory, ".retro", "prompts", `${name}.md`)), `${name}.md was not seeded`)
   }
   assert.ok(existsSync(join(directory, ".retro", "selfcheck.md")))
@@ -281,7 +281,7 @@ test("an edited review prompt is what reaches the agent", async () => {
   const seeded = await plugin.setup(first.ctx)
   await seeded?.()
 
-  writeFileSync(join(directory, ".retro", "prompts", "review.md"), "---\nprompt: review\nbase: 1\n---\n\nMY OWN WORDING.\n")
+  writeFileSync(join(directory, ".retro", "prompts", "propose.md"), "---\nprompt: review\nbase: 1\n---\n\nMY OWN WORDING.\n")
   mkdirSync(join(directory, ".retro", "lessons"), { recursive: true })
   writeFileSync(
     join(directory, ".retro", "lessons", "l.md"),
@@ -518,6 +518,37 @@ test("a log that failed stays queued, and is tried again on the next command", a
 
   const after = JSON.parse(readFileSync(join(directory, ".retro", "state.json"), "utf8"))
   assert.equal(after.pending[0].attempts, 2, "one more go, then it is given up on")
+
+  await cleanup?.()
+})
+
+test("the report is written from the first prompt, not once the session is over", async () => {
+  // It used to say "Nothing measured yet" until a session ended, which made it stale for
+  // exactly as long as somebody was working — the one time they would open it. Nothing in
+  // the checks needs the session to be over: a hook fired, and the log has something
+  // non-empty in it.
+  const directory = sandbox()
+  const fake = fakeOpenCode({ directory, options: { model: MODEL } })
+  const cleanup = await plugin.setup(fake.ctx)
+  const session = "ses_underway"
+
+  const fresh = readFileSync(join(directory, ".retro", "selfcheck.md"), "utf8")
+  assert.match(fresh, /Nothing measured yet/, "before any traffic there is nothing to assert")
+
+  await fake.hooks.get("session.prompt")({ sessionID: session, messageID: "m1", prompt: { text: "go" } })
+
+  const report = readFileSync(join(directory, ".retro", "selfcheck.md"), "utf8")
+  assert.match(report, /ok\s+prompt hook\s+1 prompt seen/, "the hook fired, and that is the fact")
+  assert.match(report, /ok\s+shadow log\s+sessions\/ses_underway\.jsonl, \d+ entries/)
+  assert.match(report, /not exercised\s+trigger\s+the session has not ended yet/, "not BROKEN: it is still working")
+  assert.match(
+    report,
+    /not exercised\s+tool hook\s+no tool calls seen yet/,
+    "and not 'none in this session', which the counts cannot support while it runs",
+  )
+  assert.doesNotMatch(report, /no end-of-session event arrived/)
+  assert.match(report, /was still working at \d{4}-\d{2}-\d{2}/, "and the file says which session it measured")
+  assert.match(report, /verified\s+\d{4}-\d{2}-\d{2}[^(]*\(when the checks below were last evaluated\)/)
 
   await cleanup?.()
 })

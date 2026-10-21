@@ -31,9 +31,6 @@ export function createSelfCheck({ versions, repo, loadedAt = Date.now() }) {
 
   return {
     state,
-    beat: (at = Date.now()) => {
-      state.heartbeat = at
-    },
     active: (checks) => {
       state.activeChecks = checks
       state.activeAt = Date.now()
@@ -44,11 +41,20 @@ export function createSelfCheck({ versions, repo, loadedAt = Date.now() }) {
     stock: (stock) => {
       state.stock = stock
     },
+    /**
+     * Evaluate the assertions against what is known about a session right now.
+     *
+     * Called while a session works as well as when it ends (`session.ended === false` for
+     * the former), because a report that only becomes true at the end of a session is stale
+     * for exactly as long as someone is working — which is when they would look at it. The
+     * cheap facts are available from the first prompt: a hook fired, and the log has
+     * something non-empty in it.
+     */
     verify(session, at = Date.now()) {
       state.verified = at
       state.heartbeat = at
       state.session = session.id
-      state.sessionEnded = at
+      state.sessionEnded = session.ended === false ? null : at
       state.checks = assess(session)
       return state
     },
@@ -80,7 +86,10 @@ export function assess(session) {
     checks.push({
       status: SKIPPED,
       name: "tool hook",
-      detail: "no tool calls in this session",
+      // Present tense about a session still running would be a claim this cannot support:
+      // the counts are re-evaluated at most once a minute, so a session calling tools right
+      // now reads as having called none. "Not yet" is what is actually known.
+      detail: session.ended === false ? "no tool calls seen yet" : "no tool calls in this session",
       meaning: "nothing to compare against; a session without tool calls cannot prove the hook works.",
     })
   } else if (c.toolHook >= c.toolEvents) {
@@ -111,12 +120,19 @@ export function assess(session) {
   checks.push(
     session.triggered
       ? { status: OK, name: "trigger", detail: session.triggered }
-      : {
-          status: BROKEN,
-          name: "trigger",
-          detail: "no end-of-session event arrived",
-          meaning: "our extraction trigger is gone; session.idle was already one such casualty.",
-        },
+      : session.ended === false
+        ? {
+            status: SKIPPED,
+            name: "trigger",
+            detail: "the session has not ended yet",
+            meaning: "nothing to prove yet; this line is written again when the session ends.",
+          }
+        : {
+            status: BROKEN,
+            name: "trigger",
+            detail: "no end-of-session event arrived",
+            meaning: "our extraction trigger is gone; session.idle was already one such casualty.",
+          },
   )
 
   const x = session.extraction
@@ -173,7 +189,7 @@ export function render(state) {
     "```",
     `loaded     ${stamp(state.loaded)}   (plugin start)`,
     `heartbeat  ${stamp(state.heartbeat)}   (refreshed while a session works, at most once a minute)`,
-    `verified   ${stamp(state.verified)}   (rewritten when a session ends)`,
+    `verified   ${stamp(state.verified)}   (when the checks below were last evaluated)`,
     "```",
     "",
     "**If you are working right now and `heartbeat` is more than a few minutes old, this",
@@ -193,13 +209,16 @@ export function render(state) {
     lines.push(
       "",
       `Liveness can only be proven by real traffic, so the above was measured on session`,
-      `\`${state.session}\`, which ended at ${stamp(state.sessionEnded)}.`,
+      state.sessionEnded
+        ? `\`${state.session}\`, which ended at ${stamp(state.sessionEnded)}.`
+        : `\`${state.session}\`, which was still working at ${stamp(state.verified)}.`,
       "",
     )
   } else {
     lines.push(
       "Nothing measured yet. Hooks that registered prove nothing — a wrong hook name",
-      "registers happily and never fires — so these lines stay empty until a session ends.",
+      "registers happily and never fires — so these lines stay empty until a hook has fired",
+      "for real, which is the first prompt of the next session.",
       "",
     )
   }

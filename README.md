@@ -75,7 +75,7 @@ The plugin reads the log. The human reads proposals. It stops at the proposal an
 | `/retro` | Analyses what has accumulated, then delivers one lesson: the highest scoring one still undecided. |
 | `/retro all` (or `/retro-all`) | The same analysis, then waiting lessons as a single plan, up to `autoLimit` (ten by default), to be approved in one pass. |
 
-There is no third command. Whether the plugin is working is reported in `.retro/selfcheck.md`, rewritten on every review.
+There is no third command. Whether the plugin is working is reported in `.retro/selfcheck.md`, rewritten from the first prompt of every session and again when it ends.
 
 A lesson is delivered into the session the command was run in, addressed to the agent already there. The agent is asked first whether the lesson still holds, then to relay it, and to change nothing until a decision has been made.
 
@@ -113,7 +113,7 @@ The options:
 
 Lessons themselves are always local to one workspace. A fix may not be: when the cause is how a person works everywhere, the fix belongs in their global harness, because fixing it in one project leaves it broken in the rest. Nothing outside the project is edited without asking.
 
-The procedure and this list live in [`prompts/review.md`](prompts/review.md), which is seeded into the project and can be edited there.
+The procedure and this list live in [`prompts/propose.md`](prompts/propose.md), which is seeded into the project and can be edited there.
 
 ## Lessons
 
@@ -199,8 +199,8 @@ Everything the plugin writes stays under `.retro/` in the project, and nowhere e
 .retro/
   prompts/
     extract.md       what counts as a lesson
-    review.md        how a lesson is handed over
-    review-auto.md   how a batch becomes one plan
+    propose.md        how a lesson is handed over
+    propose-all.md   how a batch becomes one plan
     updates/         newer defaults, not in use
   sessions/          raw logs, kept while an open lesson cites them
   lessons/           open questions

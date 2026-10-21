@@ -1,4 +1,4 @@
-<!-- translated-from: README.md@3a789a47ad15 -->
+<!-- translated-from: README.md@456f881c6ae4 -->
 # opencode-retro
 
 [English](README.md) | [Русский](README.ru.md) | [简体中文](README.zh-CN.md) | **Español** | [日本語](README.ja.md)
@@ -78,7 +78,7 @@ El plugin lee el log. La persona lee propuestas. El plugin se detiene en la prop
 | `/retro` | Analiza lo acumulado y entrega después una lección: la de mayor puntuación aún sin decidir. |
 | `/retro all` (o `/retro-all`) | El mismo análisis y después las lecciones pendientes como un único plan, hasta `autoLimit` (diez por omisión), para aprobarlo de una pasada. |
 
-No hay un tercer comando. Si el plugin funciona se informa en `.retro/selfcheck.md`, reescrito en cada revisión.
+No hay un tercer comando. Si el plugin funciona se informa en `.retro/selfcheck.md`, reescrito desde el primer prompt de cada sesión y de nuevo cuando termina.
 
 La lección se entrega en la sesión donde se ejecutó el comando, dirigida al agente que ya está allí. Primero se le pide que determine si la lección sigue siendo válida, después que la transmita, y que no cambie nada hasta que haya una decisión.
 
@@ -117,7 +117,7 @@ Las opciones:
 
 Las lecciones en sí son siempre locales a un espacio de trabajo. El arreglo puede no serlo: si la causa está en cómo trabaja una persona en todas partes, el arreglo pertenece a su entorno global, porque arreglarla en un proyecto la deja rota en los demás. Nada fuera del proyecto se edita sin preguntar.
 
-El procedimiento y esta lista están en [`prompts/review.md`](prompts/review.md), que se siembra en el proyecto y se puede editar allí.
+El procedimiento y esta lista están en [`prompts/propose.md`](prompts/propose.md), que se siembra en el proyecto y se puede editar allí.
 
 ## Lecciones
 
@@ -203,8 +203,8 @@ Todo lo que el plugin escribe se queda bajo `.retro/` dentro del proyecto, y en 
 .retro/
   prompts/
     extract.md       qué cuenta como lección
-    review.md        cómo se entrega una lección
-    review-auto.md   cómo un lote se convierte en un plan
+    propose.md        cómo se entrega una lección
+    propose-all.md   cómo un lote se convierte en un plan
     updates/         valores por omisión más nuevos, sin usar
   sessions/          logs en bruto, se conservan mientras una lección abierta los cite
   lessons/           cuestiones abiertas

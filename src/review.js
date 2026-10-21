@@ -74,8 +74,8 @@ export function renderBatch(
 }
 
 /**
- * The semantic half of the hand-off lives in `prompts/review.md` and
- * `prompts/review-auto.md`, seeded into the user's project and editable there — it decides
+ * The semantic half of the hand-off lives in `prompts/propose.md` and
+ * `prompts/propose-all.md`, seeded into the user's project and editable there — it decides
  * what the agent treats as its job when a lesson arrives, which is exactly the kind of
  * thing worth iterating on in practice (AGENTS.md decision 13).
  *

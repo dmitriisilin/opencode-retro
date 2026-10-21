@@ -100,7 +100,7 @@ test("the news file is written once, and keeps being reported", () => {
 
 test("all three prompts seed, resolve and carry a base", () => {
   const s = sandbox()
-  for (const name of ["extract", "review", "review-auto"]) {
+  for (const name of ["extract", "propose", "propose-all"]) {
     assert.equal(s.prompts.seed(name).seeded, true, `${name} did not seed`)
     const got = s.prompts.resolve(name)
     assert.equal(got.layer, "project")
@@ -111,19 +111,19 @@ test("all three prompts seed, resolve and carry a base", () => {
 
 test("every prompt makes the local-or-global call explicit", () => {
   const s = sandbox()
-  for (const name of ["extract", "review", "review-auto"]) {
+  for (const name of ["extract", "propose", "propose-all"]) {
     s.prompts.seed(name)
     const text = s.prompts.resolve(name).text
     // Lessons are always workspace-local (decision 10); what varies is where the fix goes.
     assert.match(text, /global harness|global skill|different repository/, `${name} must raise local vs global`)
   }
-  assert.match(s.prompts.resolve("review").text, /Never edit anything outside this\nproject without asking/)
-  assert.match(s.prompts.resolve("review-auto").text, /approval of their own/)
+  assert.match(s.prompts.resolve("propose").text, /Never edit anything outside this\nproject without asking/)
+  assert.match(s.prompts.resolve("propose-all").text, /approval of their own/)
 })
 
 test("the review prompts survey the setup instead of assuming a target", () => {
   const s = sandbox()
-  for (const name of ["review", "review-auto"]) {
+  for (const name of ["propose", "propose-all"]) {
     s.prompts.seed(name)
     const text = s.prompts.resolve(name).text
     assert.match(text, /guess made without/, `${name} must treat the named target as a guess`)
@@ -131,13 +131,13 @@ test("the review prompts survey the setup instead of assuming a target", () => {
     assert.match(text, /skills/, `${name} must consider skills`)
   }
   // Creating something new is a legitimate outcome, not only editing what is there.
-  assert.match(s.prompts.resolve("review").text, /Create something that is missing/)
-  assert.match(s.prompts.resolve("review-auto").text, /creating a skill or a/)
+  assert.match(s.prompts.resolve("propose").text, /Create something that is missing/)
+  assert.match(s.prompts.resolve("propose-all").text, /creating a skill or a/)
 })
 
 test("no prompt suggests lessons themselves are global", () => {
   const s = sandbox()
-  for (const name of ["extract", "review", "review-auto"]) {
+  for (const name of ["extract", "propose", "propose-all"]) {
     s.prompts.seed(name)
     const text = s.prompts.resolve(name).text
     assert.doesNotMatch(text, /global lesson|promote .*lesson|lesson.* global scope/i, `${name} reintroduces global lessons`)
@@ -146,7 +146,7 @@ test("no prompt suggests lessons themselves are global", () => {
 
 test("the review prompts ask the currency question without prescribing how", () => {
   const s = sandbox()
-  for (const name of ["review", "review-auto"]) {
+  for (const name of ["propose", "propose-all"]) {
     s.prompts.seed(name)
     const text = s.prompts.resolve(name).text
     assert.match(text, /already resolved in this workspace/, `${name} must put the question`)
@@ -161,8 +161,8 @@ test("the review prompts ask the currency question without prescribing how", () 
     )
     assert.doesNotMatch(text, /git log/, `${name} must not prescribe a command`)
   }
-  assert.match(s.prompts.resolve("review").text, /Change nothing until they have decided/)
-  assert.match(s.prompts.resolve("review-auto").text, /one plan/)
+  assert.match(s.prompts.resolve("propose").text, /Change nothing until they have decided/)
+  assert.match(s.prompts.resolve("propose-all").text, /one plan/)
 })
 
 test("a prompt that cannot be seeded reports it and leaves nothing behind", () => {

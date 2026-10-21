@@ -109,11 +109,39 @@ export default {
       }
     }
 
-    const beat = () => {
+    /** Sessions whose checks have been written at least once, so the first one is immediate. */
+    const observedSessions = new Set()
+
+    /**
+     * Re-evaluate the assertions from what is known right now, and write the report.
+     *
+     * The checks used to exist only once a session had ended, which made the file stale for
+     * exactly as long as somebody was working — the one time they would open it. Nothing in
+     * it needs the session to be over: a hook having fired and a log with something non-empty
+     * in it are the facts, and both are true from the first prompt.
+     *
+     * The first observation of a session is written at once, since that is the one that makes
+     * the file current. After that it is throttled to `heartbeatMs`, because a report is not
+     * worth a file write per tool call.
+     */
+    function observe(sessionID, { force = false } = {}) {
+      if (!sessionID) return
       const now = Date.now()
-      if (now - lastBeat < config.heartbeatMs) return
+      const first = !observedSessions.has(sessionID)
+      if (!first && !force && now - lastBeat < config.heartbeatMs) return
+      observedSessions.add(sessionID)
       lastBeat = now
-      check.beat(now)
+      check.verify(
+        {
+          id: sessionID,
+          counts: ingest.counts(sessionID),
+          log: log.stat(sessionID),
+          triggered: null,
+          ended: false,
+          extraction: null,
+        },
+        now,
+      )
       writeSelfCheck()
     }
 
@@ -150,7 +178,7 @@ export default {
 
     await hook("session", "prompt", (p) => {
       ingest.prompt(p)
-      beat()
+      observe(p.sessionID)
       // Analysis is what `/retro` does, not something a new session triggers: a model call
       // costs money and nothing here spends it unprompted. `autoExtract` restores the old
       // behaviour for anyone who wants lessons ready before they ask.
@@ -172,7 +200,7 @@ export default {
         adopt(p.result.metadata.sessionID, p.sessionID)
       }
       ingest.toolAfter(p)
-      beat()
+      observe(p.sessionID)
     })
 
     // Commands. A command's execute is a context where generate.text returns (Gotcha 9),
@@ -291,6 +319,7 @@ export default {
       if (parents.has(sessionID)) return
       ended.add(sessionID)
       started.delete(sessionID)
+      observedSessions.delete(sessionID)
 
       const verified = {
         id: sessionID,
@@ -318,7 +347,7 @@ export default {
 
     // Seed the editable prompts, then look for a newer default. Neither touches a file
     // the user owns (AGENTS.md decisions 13 and 15).
-    for (const name of ["extract", "review", "review-auto"]) {
+    for (const name of ["extract", "propose", "propose-all"]) {
       prompts.seed(name)
       const update = prompts.checkForUpdate(name)
       if (update) check.note(update)
@@ -458,7 +487,7 @@ export default {
           halfLife: config.halfLife,
           currencies,
           limit: config.autoLimit,
-          leadIn: prompts.resolve("review-auto")?.text,
+          leadIn: prompts.resolve("propose-all")?.text,
           queued: extracted.left,
         }),
       )
@@ -559,7 +588,7 @@ export default {
           currency: currencyOf(lesson),
           sessions: state.sessions,
           halfLife: config.halfLife,
-          leadIn: prompts.resolve("review")?.text,
+          leadIn: prompts.resolve("propose")?.text,
           queued: extracted.left,
         }),
       )

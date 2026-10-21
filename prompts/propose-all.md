@@ -1,5 +1,5 @@
 ---
-prompt: review-auto
+prompt: propose-all
 base: 5
 ---
 

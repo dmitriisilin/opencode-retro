@@ -24,7 +24,7 @@ Motivating example: a project carries a `lint` skill borrowed from another harne
 10. **Lessons are always local to the workspace. There is no such thing as a global lesson.** A lesson is evidence from sessions in one project, so it lives in that project and nowhere else — this is by design, not a stage we grow out of. What *can* be global is the **target of the proposed change**: some friction is about this repository (a skill that does not fit it, an `AGENTS.md` claim that is not true here), and some is about how the person works everywhere (how they deal with Jira, how they want branches named, a convention they carry between projects). The first belongs in the project's harness, the second in the user's global harness — `~/.config/opencode/AGENTS.md`, a global skill. Choosing between them is an integration decision, made when a lesson is handed over, by the agent and the human looking at what the lesson actually says. Not a storage question, and not something the plugin decides. *Replaces an earlier version of this decision that had lessons themselves being promoted to global scope after recurring in ≥2 workspaces. That model was wrong: it would have required a global lesson store, a cross-workspace index and a way to match the same problem across repositories, all to answer a question that belongs to the proposal rather than to the lesson.*
 11. **Autonomy ladder L0–L3.** v1 target is L1, and `/retro all` is the step that makes the rest reachable: the same lessons, the same currency checks, the same `retro_decide` bookkeeping, but batched into one plan a human approves once instead of a decision per lesson. The ladder from here is about how much of that plan runs without being asked, not about new machinery. Promotion between levels is to be driven by accept/reject stats, later.
 12. **Not a memory plugin.** We edit artifacts the harness already reads; we don't build a knowledge base the agent must remember to query.
-13. **The prompts live in the user's project, not in the package.** Three of them, in `.retro/prompts/`: `extract.md` (what counts as a lesson), `review.md` and `review-auto.md` (what the agent treats as its job when a lesson is handed over — check currency, relay, touch nothing before a decision, record the outcome). The package ships defaults; on first run each missing one is copied in. Resolution order: project → global (`~/.config/opencode/retro/prompts/`) → packaged default → a terse built-in fallback, so a deleted file degrades rather than going silent. `options` can override the directory and the extractor model. *Narrowed in M3 to one prompt on the reasoning that there was no application step to drive, then restored: the review texts do not drive the application, but they do decide what the agent considers its job, which is exactly the semantics worth iterating on in practice.*
+13. **The prompts live in the user's project, not in the package.** Three of them, in `.retro/prompts/`: `extract.md` (what counts as a lesson), `propose.md` and `propose-all.md` (what the agent treats as its job when a lesson is handed over — check currency, relay, touch nothing before a decision, record the outcome). The package ships defaults; on first run each missing one is copied in. Resolution order: project → global (`~/.config/opencode/retro/prompts/`) → packaged default → a terse built-in fallback, so a deleted file degrades rather than going silent. `options` can override the directory and the extractor model. *Narrowed in M3 to one prompt on the reasoning that there was no application step to drive, then restored: the hand-over texts do not drive the application, but they do decide what the agent considers its job, which is exactly the semantics worth iterating on in practice.* *Named `review.md` and `review-auto.md` until the owner pointed out that "review" says nothing: the file decides how a lesson is put to a human, and the plugin stops there, so `propose` is what it does — a verb, in a pair with `extract`. `-all` also matches the command, where `-auto` was left over from a `/retro auto` that no longer exists. Nothing is published yet, so there is no migration: a file still sitting under the old name is simply never read, since resolution is by name.*
 14. **The prompts are editable; the machine parts are compiled in.** The project files are entirely the user's — criteria, emphasis, project-specific wording. The output format the parser needs lives in the plugin's source and is wrapped around the prompt at call time. It is never written to disk, so it cannot be edited away by accident, and the prompt file has no "do not touch" region in it. `/retro check` prints the contract for anyone who wants to see it.
 15. **New defaults arrive as news, never as changes.** One live file per prompt, seeded from our default, carrying `base` (the default's version) in frontmatter. We never write to it again — not even when the user has not touched it. A newer default lands in `.retro/prompts/updates/extract.v3.md`, headed by a statement that *this file is not used*, that the live file is what runs, and that if they have their own version they should keep it and consider adapting it to what changed. Named in `selfcheck.md` so it is not just a file in a directory nobody opens. Updates accumulate like release notes; deleting them is the user's call. Rejected alternative: shipping a default file plus a user override file. It forces the user to know what the default said before they can write a meaningful override, makes partial overrides ambiguous, and gives two sources of truth for one prompt.
 15.1. **The decision is the third artifact, and it records the work, not the proposal.** Raw log, lesson, decision — and the decision is where `retro_decide` writes what actually happened: `status`, `note`, the files really changed (`changed`, often not the ones the lesson named), and `discovered`, anything the work turned up that is not in the lesson. That last field exists because the review produces knowledge the log never contained — in one live run the agent found that deleting a skill would leave an `AGENTS.md` line pointing at nothing, which was in neither the lesson nor the proposal. Without recording it, that disappears when the session ends, and the accept/reject record that decision 11 wants autonomy to be earned from is too thin to learn from.
@@ -40,8 +40,8 @@ Motivating example: a project carries a `lint` skill borrowed from another harne
 .retro/
 ├── prompts/
 │   ├── extract.md            # log → lessons        (user-editable, decision 13)
-│   ├── review.md             # one lesson → hand-over
-│   └── review-auto.md        # every lesson → one plan
+│   ├── propose.md            # one lesson → hand-over
+│   └── propose-all.md        # every lesson → one plan
 ├── sessions/<sessionID>.jsonl # shadow log, one event per line
 ├── lessons/<lessonID>.md      # YAML frontmatter + body, one per lesson
 ├── archive/                   # evicted lessons
@@ -296,8 +296,8 @@ them: the output contract the parser needs, the order of a lesson's fields, the
 | File | Reads | Writes | Owns the question |
 |---|---|---|---|
 | `.retro/prompts/extract.md` | projection of the shadow log + existing lessons + rejected ids | lessons | *If this session ran again, what should change so it goes shorter and straighter?* |
-| `.retro/prompts/review.md` | one lesson, handed to the agent in the user's session | a hand-over | *Is this still true, and how do I put it to the human?* |
-| `.retro/prompts/review-auto.md` | every waiting lesson | one plan | *Which of these still stand, and in what order?* |
+| `.retro/prompts/propose.md` | one lesson, handed to the agent in the user's session | a hand-over | *Is this still true, and how do I put it to the human?* |
+| `.retro/prompts/propose-all.md` | every waiting lesson | one plan | *Which of these still stand, and in what order?* |
 
 Resolution per prompt, first hit wins:
 
@@ -329,8 +329,8 @@ file.
 ```
 .retro/prompts/
 ├── extract.md                  # live. the only files the plugin reads
-├── review.md
-├── review-auto.md
+├── propose.md
+├── propose-all.md
 └── updates/
     └── extract.v3.md           # a newer default, for you to read. nothing was changed.
 ```
@@ -534,11 +534,20 @@ say so, with numbers, instead of guessing.
 |---|---|---|---|
 | `loaded` | plugin `setup` runs | nothing | the plugin is not being loaded at all |
 | `heartbeat` | on tool-call activity, throttled to ≤1 write/min | one small file write | hooks stopped firing mid-session |
-| `verified` | at `session.execution.succeeded\|failed\|interrupted`, after the assertions below | one file write | our end-of-session trigger is gone |
+| `verified` | whenever the assertions below are evaluated: the first prompt of a session, then on activity at ≤1 write/min, then again when it ends | one file write | hooks are not firing at all |
 
-The gaps diagnose the halves. `loaded` fresh but `verified` old → we load and hook, but the
-trigger event moved (`session.idle` is already one such casualty, Gotcha 2). All three old
-→ not running. `heartbeat` fresh, `verified` old → the session never ended cleanly.
+The gaps diagnose the halves. All three old → not running. `loaded` fresh and the rest old →
+we load, but no hook ever fires.
+
+**The assertions are evaluated from the first prompt, not only when a session ends.** They
+used to wait for the end, which left the file saying "nothing measured yet" for exactly as
+long as somebody was working — the one time they would open it. Nothing in them needs the
+session to be over: a hook having fired and a log with something non-empty in it are the
+facts, and both are true from the first prompt. What *is* only knowable at the end says so
+in its own line rather than being guessed at — the trigger reads `not exercised — the session
+has not ended yet` instead of `BROKEN`. For the same reason the tool hook reads "no tool
+calls **seen yet**" while a session runs: the counts are refreshed at most once a minute, so
+a session calling tools right now would otherwise be described as having called none.
 
 The heartbeat is what makes staleness mean something. Without it, a long session looks
 identical to a dead plugin. One write per minute, into `.retro/` which provokes no watcher
@@ -546,7 +555,7 @@ rescan (measured — Gotcha 1 is about `.opencode/` only), is cheap enough to no
 
 ### The assertions
 
-Evaluated when a session ends, written into `verified`:
+Evaluated from the first prompt of a session and again when it ends, written into `verified`:
 
 | Check | Assertion | What a failure means |
 |---|---|---|
@@ -595,7 +604,7 @@ opencode 2.0.32 · opencode-retro 0.1.0 · github.com/dmitriisilin/opencode-retr
 
 loaded     2026-10-19 20:29   (plugin start)
 heartbeat  2026-10-19 20:31   (refreshed while a session is working, at most once a minute)
-verified   2026-10-19 20:31   (rewritten when a session ends)
+verified   2026-10-19 20:31   (when the checks below were last evaluated)
 
 **If you are working right now and `heartbeat` is more than a few minutes old, this plugin
 is not running.** Nothing else will tell you: OpenCode does not report a plugin that failed
@@ -680,7 +689,7 @@ understood is just a diagnostic that was written badly.
       a rejection also lands in `state.json` so the extractor stops proposing it.
 - [x] `/retro check` — the active self-check (`activeCheck` in `src/selfcheck.js`), including
       the contract round trip that M2 deferred to here.
-- [x] `prompts/review.md` and `prompts/review-auto.md`. There is still no `apply.md` — nothing
+- [x] `prompts/propose.md` and `prompts/propose-all.md`. There is still no `apply.md` — nothing
       drives the application itself — but the hand-over texts were hardcoded in `src/review.js`,
       which put the semantics of "what is your job when a lesson arrives" out of the user's
       reach. Now seeded and resolved like `extract.md`.

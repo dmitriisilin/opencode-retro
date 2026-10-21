@@ -1,4 +1,4 @@
-<!-- translated-from: README.md@3a789a47ad15 -->
+<!-- translated-from: README.md@456f881c6ae4 -->
 # opencode-retro
 
 [English](README.md) | [Русский](README.ru.md) | **简体中文** | [Español](README.es.md) | [日本語](README.ja.md)
@@ -78,7 +78,7 @@
 | `/retro` | 先分析已积累的内容，然后交付一条教训：尚未裁决者中得分最高的那条。 |
 | `/retro all`（或 `/retro-all`） | 同样的分析，然后把待处理的教训作为一份计划交付，最多 `autoLimit` 条（默认十），一次性批准。 |
 
-没有第三条命令。插件是否在工作，写在 `.retro/selfcheck.md` 里，每次复核都会重写。
+没有第三条命令。插件是否在工作，写在 `.retro/selfcheck.md` 里，从每个会话的第一个提示起就会重写，会话结束时再写一次。
 
 教训会被送进执行该命令的那次会话，并写给已经在场的智能体。首先请它判断这条教训是否仍然成立，然后转述，并且在作出决定之前不做任何改动。
 
@@ -116,7 +116,7 @@ lint 技能规定运行 `npx eslint . --fix`，而本项目无法执行该命令
 
 教训本身始终属于单一工作区。修改则不一定：如果原因在于此人在任何地方的工作方式，那么修改属于其全局工作环境，因为只在一个项目里修好会让其余项目仍然坏着。项目之外的任何内容都不会在未经询问的情况下被改动。
 
-具体做法与这份清单位于 [`prompts/review.md`](prompts/review.md)，它会被播种到项目中并可在那里编辑。
+具体做法与这份清单位于 [`prompts/propose.md`](prompts/propose.md)，它会被播种到项目中并可在那里编辑。
 
 ## 教训
 
@@ -202,8 +202,8 @@ OpenCode 会从 npm 获取插件；在 `opencode.json` 中写出包名即可：
 .retro/
   prompts/
     extract.md       什么算作一条教训
-    review.md        一条教训如何交接
-    review-auto.md   一批教训如何成为一份计划
+    propose.md        一条教训如何交接
+    propose-all.md   一批教训如何成为一份计划
     updates/         更新后的默认值，未被使用
   sessions/          原始日志；只要仍有未决的教训引用它，就会保留
   lessons/           尚未裁决的问题

@@ -1,5 +1,5 @@
 ---
-prompt: review
+prompt: propose
 base: 6
 ---
 
