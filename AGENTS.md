@@ -674,9 +674,10 @@ understood is just a diagnostic that was written badly.
 - [x] Audit: `.gitignore` guidance. `lessons/` and `archive/` are project knowledge and
       belong in git; sessions, state and the self-check are machine state. Documented in all
       five READMEs and applied to this repository, which now runs the plugin on itself.
-- [ ] `npm version 0.1.0` bumps `package.json`; `VERSION` in `index.js` must move with it
-      (a test enforces this, so a forgotten bump fails the suite rather than shipping a
-      self-check that misreports its own version).
+- [x] The self-check's version is read from the installed `package.json` at runtime, not copied
+      into `index.js`. The copy could not survive the documented release: `npm version` commits
+      only `package.json`, and the publish workflow did not run the suite, so a tag would have
+      shipped a self-check reporting the previous version. A test still asserts the two agree.
 Shipping with these known, listed so nobody discovers them as surprises:
 
 - Subagent sessions are unverified — see "Still unverified".
@@ -740,13 +741,13 @@ Shipping with these known, listed so nobody discovers them as surprises:
   commit**, then `npm run i18n` to re-stamp them. `npm test` fails while any stamp is stale
   and names which ones — a translation that drifts silently is a lie told to whoever can
   only read it, and this project does not ship diagnostics that misreport themselves. CI
-  does not run tests (the publish workflow only checks tag vs version), so a stale
-  translation blocks the suite, not a release. Adding a language means a file plus one entry
+  runs the suite before publishing, so a stale translation blocks a release too. Adding a
+  language means a file plus one entry
   in `LANGUAGES` in `scripts/i18n-stamp.mjs`; the bar and the staleness check follow from it.
 
 ## Release
 
 - Package `opencode-retro` on npm, owner `dmitriisilin`. Published placeholders: 0.0.1, 0.0.2 (no functionality). `main` is already at 0.0.3 — the next real release.
-- Publishing is via npm Trusted Publishing (status: Valid) from `.github/workflows/publish.yml` on tags `v*`. Tag must match `package.json` version.
+- Publishing is via npm Trusted Publishing (status: Valid) from `.github/workflows/publish.yml` on tags `v*`. Tag must match `package.json` version, and the workflow runs `npm test` before publishing, so a tarball, translation stamp or version mismatch stops the release.
 - The workflow upgrades npm before publishing: Trusted Publishing needs npm ≥ 11.5.1, Node 22 ships npm 10, and old npm fails with a misleading `E404 Not Found - PUT`. Don't remove that step.
-- Release: `npm version <x.y.z> && git push --follow-tags`. No tokens anywhere.
+- Release: `npm version <x.y.z> && git push --follow-tags`. No tokens anywhere. Nothing else needs bumping: the self-check reads its version from `package.json`.

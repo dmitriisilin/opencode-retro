@@ -13,7 +13,22 @@ import { resolveConfig } from "./src/config.js"
 import { seedGitignore } from "./src/gitignore.js"
 
 const REPO = "github.com/dmitriisilin/opencode-retro"
-const VERSION = "0.0.3"
+
+/**
+ * The version this build reports in `selfcheck.md`, read from the package it was installed
+ * from rather than duplicated here. A second copy is a second thing to forget to bump on
+ * release, and the artifact that would be wrong is the one already published: `npm version`
+ * commits `package.json` and nothing else, so a constant in this file would stay behind.
+ * `package.json` always travels with the package, and "unknown" is honest if it ever cannot
+ * be read.
+ */
+export const VERSION = (() => {
+  try {
+    return JSON.parse(readFileSync(new URL("./package.json", import.meta.url), "utf8")).version ?? "unknown"
+  } catch {
+    return "unknown"
+  }
+})()
 
 /**
  * opencode-retro — M3: capture, extract, review.

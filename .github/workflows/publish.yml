@@ -27,6 +27,12 @@ jobs:
           node -v
           npm -v
 
+      # The suite is what proves the release is the one we think it is: the tarball carries
+      # every import and seeded prompt, the translations are stamped, and the self-check's
+      # version matches package.json. It needs no install — the package has no dependencies.
+      - name: Run the test suite
+        run: npm test
+
       - name: Check tag matches package.json version
         run: |
           TAG="${GITHUB_REF_NAME#v}"

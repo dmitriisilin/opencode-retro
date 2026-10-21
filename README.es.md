@@ -1,4 +1,4 @@
-<!-- translated-from: README.md@ffcdf40916ae -->
+<!-- translated-from: README.md@4935c8ad0bc4 -->
 # opencode-retro
 
 [English](README.md) | [Русский](README.ru.md) | [简体中文](README.zh-CN.md) | **Español** | [日本語](README.ja.md)
@@ -9,7 +9,7 @@ Retrospectivas para agentes de programación. Un plugin de [OpenCode](https://op
 
 Un agente no aprende de sus propias sesiones. El único registro de dónde se atascó es el log, y los logs no se leen. Este plugin lee el log y vuelve con propuestas.
 
-> Estado: completo y en funcionamiento, aún sin publicar. Verificado contra OpenCode 2.0.32. El paquete de npm sigue siendo un marcador de nombre, así que la instalación se hace desde una ruta.
+> Estado: completo y en funcionamiento, verificado contra OpenCode 2.0.32. El paquete de npm se publica con `v0.1.0`; hasta que llegue esa etiqueta, apunta `opencode.json` a una copia local.
 
 ## El problema
 
@@ -34,25 +34,25 @@ Cada llamada a herramienta y cada prompt se añaden a un log paralelo en `.retro
 
 ### Extracción
 
-Cuando una sesión termina, su log se conserva y no ocurre nada más hasta que se pide. El análisis cuesta una llamada al modelo, y nada en este plugin la gasta sin que se lo pidan.
+Cuando una sesión termina, su log se conserva y, por omisión, no ocurre nada más hasta que se pide. El análisis cuesta una llamada al modelo, y por omisión nada en este plugin la gasta sin que se lo pidan.
 
-`/retro` es el momento en que ocurre. Un solo comando comprime los logs acumulados, los convierte en lecciones y solo entonces busca algo que entregar. Un atraso largo se analiza de diez logs cada vez, para que un único comando no pueda facturar sin límite; lo que queda se informa, y otro `/retro` toma el siguiente lote.
+`/retro` es el momento en que ocurre. Un solo comando comprime los logs acumulados, los convierte en lecciones y solo entonces busca algo que entregar. Un solo comando analiza todos los logs pendientes; `options.extractLimit` limita cuántos, y lo que queda se informa para que otro `/retro` tome el siguiente lote.
 
 Cada log se analiza en una sesión propia, creada para esa única llamada y eliminada después: entra el log, no intervienen agente, historial ni herramientas, y sale texto. El agente que hizo el trabajo queda excluido a propósito, porque defendería sus propias decisiones.
 
 Solo se omite sin llamada la sesión que no puede contener evidencia de nada: una instrucción, una respuesta, nada hecho. Una conversación sin ninguna llamada a herramientas sí se analiza, porque es justo ahí donde se manifiesta un archivo de instrucciones equivocado: una respuesta errónea y una corrección, sin nada ejecutado.
 
-`options.autoExtract` traslada el análisis al inicio de la sesión siguiente, para quien prefiera tener las lecciones listas antes de pedirlas.
+`options.autoExtract` traslada el análisis de una sesión terminada al inicio de la sesión siguiente, para quien prefiera tener las lecciones listas antes de pedirlas.
 
 Por omisión el análisis usa el modelo con el que se ejecutan tus propias sesiones y, si todavía no lo ha visto, el modelo por omisión del espacio de trabajo. Esto funciona también con los modelos de la capa gratuita de OpenCode, así que no hace falta configurar nada. `options.model` fija otro, lo que conviene si el análisis debe ejecutarse en algo más barato que el trabajo.
 
-Esa llamada recibe una vista comprimida de la sesión: la salida de las herramientas se recorta y los prompts y las respuestas se conservan completos. Responde a una sola pregunta:
+Esa llamada recibe una vista comprimida de la sesión: la salida de las herramientas se recorta mucho y los prompts y las respuestas se conservan completos hasta unos miles de caracteres cada uno. Responde a una sola pregunta:
 
 > Si esta sesión volviera a ejecutarse, ¿qué debería cambiar en el proyecto para que fuera más corta y más recta?
 
 La respuesta es una lista de lecciones en `.retro/lessons/`.
 
-Un log cuesta como máximo una llamada. Un proyecto en el que nunca se revisa no se analiza nunca.
+Un log se analiza una vez; una respuesta fallida se reintenta en las dos ejecuciones siguientes y luego se deja de lado. Por omisión, un proyecto en el que nunca se ejecuta `/retro` no se analiza nunca.
 
 ### Qué guía la extracción
 
@@ -74,7 +74,7 @@ El plugin lee el log. La persona lee propuestas. El plugin se detiene en la prop
 | Comando | Qué hace |
 |---|---|
 | `/retro` | Analiza lo acumulado y entrega después una lección: la de mayor puntuación aún sin decidir. |
-| `/retro all` | El mismo análisis y después todas las lecciones pendientes como un único plan, para aprobarlo de una pasada. |
+| `/retro all` (o `/retro-all`) | El mismo análisis y después las lecciones pendientes como un único plan, hasta `autoLimit` (diez por omisión), para aprobarlo de una pasada. |
 
 No hay un tercer comando. Si el plugin funciona se informa en `.retro/selfcheck.md`, reescrito en cada revisión.
 
@@ -98,7 +98,7 @@ Requiere una decisión
 
 La decisión corresponde a la persona y al agente de esa sesión. El agente tiene los archivos, el historial y las skills propias del proyecto, lo que lo convierte en mejor juez de si una lección sigue aplicándose que el plugin. Una vez tomada la decisión, el agente la registra mediante una herramienta `retro_decide`. Esa herramienta solo lleva la contabilidad: un rechazo se recuerda y la lección no se vuelve a proponer.
 
-`/retro all` es la misma entrega para todo a la vez. Las lecciones pendientes se ordenan, las que siguen en pie se reúnen en un único plan agrupado por archivo, y el plan se aprueba una sola vez.
+`/retro all` es la misma entrega para todo a la vez. Las lecciones pendientes se ordenan y se entregan juntas, hasta `autoLimit`; el agente comprueba cuáles siguen en pie y reúne el resto en un único plan agrupado por archivo, que se aprueba una sola vez.
 
 ### Dónde corresponde el arreglo
 
@@ -143,13 +143,13 @@ ask: Is the linter really unused here?
 status: new
 ```
 
-`cost` es el número de pasos que el problema consumió, sumados entre sesiones. `recurrence` es el número de sesiones independientes en las que apareció. `lastSeen` es el contador de sesiones del espacio de trabajo en su aparición más reciente.
+`cost` es el número de pasos que el problema consumió, sumados entre sesiones. `recurrence` es el número de sesiones independientes en las que apareció. `lastSeen` es el contador de sesiones del espacio de trabajo cuando la lección se escribió por última vez.
 
 ### Ordenación
 
 La puntuación es `cost × recurrence × confidence × freshness`.
 
-La frescura se reduce a la mitad cada diez sesiones en las que el problema no ha aparecido, contadas en sesiones y no en días. A razón de una sesión diaria, un decaimiento medido por el calendario lo enterraría todo de un día para otro.
+La frescura se reduce a la mitad cada `halfLife` sesiones —diez por omisión— en las que el problema no ha aparecido, contadas en sesiones y no en días. A razón de una sesión diaria, un decaimiento medido por el calendario lo enterraría todo de un día para otro.
 
 La recurrencia pesa más que un único incidente caro. Un problema visto en tres sesiones se verá en una cuarta.
 
@@ -157,17 +157,17 @@ La recurrencia pesa más que un único incidente caro. Un problema visto en tres
 
 Una lección se indexa por problema, no por sesión. Una segunda sesión que choca con lo mismo añade su evidencia e incrementa `recurrence` en lugar de crear otro archivo.
 
-En `lessons/` solo hay cuestiones abiertas. Una decisión mueve el archivo a `archive/`, y nada se borra nunca. Un problema que vuelve después de haberse cerrado es el mismo problema más la noticia de que el arreglo no se sostuvo, así que se reabre con su historial intacto. Un límite, treinta por omisión, mantiene la lista corta; lo que desborda también se archiva.
+En `lessons/` solo hay cuestiones abiertas. Aceptar o rechazar mueve el archivo a `archive/`, y nada se borra nunca; marcarla como `later` la mantiene abierta. Un problema que vuelve después de haberse cerrado es el mismo problema más la noticia de que el arreglo no se sostuvo, así que se reabre con su historial intacto. Un límite fijo de treinta mantiene la lista corta; lo que desborda también se archiva, salvo las lecciones marcadas como `later`.
 
 ## Instalación
 
-El paquete de npm es por ahora un marcador de nombre, así que `opencode.json` debe apuntar a una copia local. La ruta tiene que ser absoluta; una relativa deja el arranque de la sesión colgado sin dar ningún error.
+OpenCode descarga el plugin desde npm; basta con nombrarlo en `opencode.json`:
 
 ```jsonc
 {
   "plugins": [
     {
-      "package": "/abs/path/to/opencode-retro",
+      "package": "opencode-retro",
       "options": {
         "model": { "providerID": "deepseek", "id": "deepseek-flash" }
       }
@@ -176,7 +176,9 @@ El paquete de npm es por ahora un marcador de nombre, así que `opencode.json` d
 }
 ```
 
-`options.model` es opcional. Sin él, el plugin usa el modelo con el que se ejecutan tus sesiones y, si todavía no lo ha visto, recurre al modelo por omisión del espacio de trabajo. `.retro/selfcheck.md` informa de qué modelo se usó y de dónde salió.
+`options.model` es opcional. Sin él, el plugin usa el modelo con el que se ejecutan tus sesiones y, si todavía no lo ha visto, recurre al modelo por omisión del espacio de trabajo. `.retro/selfcheck.md` informa de si se ejecutó un análisis y de por qué falló si no lo hizo.
+
+Para usar una copia local en lugar del paquete publicado —por ejemplo, si trabajas en el propio plugin— apunta `package` a su ruta absoluta. Una ruta relativa deja el arranque de la sesión colgado sin dar ningún error.
 
 Todo lo demás es opcional:
 
@@ -185,11 +187,11 @@ Todo lo demás es opcional:
 - `halfLife` — sesiones sin recurrencia antes de que la puntuación de una lección se reduzca a la mitad, por omisión diez.
 - `autoLimit` — lecciones en un `/retro all`, por omisión diez.
 - `extractLimit` — logs que analiza un `/retro`, sin límite por omisión.
-- `maxOutput` — caracteres de salida de herramienta que se guardan por paso, por omisión 8000.
+- `maxOutput` — caracteres de salida de herramienta que se guardan en el log paralelo por paso, por omisión 8000.
 - `extractTimeoutMs` — cuánto puede tardar un análisis antes de abandonarlo, por omisión 90000.
 - `heartbeatMs` — el intervalo mínimo entre escrituras de la autocomprobación mientras una sesión trabaja, por omisión 60000.
-- `keepSessions` — conservar todos los logs, incluidos los que nadie cita.
-- `autoExtract` — analizar al inicio de la sesión siguiente en vez de esperar a que se pida.
+- `keepSessions` — conservar todos los logs, incluidos los que nadie cita; desactivado por omisión.
+- `autoExtract` — analizar al inicio de la sesión siguiente en vez de esperar a que se pida; desactivado por omisión.
 
 ### Qué aparece en disco
 
@@ -201,16 +203,19 @@ Todo lo que el plugin escribe se queda bajo `.retro/` dentro del proyecto, y en 
     extract.md       qué cuenta como lección
     review.md        cómo se entrega una lección
     review-auto.md   cómo un lote se convierte en un plan
-  sessions/          logs en bruto, se borran tras la extracción
+    updates/         valores por omisión más nuevos, sin usar
+  sessions/          logs en bruto, se conservan mientras una lección abierta los cite
   lessons/           cuestiones abiertas
-  archive/           lecciones decididas y desalojadas
+  archive/           lecciones aceptadas, rechazadas y desalojadas
   selfcheck.md       si el plugin funciona
   state.json
+  plugin.log         errores de hooks, comandos y trabajo en segundo plano
+  .gitignore         se siembra una vez y pasa a ser tuyo
 ```
 
 Un log permanece en disco mientras alguna lección abierta lo cite. La evidencia de una lección nombra una sesión y un rango de pasos, y durante la revisión la pregunta «¿qué pasó realmente ahí?» tiene que tener una respuesta que no sea un resumen. Cuando todas las lecciones que citan un log han sido decididas, el log se elimina. El crecimiento lo marca el número de lecciones abiertas, que está acotado, y no la edad del proyecto.
 
-No hay nada que añadir al `.gitignore` del proyecto. En la primera ejecución el plugin escribe `.retro/.gitignore`, y git lo aplica a todo lo que hay debajo: las sesiones, el estado, la autocomprobación y el log del plugin quedan ignorados, mientras que `lessons/`, `archive/` y los prompts no. Ese archivo se siembra una vez y a partir de entonces es del proyecto.
+No hay nada que añadir al `.gitignore` del proyecto. En la primera ejecución el plugin escribe `.retro/.gitignore`, y git lo aplica a todo lo que hay debajo: las sesiones, el estado, la autocomprobación, el log del plugin y los avisos de actualización de prompts quedan ignorados, mientras que `lessons/`, `archive/` y los archivos de prompt vigentes no. Ese archivo se siembra una vez y a partir de entonces es del proyecto.
 
 La separación es el diseño, no una comodidad. Las lecciones y el archivo son conocimiento sobre el proyecto: se leen, aparecen en la revisión y viajan con el repositorio. Los prompts son su configuración, que conviene compartir con quien más trabaje aquí. El resto solo haría ruido en un diff.
 
@@ -222,7 +227,7 @@ Cada uno se siembra desde el valor por omisión del paquete en la primera ejecuc
 
 Cuando se publica un valor por omisión más nuevo, aparece como `prompts/updates/<name>.vN.md`, con una nota al principio que advierte de que ese archivo no está en uso. Nada se aplica en nombre del usuario.
 
-Lo que permanece en el código es la maquinaria: el formato de salida que requiere el analizador, el orden de los campos de una lección y la instrucción de registrar la decisión. El formato de salida no se escribe nunca en disco, y por eso editar un prompt no puede romper el análisis.
+Lo que permanece en el código es la maquinaria: el formato de salida que requiere el analizador, el orden de los campos de una lección y la instrucción de registrar la decisión. El formato de salida no se escribe nunca en disco, y por eso editar un prompt no puede eliminar el formato que el analizador necesita.
 
 ## Comprobar que funciona
 
@@ -232,11 +237,11 @@ Por eso `.retro/selfcheck.md` informa de que está vivo, no de que está instala
 
 > Si hay trabajo en curso y `heartbeat` tiene más de unos pocos minutos, el plugin no está en marcha.
 
-Esas comprobaciones se ejecutan en cada revisión y no cuestan nada: las versiones del plugin y de OpenCode, la superficie de API de la que el plugin depende, qué capa de prompts está vigente y qué hay esperando. Si el modelo responde y si el formato de salida sigue siendo analizable no se preguntan por separado: cada `/retro` ejercita ambas cosas e informa con las palabras del propio modelo cuando alguna falla.
+Esas comprobaciones se ejecutan en cada revisión y no cuestan nada: la superficie de API de la que el plugin depende, qué capa de prompts está vigente y qué hay esperando, bajo un encabezado que nombra las versiones del plugin y de OpenCode. Si el modelo responde y si el formato de salida sigue siendo analizable no se preguntan por separado: cada análisis ejercita ambas cosas, y una respuesta no analizable se informa con las palabras del propio modelo.
 
 ## Requisitos
 
-- OpenCode v2, `@opencode/plugin` 2.0 o posterior. Verificado contra 2.0.32.
+- OpenCode v2, `@opencode/plugin` 2.0.18 o posterior. Verificado contra 2.0.32.
 - Nada más allá de OpenCode. El análisis usa por omisión tu propio modelo; uno económico es suficiente.
 - Ninguna dependencia en tiempo de ejecución.
 

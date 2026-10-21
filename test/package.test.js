@@ -5,14 +5,15 @@ import { existsSync, mkdtempSync, readFileSync, readdirSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
+import { VERSION } from "../index.js"
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..")
 const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"))
 
 test("the version the self-check reports is the version we ship", () => {
-  const entry = readFileSync(join(root, "index.js"), "utf8")
-  const declared = /const VERSION = "([^"]+)"/.exec(entry)?.[1]
-  assert.equal(declared, pkg.version, "a diagnostic that misreports its own version is worse than none")
+  // Read from package.json at runtime, not copied: `npm version` commits only package.json,
+  // so a constant here would stay behind and ship a self-check that lies about its version.
+  assert.equal(VERSION, pkg.version, "a diagnostic that misreports its own version is worse than none")
 })
 
 test("the published tarball carries everything the entry point imports", () => {
@@ -32,6 +33,10 @@ test("the published tarball carries everything the entry point imports", () => {
     assert.ok(listed.includes(`src/${file}`), `src/${file} is missing from the package`)
   }
   assert.ok(listed.includes("index.js"))
+  assert.ok(
+    listed.includes("package.json"),
+    "package.json must ship: the self-check reads the version it reports from it",
+  )
   for (const name of ["extract", "review", "review-auto"]) {
     assert.ok(listed.includes(`prompts/${name}.md`), `prompts/${name}.md must ship — it is seeded at runtime`)
   }
