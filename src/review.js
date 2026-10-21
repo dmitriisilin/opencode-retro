@@ -11,7 +11,7 @@ import { score, staleSessions } from "./lessons.js"
 
 export const OPEN = new Set(["new", "later", undefined, null])
 
-/** How many lessons one `/retro auto` will carry. Beyond this, a plan stops being a plan. */
+/** How many lessons one `/retro all` will carry. Beyond this, a plan stops being a plan. */
 export const AUTO_LIMIT = 10
 
 export function pickLesson(lessons, ctx) {
@@ -24,7 +24,7 @@ export function pickOpen(lessons, ctx = {}) {
 
 export function renderBatch(
   lessons,
-  { sessions = null, halfLife, currencies = new Map(), limit = AUTO_LIMIT, leadIn = null } = {},
+  { sessions = null, halfLife, currencies = new Map(), limit = AUTO_LIMIT, leadIn = null, queued = 0 } = {},
 ) {
   const shown = lessons.slice(0, limit)
   const lines = [
@@ -34,8 +34,9 @@ export function renderBatch(
     "",
   ]
   if (lessons.length > shown.length) {
-    lines.push(`(${lessons.length - shown.length} more below the cut; run \`/retro auto\` again after this round.)`, "")
+    lines.push(`(${lessons.length - shown.length} more below the cut; run \`/retro all\` again after this round.)`, "")
   }
+  if (queued > 0) lines.push(backlogLine(queued), "")
 
   shown.forEach((lesson, i) => {
     const stale = staleSessions(lesson, sessions)
@@ -99,7 +100,7 @@ export const asLeadIn = (text, fallback) => {
 
 export function renderProposal(
   lesson,
-  { total = 0, remaining = 0, currency = null, sessions = null, halfLife, leadIn = null } = {},
+  { total = 0, remaining = 0, currency = null, sessions = null, halfLife, leadIn = null, queued = 0 } = {},
 ) {
   const lines = [
     asLeadIn(leadIn, LEAD_IN_FALLBACK),
@@ -169,6 +170,9 @@ export function renderProposal(
   if (remaining > 0) {
     lines.push("", `${remaining} more lesson${remaining === 1 ? "" : "s"} waiting of ${total}. Run \`/retro\` again.`)
   }
+  // Said here too, not only when there is nothing to review: a proposal in hand is exactly
+  // when someone assumes the backlog is done.
+  if (queued > 0) lines.push("", backlogLine(queued))
 
   return lines.join("\n")
 }
@@ -185,6 +189,12 @@ export function hintLines(lesson, currency) {
   if (!facts.length) return []
   return [`_Worth knowing before you check: ${facts.join("; ")}_`]
 }
+
+/** One sentence for the backlog, so both messages say it the same way. */
+export const backlogLine = (queued) =>
+  `${queued} log${queued === 1 ? "" : "s"} not analysed yet. Run \`/retro\` again to pick ${
+    queued === 1 ? "it" : "them"
+  } up.`
 
 /** A failed analysis used to leave nothing but a counter in state.json. */
 export function renderFailures(extracted) {
@@ -205,9 +215,7 @@ export function renderNothing({ queued = 0, extracted = null } = {}) {
   if (extracted?.analysed) {
     lines.push("", `Analysed ${extracted.analysed} finished session${extracted.analysed === 1 ? "" : "s"} just now, with nothing to learn from ${extracted.analysed === 1 ? "it" : "them"}.`)
   }
-  if (queued) {
-    lines.push("", `${queued} more log${queued === 1 ? "" : "s"} waiting. Run \`/retro\` again to analyse ${queued === 1 ? "it" : "them"}.`)
-  }
+  if (queued) lines.push("", backlogLine(queued))
   lines.push(
     "",
     "Either the sessions have been going straight, or nothing is recorded yet.",

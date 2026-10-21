@@ -62,3 +62,25 @@ test("a delegation shows which agent, what for, and what it was asked", () => {
   assert.match(text, /report which functions it exports/, "the instruction survives in full")
   assert.match(text, /\[5\] read: src\/sum\.js/, "and the subagent's own steps are in the same sequence")
 })
+
+test("a step done by a subagent says so, and the usual agent is not labelled", () => {
+  // Captured and invisible was the failure here: subagent records are written into the
+  // parent's log, and without this the extractor reads them as the main agent's own work.
+  const text = project([
+    { k: "tool", n: 3, tool: "read", agent: "build", input: { path: "a.js" }, status: "completed" },
+    { k: "tool", n: 5, tool: "read", agent: "explore", input: { path: "b.js" }, status: "completed" },
+    { k: "tool", n: 7, tool: "read", agent: "build", input: { path: "c.js" }, status: "completed" },
+  ])
+
+  assert.match(text, /\[5\] \(explore\) read: b\.js/, "the delegated step is attributed")
+  assert.match(text, /\[3\] read: a\.js/, "and the usual agent adds no noise")
+  assert.doesNotMatch(text, /\(build\)/)
+})
+
+test("with one agent throughout, nothing is labelled", () => {
+  const text = project([
+    { k: "tool", n: 1, tool: "read", agent: "build", input: { path: "a.js" }, status: "completed" },
+    { k: "tool", n: 2, tool: "read", agent: "build", input: { path: "b.js" }, status: "completed" },
+  ])
+  assert.doesNotMatch(text, /\(/)
+})

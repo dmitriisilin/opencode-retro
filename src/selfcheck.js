@@ -92,7 +92,7 @@ export function assess(session) {
       detail: `${c.toolEvents} tool-call events / ${c.toolHook} hook calls`,
       meaning:
         "the event stream saw tool calls the hook never received, so the tool hook is dead " +
-        "or its payload moved. → /retro check",
+        "or its payload moved. The plugin needs an update; see the repository in the header.",
     })
   }
 
@@ -145,7 +145,7 @@ export function assess(session) {
       status: DEGRADED,
       name: "extraction",
       detail: x.detail,
-      meaning: "no lessons from this session. Check `options.model` in opencode.json, then /retro check.",
+      meaning: "no lessons from this session. Check `options.model` in opencode.json, then run `/retro` again.",
     })
   }
 
@@ -179,7 +179,7 @@ export function render(state) {
     "**If you are working right now and `heartbeat` is more than a few minutes old, this",
     "plugin is not running.** Nothing else will tell you — OpenCode does not report a plugin",
     "that failed to load. Check that `opencode.json` points at an absolute path, then run",
-    "`/retro check`.",
+    "`/retro`.",
     "",
     "## Is it working",
     "",
@@ -206,7 +206,7 @@ export function render(state) {
 
   if (state.activeChecks?.length) {
     const width = Math.max(...state.activeChecks.map((c) => c.status.length), DEGRADED.length)
-    lines.push(`## Last \`/retro check\` — ${stamp(state.activeAt)}`, "")
+    lines.push(`## Checked — ${stamp(state.activeAt)}`, "")
     for (const c of state.activeChecks) {
       lines.push(`- ${c.status.padEnd(width)}  ${c.name.padEnd(14)}  ${c.detail}`)
       if (c.meaning) lines.push(`  ${" ".repeat(width)}  ${" ".repeat(14)}  → ${c.meaning}`)
@@ -316,17 +316,5 @@ export async function activeCheck({ ctx, config, prompts, store, state }) {
     detail: `${lessons.length} lesson(s), ${state.pending.length} session(s) queued`,
   })
 
-  return { checks, notes, text: renderActive(checks, notes) }
-}
-
-function renderActive(checks, notes) {
-  const width = Math.max(...checks.map((c) => c.status.length), DEGRADED.length)
-  const lines = ["# retro check", ""]
-  for (const c of checks) {
-    lines.push(`- ${c.status.padEnd(width)}  ${c.name.padEnd(14)}  ${c.detail}`)
-    if (c.meaning) lines.push(`  ${" ".repeat(width)}  ${" ".repeat(14)}  → ${c.meaning}`)
-  }
-  if (notes.length) lines.push("", ...notes.map((n) => `- ${n}`))
-  lines.push("", "Written to `.retro/selfcheck.md` as well.")
-  return lines.join("\n")
+  return { checks, notes }
 }

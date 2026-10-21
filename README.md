@@ -172,9 +172,20 @@ The npm package is a placeholder for now, so `opencode.json` should point at a c
 }
 ```
 
-`options.model` is optional. Without it the plugin uses the model your sessions run on, falling back to the workspace default. `/retro check` reports which model was used and where it came from.
+`options.model` is optional. Without it the plugin uses the model your sessions run on, falling back to the workspace default. `.retro/selfcheck.md` reports which model was used and where it came from.
 
-Everything else is optional: `dir` for the directory, default `.retro`; `prompts` for the prompt directory; `halfLife` in sessions, default ten; `autoLimit`, the number of lessons in one `/retro auto`, default ten; `maxOutput`, `extractTimeoutMs`, `keepSessions`.
+Everything else is optional:
+
+- `dir` — where everything lives, default `.retro`.
+- `prompts` — the prompt directory, default `prompts` inside it.
+- `halfLife` — sessions without a recurrence before a lesson's score halves, default ten.
+- `autoLimit` — lessons in one `/retro all`, default ten.
+- `extractLimit` — logs analysed by one `/retro`, unlimited by default.
+- `maxOutput` — characters of tool output kept per step, default 8000.
+- `extractTimeoutMs` — how long one analysis may take before it is given up on, default 90000.
+- `heartbeatMs` — the shortest gap between self-check writes while a session works, default 60000.
+- `keepSessions` — keep every log, including ones nothing cites.
+- `autoExtract` — analyse at the start of the next session instead of waiting to be asked.
 
 ### What appears on disk
 
@@ -207,7 +218,7 @@ Each is seeded from the packaged default on first run and never written to again
 
 When a newer default ships it arrives as `prompts/updates/<name>.vN.md`, with a note at the top saying that the file is not in use. Nothing is applied on the user's behalf.
 
-What stays in the source is the machinery: the output format the parser requires, the order of a lesson's fields, and the instruction to record a decision. `/retro check` prints the output format for anyone who wants to see it.
+What stays in the source is the machinery: the output format the parser requires, the order of a lesson's fields, and the instruction to record a decision. The output format is never written to disk, which is why editing a prompt cannot break the parsing.
 
 ## Checking that it works
 

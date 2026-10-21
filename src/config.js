@@ -17,7 +17,7 @@ export const DEFAULTS = {
   keepSessions: false,
   /** Give up on a silent model call rather than wedging the queue behind it. */
   extractTimeoutMs: 90_000,
-  /** Lessons carried by one `/retro auto`. Beyond this a plan stops being a plan. */
+  /** Lessons carried by one `/retro all`. Beyond this a plan stops being a plan. */
   autoLimit: 10,
   /**
    * Logs analysed by one `/retro`. Unlimited by default: leaving a backlog half-analysed

@@ -396,6 +396,7 @@ export default {
           currencies,
           limit: config.autoLimit,
           leadIn: prompts.resolve("review-auto")?.text,
+          queued: extracted.left,
         }),
       )
     }
@@ -451,6 +452,7 @@ export default {
           sessions: state.sessions,
           halfLife: config.halfLife,
           leadIn: prompts.resolve("review")?.text,
+          queued: extracted.left,
         }),
       )
     }

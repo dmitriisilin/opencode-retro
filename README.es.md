@@ -1,4 +1,4 @@
-<!-- translated-from: README.md@39206f01ab32 -->
+<!-- translated-from: README.md@ffcdf40916ae -->
 # opencode-retro
 
 [English](README.md) | [Русский](README.ru.md) | [简体中文](README.zh-CN.md) | **Español** | [日本語](README.ja.md)
@@ -176,9 +176,20 @@ El paquete de npm es por ahora un marcador de nombre, así que `opencode.json` d
 }
 ```
 
-`options.model` es opcional. Sin él, el plugin usa el modelo con el que se ejecutan tus sesiones y, si todavía no lo ha visto, recurre al modelo por omisión del espacio de trabajo. `/retro check` informa de qué modelo se usó y de dónde salió.
+`options.model` es opcional. Sin él, el plugin usa el modelo con el que se ejecutan tus sesiones y, si todavía no lo ha visto, recurre al modelo por omisión del espacio de trabajo. `.retro/selfcheck.md` informa de qué modelo se usó y de dónde salió.
 
-Todo lo demás es opcional: `dir` para el directorio, por omisión `.retro`; `prompts` para el directorio de prompts; `halfLife` en sesiones, por omisión diez; `autoLimit`, el número de lecciones en un `/retro auto`, por omisión diez; `maxOutput`, `extractTimeoutMs`, `keepSessions`.
+Todo lo demás es opcional:
+
+- `dir` — dónde vive todo, por omisión `.retro`.
+- `prompts` — el directorio de prompts, por omisión `prompts` dentro de él.
+- `halfLife` — sesiones sin recurrencia antes de que la puntuación de una lección se reduzca a la mitad, por omisión diez.
+- `autoLimit` — lecciones en un `/retro all`, por omisión diez.
+- `extractLimit` — logs que analiza un `/retro`, sin límite por omisión.
+- `maxOutput` — caracteres de salida de herramienta que se guardan por paso, por omisión 8000.
+- `extractTimeoutMs` — cuánto puede tardar un análisis antes de abandonarlo, por omisión 90000.
+- `heartbeatMs` — el intervalo mínimo entre escrituras de la autocomprobación mientras una sesión trabaja, por omisión 60000.
+- `keepSessions` — conservar todos los logs, incluidos los que nadie cita.
+- `autoExtract` — analizar al inicio de la sesión siguiente en vez de esperar a que se pida.
 
 ### Qué aparece en disco
 
@@ -211,7 +222,7 @@ Cada uno se siembra desde el valor por omisión del paquete en la primera ejecuc
 
 Cuando se publica un valor por omisión más nuevo, aparece como `prompts/updates/<name>.vN.md`, con una nota al principio que advierte de que ese archivo no está en uso. Nada se aplica en nombre del usuario.
 
-Lo que permanece en el código es la maquinaria: el formato de salida que requiere el analizador, el orden de los campos de una lección y la instrucción de registrar la decisión. `/retro check` imprime el formato de salida para quien quiera verlo.
+Lo que permanece en el código es la maquinaria: el formato de salida que requiere el analizador, el orden de los campos de una lección y la instrucción de registrar la decisión. El formato de salida no se escribe nunca en disco, y por eso editar un prompt no puede romper el análisis.
 
 ## Comprobar que funciona
 

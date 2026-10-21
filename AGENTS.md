@@ -22,7 +22,7 @@ Motivating example: a project carries a `lint` skill borrowed from another harne
 8. **Lessons are workspace-scoped and keyed by problem, not by session.** One file per lesson, `lessons/<id>.md`, scoped to `location.project.id`. Sessions appear only as evidence refs, and a second session hitting the same problem increments `recurrence` and appends evidence rather than creating a second file. Score = `cost × recurrence × confidence × freshness`, where freshness halves every `halfLife` sessions (default 10) since the problem was last seen — counted in **sessions, not days**, because at one session a day a wall-clock decay buries everything. Recurrence matters more than one expensive incident: a lesson that shows up in three sessions *will* show up in the fourth. Overflow past the cap (default 30) is archived, never deleted.
 9. **Integration loop is human-triggered, and the plugin stops at the proposal.** *Audit note: `retro_decide` is idempotent. A decided lesson lives in `archive/`, and the first version answered "no lesson" on a second call, which a live agent read as a failure — it then searched the filesystem for a tool it already had and called it twice more. A repeat call now reports that the decision was already recorded, and an unknown id lists what is open.* `/retro` delivers **one** lesson — the highest-scoring one still undecided — into the session the user ran it in, and stops. The human and the agent already in that session work out whether they like it and how to integrate it; the plugin does not patch files and does not drive the conversation. One invocation, one lesson: deciding is not a wizard to be stepped through. The outcome comes back through a `retro_decide` tool, which is bookkeeping only — a rejection is remembered and fed to the extractor so it is not proposed again. *Amended after M2: the earlier "accept applies the diff" could not work. The extractor's `proposal.change` comes out as prose — "add a precondition as step 1: ..." — because the model has not carefully read the target file and the file may have moved since. The agent in the session has both the file and the human; we have neither.*
 10. **Lessons are always local to the workspace. There is no such thing as a global lesson.** A lesson is evidence from sessions in one project, so it lives in that project and nowhere else — this is by design, not a stage we grow out of. What *can* be global is the **target of the proposed change**: some friction is about this repository (a skill that does not fit it, an `AGENTS.md` claim that is not true here), and some is about how the person works everywhere (how they deal with Jira, how they want branches named, a convention they carry between projects). The first belongs in the project's harness, the second in the user's global harness — `~/.config/opencode/AGENTS.md`, a global skill. Choosing between them is an integration decision, made when a lesson is handed over, by the agent and the human looking at what the lesson actually says. Not a storage question, and not something the plugin decides. *Replaces an earlier version of this decision that had lessons themselves being promoted to global scope after recurring in ≥2 workspaces. That model was wrong: it would have required a global lesson store, a cross-workspace index and a way to match the same problem across repositories, all to answer a question that belongs to the proposal rather than to the lesson.*
-11. **Autonomy ladder L0–L3** (see README). v1 target is L1, and `/retro auto` is the step that makes the rest reachable: the same lessons, the same currency checks, the same `retro_decide` bookkeeping, but batched into one plan a human approves once instead of a decision per lesson. The ladder from here is about how much of that plan runs without being asked, not about new machinery. Promotion between levels is to be driven by accept/reject stats, later.
+11. **Autonomy ladder L0–L3.** v1 target is L1, and `/retro all` is the step that makes the rest reachable: the same lessons, the same currency checks, the same `retro_decide` bookkeeping, but batched into one plan a human approves once instead of a decision per lesson. The ladder from here is about how much of that plan runs without being asked, not about new machinery. Promotion between levels is to be driven by accept/reject stats, later.
 12. **Not a memory plugin.** We edit artifacts the harness already reads; we don't build a knowledge base the agent must remember to query.
 13. **The prompts live in the user's project, not in the package.** Three of them, in `.retro/prompts/`: `extract.md` (what counts as a lesson), `review.md` and `review-auto.md` (what the agent treats as its job when a lesson is handed over — check currency, relay, touch nothing before a decision, record the outcome). The package ships defaults; on first run each missing one is copied in. Resolution order: project → global (`~/.config/opencode/retro/prompts/`) → packaged default → a terse built-in fallback, so a deleted file degrades rather than going silent. `options` can override the directory and the extractor model. *Narrowed in M3 to one prompt on the reasoning that there was no application step to drive, then restored: the review texts do not drive the application, but they do decide what the agent considers its job, which is exactly the semantics worth iterating on in practice.*
 14. **The prompts are editable; the machine parts are compiled in.** The project files are entirely the user's — criteria, emphasis, project-specific wording. The output format the parser needs lives in the plugin's source and is wrapped around the prompt at call time. It is never written to disk, so it cannot be edited away by accident, and the prompt file has no "do not touch" region in it. `/retro check` prints the contract for anyone who wants to see it.
@@ -264,8 +264,9 @@ plugin needed — and it gets the `sessionID`, so it can drive the review conver
   and the M0 probe never saw it fire: no test session grew long enough to be compacted.
   Nothing depends on it. Decision 3 is precisely that the shadow log is written as the
   session runs, so compaction cannot take anything from us; this is an unexplored corner of
-  the API, not a gap in behaviour. The one thing it might be worth later: compaction is
-  itself a signal that a session got long, and length is friction.
+  the API, not a gap in behaviour. And compaction is not friction — it is routine, and the
+  only thing it has to be is predictable, which from our side it already is: the log does
+  not change when a session's history does.
 - `ctx.storage` vs our own files. Storage is plugin-scoped JSON KV and would be the natural
   home for `state.json`, but decision 12 / the "human-readable files" convention argues
   for staying on disk. Not urgent.
@@ -307,8 +308,8 @@ generate.text({ prompt: userPrompt + OUTPUT_CONTRACT })
 
 No "managed block", no marker comments, no region the user is told not to touch — because a
 file with a do-not-touch region is a file someone will eventually touch. The seeded prompt
-carries one line saying the output format is appended automatically and that `/retro check`
-will print it.
+carries one line saying the output format is appended automatically and is not part of the
+file.
 
 ### New defaults arrive as news
 
@@ -524,9 +525,9 @@ Evaluated when a session ends, written into `verified`:
 Statuses are `ok`, `DEGRADED`, `BROKEN`, and `not exercised` — a session with no tool calls
 does not prove the tool hook works and must not claim to.
 
-### `/retro check` — the active version
+### The checks a session cannot make for itself
 
-Costs a model call, so it is asked for, not automatic. Adds: versions (`ctx.app.version`,
+Free, so it runs on every review. Adds: versions (`ctx.app.version`,
 ours, the resolved `@opencode/plugin`); the `ctx` surface we depend on, member by member
 (this part *is* detectable — missing ones read `undefined`, Gotcha 8); connectivity via
 `ctx.generate.text`; a round-trip of the real extraction prompt over a bundled fixture
@@ -557,7 +558,7 @@ verified   2026-10-19 20:31   (rewritten when a session ends)
 
 **If you are working right now and `heartbeat` is more than a few minutes old, this plugin
 is not running.** Nothing else will tell you: OpenCode does not report a plugin that failed
-to load. Check that `opencode.json` points at an absolute path, then run `/retro check`.
+to load. Check that `opencode.json` points at an absolute path, then run `/retro`.
 
 ## Last session — ses_eabb21faaffeVlcHi1DAhqgq1p
 
@@ -567,7 +568,7 @@ to load. Check that `opencode.json` points at an absolute path, then run `/retro
 - ok              trigger         session.execution.succeeded
 - DEGRADED        extraction      model call failed: Model unavailable: foo/bar
                                   → no lessons from this session. Check `options.model`
-                                    in opencode.json, then /retro check.
+                                    in opencode.json, then run /retro again.
 
 ## Notes
 
@@ -716,6 +717,13 @@ Shipping with these known, listed so nobody discovers them as surprises:
   is the failure mode decision 19 exists to kill.
 - Anything a user may want to change is a file in `.retro/`, not a config key and not a
   constant in our source.
+- **`test/consistency.test.js` guards text against behaviour.** The costliest failure in this
+  project is not a broken function, it is a true statement that stopped being true: removing
+  a command left its name in six places in shipped code, in the seeded prompt and twice in
+  every README, and nothing failed. That file checks what can be checked mechanically — every
+  command named in shipped text exists, every settable option is documented in every
+  language, every record kind written to the log is rendered to the extractor, nothing
+  exported from `src/` is unreachable. Add to it whenever a claim becomes checkable.
 - **The plugin writes `.retro/.gitignore` itself**, seeded once and never rewritten. Git
   applies a `.gitignore` to the directory holding it, so everything can be decided from
   inside the one directory this plugin owns, and the user never edits theirs. Ignored:

@@ -1,4 +1,4 @@
-<!-- translated-from: README.md@39206f01ab32 -->
+<!-- translated-from: README.md@ffcdf40916ae -->
 # opencode-retro
 
 [English](README.md) | [Русский](README.ru.md) | **简体中文** | [Español](README.es.md) | [日本語](README.ja.md)
@@ -175,9 +175,20 @@ npm 包目前仍是占位，因此 `opencode.json` 应指向一份检出。该�
 }
 ```
 
-`options.model` 为选填。不填时，插件会使用你会话所用的模型；若尚未见到，则退回到工作区的默认模型。`/retro check` 会报告实际使用了哪个模型以及它来自哪里。
+`options.model` 为选填。不填时，插件会使用你会话所用的模型；若尚未见到，则退回到工作区的默认模型。`.retro/selfcheck.md` 会报告实际使用了哪个模型以及它来自哪里。
 
-其余均为可选：`dir` 指定目录，默认 `.retro`；`prompts` 指定提示目录；`halfLife` 以会话计，默认十；`autoLimit` 为单次 `/retro auto` 中的教训数量，默认十；以及 `maxOutput`、`extractTimeoutMs`、`keepSessions`。
+其余均为可选：
+
+- `dir` —— 一切所在的目录，默认 `.retro`。
+- `prompts` —— 提示文件目录，默认为其中的 `prompts`。
+- `halfLife` —— 教训得分减半所需的「未再出现的会话数」，默认十。
+- `autoLimit` —— 单次 `/retro all` 中的教训数量，默认十。
+- `extractLimit` —— 单次 `/retro` 分析的日志数量，默认不限。
+- `maxOutput` —— 每一步保留的工具输出字符数，默认 8000。
+- `extractTimeoutMs` —— 单次分析放弃前的等待时长，默认 90000。
+- `heartbeatMs` —— 会话进行中两次自检写入之间的最短间隔，默认 60000。
+- `keepSessions` —— 保留所有日志，包括无人引用的。
+- `autoExtract` —— 在下一次会话开始时分析，而不是等待请求。
 
 ### 磁盘上会出现什么
 
@@ -210,7 +221,7 @@ npm 包目前仍是占位，因此 `opencode.json` 应指向一份检出。该�
 
 当更新后的默认值发布时，它会以 `prompts/updates/<name>.vN.md` 的形式出现，文件开头注明该文件并未被使用。不会有任何内容代替用户被应用。
 
-留在源代码中的是机械部分：解析器所要求的输出格式、教训字段的顺序，以及记录决定的指示。`/retro check` 会为需要查看的人打印输出格式。
+留在源代码中的是机械部分：解析器所要求的输出格式、教训字段的顺序，以及记录决定的指示。输出格式从不写入磁盘，因此编辑提示文件无法破坏解析。
 
 ## 确认它在工作
 

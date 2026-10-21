@@ -70,7 +70,7 @@ test("an empty store explains itself rather than looking broken", () => {
   const text = renderNothing({ queued: 2, extracted: { analysed: 3, left: 2 } })
   assert.match(text, /Nothing to review/)
   assert.match(text, /Analysed 3 finished sessions just now/, "say the work was done")
-  assert.match(text, /2 more logs waiting. Run `\/retro` again/, "and that more is left, with what to do")
+  assert.match(text, /2 logs not analysed yet. Run `\/retro` again/, "and that more is left, with what to do")
   assert.match(text, /selfcheck\.md/)
 })
 

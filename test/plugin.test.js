@@ -578,3 +578,81 @@ test("the subagent's own instruction is not lost to the race that reveals its pa
   assert.deepEqual(ns, [...ns].sort((a, b) => a - b), "renumbered into one sequence")
   await cleanup?.()
 })
+
+test("keepSessions keeps a log that nothing cites, because losing it is not recoverable", async () => {
+  const directory = sandbox()
+  const session = "ses_kept"
+  const fake = fakeOpenCode({ directory, options: { model: MODEL, keepSessions: true } })
+  const cleanup = await plugin.setup(fake.ctx)
+
+  await fake.hooks.get("session.prompt")({ sessionID: session, messageID: "m1", prompt: { text: "do it" } })
+  await fake.hooks.get("tool.execute.before")({ sessionID: session, id: "c1", tool: "shell", input: { command: "x" } })
+  await fake.hooks.get("tool.execute.after")({
+    sessionID: session,
+    id: "c1",
+    tool: "shell",
+    input: { command: "x" },
+    status: "completed",
+    result: { output: { exit: 1, output: "no" }, metadata: { exit: 1 } },
+  })
+  writeFileSync(
+    join(directory, ".retro", "state.json"),
+    JSON.stringify({ version: 1, rejected: [], extracted: {}, sessions: 1, pending: [{ session, queuedAt: "now", attempts: 0 }] }),
+  )
+
+  const fresh = fakeOpenCode({ directory, options: { model: MODEL, keepSessions: true } })
+  const cleanup2 = await plugin.setup(fresh.ctx)
+  await fresh.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
+  await fresh.tools.get("retro_decide").execute({ id: "lint-skill-no-config", status: "accepted" })
+
+  assert.ok(
+    existsSync(join(directory, ".retro", "sessions", `${session}.jsonl`)),
+    "decided and uncited, and still kept because the option says so",
+  )
+  await cleanup?.()
+  await cleanup2?.()
+})
+
+test("autoLimit caps one plan and says what it left out", async () => {
+  const directory = sandbox()
+  mkdirSync(join(directory, ".retro", "lessons"), { recursive: true })
+  for (const [id, cost] of [["a", 30], ["b", 20], ["c", 10]]) {
+    writeFileSync(
+      join(directory, ".retro", "lessons", `${id}.md`),
+      `---\nid: ${id}\nstatement: problem ${id}\ncost: ${cost}\nrecurrence: 1\nconfidence: 1\nstatus: new\n---\n\nbody\n`,
+    )
+  }
+
+  const fake = fakeOpenCode({ directory, options: { model: MODEL, autoLimit: 2 } })
+  const cleanup = await plugin.setup(fake.ctx)
+  await fake.commands.get("retro").execute({ sessionID: "ses_x", prompt: { text: "all" } })
+
+  const [delivered] = fake.synthetic
+  assert.match(delivered.text, /## 1\. `a`/)
+  assert.match(delivered.text, /## 2\. `b`/)
+  assert.doesNotMatch(delivered.text, /## 3\./, "the cap holds")
+  assert.match(delivered.text, /1 more below the cut/, "and the remainder is named")
+  await cleanup?.()
+})
+
+test("extractLimit caps what one command analyses and leaves the rest queued", async () => {
+  const directory = sandbox()
+  const fake = fakeOpenCode({ directory, options: { model: MODEL, extractLimit: 1 } })
+  const cleanup = await plugin.setup(fake.ctx)
+
+  await workSession(fake, "ses_one")
+  await workSession(fake, "ses_two")
+  queue(directory, ["ses_one", "ses_two"])
+
+  const fresh = fakeOpenCode({ directory, options: { model: MODEL, extractLimit: 1 } })
+  const cleanup2 = await plugin.setup(fresh.ctx)
+  await fresh.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
+
+  assert.equal(fresh.generated.length, 1, "one log, one call")
+  const state = JSON.parse(readFileSync(join(directory, ".retro", "state.json"), "utf8"))
+  assert.equal(state.pending.length, 1, "the other is still owed")
+  assert.match(fresh.synthetic[0].text, /1 log not analysed yet/, "said even when a proposal was found")
+
+  await cleanup?.()
+  await cleanup2?.()
+})

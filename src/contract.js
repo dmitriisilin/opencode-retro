@@ -6,7 +6,8 @@
  * no do-not-touch region in it, because a file with one is a file someone will eventually
  * touch, and the breakage would be silent.
  *
- * `/retro check` prints this.
+ * Not written to disk anywhere: it is wrapped around the prompt at call time and lives
+ * only here, which is why a user edit cannot break the parser.
  */
 export const OUTPUT_CONTRACT = `
 ---

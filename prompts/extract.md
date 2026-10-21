@@ -1,6 +1,6 @@
 ---
 prompt: extract
-base: 3
+base: 5
 ---
 
 You are reviewing one coding session that has just finished. You were not in it. The agent
@@ -27,6 +27,13 @@ shapes, and when you find one, ask what in the project made it happen.
 edit is ordinary work. Retrying it when no file changed between the attempts is the agent
 hoping the world moved on its own, and usually means it had no way to find out what was
 actually wrong.
+
+**Work this project has done before.** Not a retry inside this session, but a stretch spent
+establishing something that was already established: reading the sources to infer the code
+style, working out how to run the tests, rediscovering which command builds what. If the
+answer is stable and the session had to derive it, the answer is missing from the project
+rather than from the agent. The existing lessons below will tell you whether this has been
+noticed already.
 
 **An edit made and then undone.** Either a later edit removes the lines an earlier one
 added, or a `git checkout -- .`, `git restore`, `git reset --hard` or `git stash` throws away
@@ -84,4 +91,5 @@ fixing it in one project leaves it broken in the rest.
 The test is simple: would this lesson still be true in a different repository? If yes, it is
 not a lesson about this one. Say which you think it is; the human decides.
 
-The output format is appended automatically by the plugin. Run `/retro check` to see it.
+The output format is appended automatically by the plugin and is not part of this file, so
+nothing here can break the parsing.

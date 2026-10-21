@@ -10,6 +10,11 @@ import { clamp } from "./config.js"
  */
 export function project(records, { maxToolOutput = 600, maxPromptChars = 4000 } = {}) {
   const lines = []
+  // Which agent did a step only matters where it is not the usual one, and the usual one is
+  // whichever did most of the work. Without this, a subagent's steps are written into the
+  // parent's log and then read as if the main agent had done them — the attribution is
+  // captured and invisible, which is the worst of both.
+  const primary = dominantAgent(records)
   for (const r of records) {
     switch (r.k) {
       case "session":
@@ -29,7 +34,7 @@ export function project(records, { maxToolOutput = 600, maxPromptChars = 4000 } 
       }
 
       case "tool":
-        lines.push(`[${r.n}] ${describeCall(r)}`)
+        lines.push(`[${r.n}] ${r.agent && r.agent !== primary ? `(${r.agent}) ` : ""}${describeCall(r)}`)
         for (const detail of describeResult(r, maxToolOutput)) lines.push(indent(detail))
         break
 
@@ -39,6 +44,20 @@ export function project(records, { maxToolOutput = 600, maxPromptChars = 4000 } 
     }
   }
   return lines.join("\n") + "\n"
+}
+
+/** The agent that did most of the tool calls. Deterministic, from the log alone. */
+function dominantAgent(records) {
+  const counts = new Map()
+  for (const r of records) {
+    if (r.k !== "tool" || !r.agent) continue
+    counts.set(r.agent, (counts.get(r.agent) ?? 0) + 1)
+  }
+  let best = null
+  for (const [agent, n] of counts) {
+    if (!best || n > best[1] || (n === best[1] && agent < best[0])) best = [agent, n]
+  }
+  return best?.[0] ?? null
 }
 
 function describeCall(r) {
