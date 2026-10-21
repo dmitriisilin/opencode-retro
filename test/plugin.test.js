@@ -168,7 +168,7 @@ test("setup registers the commands and the decision tool, and seeds the prompts"
   assert.ok(fake.hooks.has("tool.execute.before"))
   assert.ok(fake.hooks.has("tool.execute.after"))
 
-  for (const name of ["extract", "propose", "propose-all"]) {
+  for (const name of ["extract", "propose"]) {
     assert.ok(existsSync(join(directory, ".retro", "prompts", `${name}.md`)), `${name}.md was not seeded`)
   }
   assert.ok(existsSync(join(directory, ".retro", "selfcheck.md")))
@@ -863,7 +863,7 @@ test("keepSessions keeps a log that nothing cites, because losing it is not reco
   await cleanup2?.()
 })
 
-test("autoLimit caps one plan and says what it left out", async () => {
+test("proposeLimit caps one plan and says what it left out", async () => {
   const directory = sandbox()
   mkdirSync(join(directory, ".retro", "lessons"), { recursive: true })
   for (const [id, cost] of [["a", 30], ["b", 20], ["c", 10]]) {
@@ -873,7 +873,7 @@ test("autoLimit caps one plan and says what it left out", async () => {
     )
   }
 
-  const fake = fakeOpenCode({ directory, options: { model: MODEL, autoLimit: 2 } })
+  const fake = fakeOpenCode({ directory, options: { model: MODEL, proposeLimit: 2 } })
   const cleanup = await plugin.setup(fake.ctx)
   await fake.commands.get("retro").execute({ sessionID: "ses_x", prompt: { text: "all" } })
 

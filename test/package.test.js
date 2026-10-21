@@ -37,7 +37,7 @@ test("the published tarball carries everything the entry point imports", () => {
     listed.includes("package.json"),
     "package.json must ship: the self-check reads the version it reports from it",
   )
-  for (const name of ["extract", "propose", "propose-all"]) {
+  for (const name of ["extract", "propose"]) {
     assert.ok(listed.includes(`prompts/${name}.md`), `prompts/${name}.md must ship — it is seeded at runtime`)
   }
   assert.ok(listed.includes("README.md"))

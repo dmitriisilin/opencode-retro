@@ -44,7 +44,7 @@ test("every settable option is carried through, and omitted ones take the defaul
     halfLife: 3,
     keepSessions: true,
     extractTimeoutMs: 250,
-    autoLimit: 2,
+    proposeLimit: 2,
     extractLimit: 4,
     autoExtract: true,
   }
@@ -57,7 +57,7 @@ test("every settable option is carried through, and omitted ones take the defaul
   assert.equal(plain.heartbeatMs, DEFAULTS.heartbeatMs)
   assert.equal(plain.halfLife, DEFAULTS.halfLife)
   assert.equal(plain.extractTimeoutMs, DEFAULTS.extractTimeoutMs)
-  assert.equal(plain.autoLimit, DEFAULTS.autoLimit)
+  assert.equal(plain.proposeLimit, DEFAULTS.proposeLimit)
 })
 
 test("a context without a location still yields a usable layout", () => {

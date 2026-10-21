@@ -7,7 +7,8 @@ import { createState } from "./src/state.js"
 import { createStore, score } from "./src/lessons.js"
 import { assessCurrency, fingerprintOf } from "./src/currency.js"
 import { extract } from "./src/extract.js"
-import { DECIDE_INPUT, decide, pickLesson, pickOpen, renderBatch, renderFailures, renderNothing, renderProposal } from "./src/review.js"
+import { pickLesson, pickOpen, renderBatch, renderFailures, renderNothing, renderProposal } from "./src/propose.js"
+import { DECIDE_INPUT, decide } from "./src/decide.js"
 import { activeCheck } from "./src/selfcheck.js"
 import { resolveConfig } from "./src/config.js"
 import { seedGitignore } from "./src/gitignore.js"
@@ -31,7 +32,7 @@ export const VERSION = (() => {
 })()
 
 /**
- * opencode-retro — M3: capture, extract, review.
+ * opencode-retro — capture, extract, propose, decide.
  *
  * Writes a shadow log of every prompt and tool call. When a session ends it is queued for
  * extraction, and the next session's first prompt pays that debt: one clean-context model
@@ -222,13 +223,13 @@ export default {
           description: "Review what the last sessions should have taught this project",
           execute: command("retro", ({ sessionID, prompt }) => {
             const text = String(prompt?.text ?? "").trim().toLowerCase()
-            return text.startsWith("all") ? runAll(sessionID) : runReview(sessionID)
+            return text.startsWith("all") ? proposeAll(sessionID) : proposeOne(sessionID)
           }),
         })
         cmds.add({
           name: "retro-all",
           description: "Review everything waiting at once, as one plan",
-          execute: command("retro-all", ({ sessionID }) => runAll(sessionID)),
+          execute: command("retro-all", ({ sessionID }) => proposeAll(sessionID)),
         })
       })
     } catch (err) {
@@ -347,7 +348,7 @@ export default {
 
     // Seed the editable prompts, then look for a newer default. Neither touches a file
     // the user owns (AGENTS.md decisions 13 and 15).
-    for (const name of ["extract", "propose", "propose-all"]) {
+    for (const name of ["extract", "propose"]) {
       prompts.seed(name)
       const update = prompts.checkForUpdate(name)
       if (update) check.note(update)
@@ -468,7 +469,7 @@ export default {
       return assessCurrency(lesson, { directory: config.directory, fingerprint })
     }
 
-    async function runAll(sessionID) {
+    async function proposeAll(sessionID) {
       const extracted = await processQueue(sessionID)
 
       const open = pickOpen(store.list(), { sessions: state.sessions, halfLife: config.halfLife })
@@ -476,7 +477,7 @@ export default {
       writeSelfCheck()
       if (!open.length) return say(sessionID, renderNothing({ queued: extracted.left, extracted }))
 
-      const shown = open.slice(0, config.autoLimit)
+      const shown = open.slice(0, config.proposeLimit)
       const currencies = new Map()
       for (const lesson of shown) currencies.set(lesson.id, currencyOf(lesson))
 
@@ -486,15 +487,15 @@ export default {
           sessions: state.sessions,
           halfLife: config.halfLife,
           currencies,
-          limit: config.autoLimit,
-          leadIn: prompts.resolve("propose-all")?.text,
+          limit: config.proposeLimit,
+          leadIn: prompts.resolve("propose")?.text,
           queued: extracted.left,
         }),
       )
     }
 
     /**
-     * Both review modes analyse what has accumulated before they propose anything: one
+     * Both proposal modes analyse what has accumulated before they propose anything: one
      * `/retro` compresses the raw logs, turns them into lessons, and only then looks for
      * something to hand over. Bounded, so a long backlog cannot bill in one command.
      */
@@ -565,7 +566,7 @@ export default {
       return { analysed: done.length, live: reread.length, left, failures }
     }
 
-    async function runReview(sessionID) {
+    async function proposeOne(sessionID) {
       // One invocation, one lesson: the top of the list. Deciding is the user's business,
       // in this session, with the agent that is already here.
       const extracted = await processQueue(sessionID)
@@ -595,7 +596,7 @@ export default {
     }
 
     /**
-     * The checks a session cannot make for itself, folded into every review instead of
+     * The checks a session cannot make for itself, folded into every proposal instead of
      * hiding behind a command of its own.
      *
      * Free: a few property reads. It used to also ask the model whether it answers, which

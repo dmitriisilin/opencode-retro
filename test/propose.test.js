@@ -4,11 +4,9 @@ import { mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import {
-  AUTO_LIMIT,
-  DECIDE_INPUT,
+  PROPOSE_LIMIT,
   asLeadIn,
   backlogLine,
-  decide,
   hintLines,
   pickLesson,
   pickOpen,
@@ -16,7 +14,7 @@ import {
   renderFailures,
   renderNothing,
   renderProposal,
-} from "../src/review.js"
+} from "../src/propose.js"
 import { createStore } from "../src/lessons.js"
 import { createState } from "../src/state.js"
 
@@ -68,7 +66,7 @@ test("the proposal says what it is, what it would change, and that nothing was c
   assert.match(text, /sessions\/ses_a\.jsonl` steps 9–18/)
   assert.match(text, /This is a proposal, not a change — nothing has been edited/)
   assert.match(text, /2 more lessons waiting of 3/)
-  assert.match(text, /^_opencode-retro: is this already resolved/, "the fallback, when no prompt resolves")
+  assert.match(text, /^_opencode-retro: is each lesson below already resolved/, "the fallback, when no prompt resolves")
   assert.doesNotMatch(text, /git log/, "we do not prescribe how to look")
 })
 
@@ -87,52 +85,6 @@ test("an empty store explains itself rather than looking broken", () => {
   assert.match(text, /selfcheck\.md/)
 })
 
-test("deciding closes the lesson: out of the open set, into the archive", () => {
-  const r = rig()
-  r.store.record([{ ...lesson(), steps: [9, 18], matches: null, why: "b" }], { session: "ses_a" })
-
-  const result = decide({ id: "lint-skill-no-config", status: "accepted" }, r)
-  assert.ok(result.ok)
-  assert.match(result.detail, /moved to archive/)
-  assert.deepEqual(r.store.list(), [], "lessons/ holds open questions only")
-
-  const [archived] = r.store.listArchive()
-  assert.equal(archived.status, "accepted")
-  assert.ok(archived.closedAt, "and when it was closed")
-})
-
-test("later keeps the lesson open rather than closing it", () => {
-  const r = rig()
-  r.store.record([{ ...lesson(), steps: [9, 18], matches: null, why: "b" }], { session: "ses_a" })
-
-  decide({ id: "lint-skill-no-config", status: "later" }, r)
-  assert.equal(r.store.list()[0].status, "later")
-  assert.deepEqual(r.store.listArchive(), [])
-})
-
-test("a rejection outlives the lesson file, or it comes back", () => {
-  const r = rig()
-  r.store.record([{ ...lesson(), steps: [9, 18], matches: null, why: "b" }], { session: "ses_a" })
-
-  decide({ id: "lint-skill-no-config", status: "rejected", note: "we want eslint eventually" }, r)
-  assert.equal(r.store.listArchive()[0].status, "rejected")
-  assert.deepEqual(
-    r.state.rejected.map((x) => x.id),
-    ["lint-skill-no-config"],
-  )
-  assert.match(r.state.rejected[0].reason, /eslint eventually/)
-})
-
-test("deciding on a lesson that is not there fails clearly", () => {
-  assert.match(decide({ id: "nope", status: "accepted" }, rig()).detail, /no lesson `nope`/)
-})
-
-test("the tool schema is plain JSON Schema, so it needs no dependency", () => {
-  assert.equal(DECIDE_INPUT.type, "object")
-  assert.deepEqual(DECIDE_INPUT.required, ["id", "status"])
-  assert.deepEqual(DECIDE_INPUT.properties.status.enum, ["accepted", "rejected", "later"])
-})
-
 test("auto carries every waiting lesson and asks for one plan", () => {
   const lessons = [
     lesson({ id: "a", cost: 20 }),
@@ -143,7 +95,7 @@ test("auto carries every waiting lesson and asks for one plan", () => {
     currencies: new Map([["a", { hint: "`x.md` has changed." }]]),
   })
 
-  assert.match(text, /^_opencode-retro: for each lesson below/, "the fallback, when no prompt resolves")
+  assert.match(text, /^_opencode-retro: is each lesson below already resolved/, "one fallback, both messages")
   assert.doesNotMatch(text, /git log/)
   assert.match(text, /# retro — 3 lessons waiting/)
   assert.match(text, /## 1\. `a` — score 36/)
@@ -161,7 +113,7 @@ test("the hand-over instructions come from the prompt file, not from source", ()
   const one = renderProposal(lesson(), { leadIn })
   assert.match(one, /^_opencode-retro — how to hand this over:_/)
   assert.match(one, /My own wording\./)
-  assert.doesNotMatch(one, /is this already resolved/, "the fallback must not leak in alongside it")
+  assert.doesNotMatch(one, /is each lesson below already resolved/, "the fallback must not leak in alongside it")
 
   const many = renderBatch([lesson()], { leadIn })
   assert.match(many, /My own wording\./)
@@ -169,7 +121,7 @@ test("the hand-over instructions come from the prompt file, not from source", ()
 
 test("a missing prompt degrades to a terse hand-off rather than a silent one", () => {
   for (const text of [renderProposal(lesson(), { leadIn: "   " }), renderProposal(lesson(), {})]) {
-    assert.match(text, /^_opencode-retro: is this already resolved/)
+    assert.match(text, /^_opencode-retro: is each lesson below already resolved/)
     assert.match(text, /retro_decide/, "the bookkeeping instruction survives either way")
   }
 })
@@ -201,69 +153,6 @@ test("closed lessons never reach the batch", () => {
   const text = renderBatch(pickOpen([lesson({ id: "open" }), lesson({ id: "done", status: "accepted" })]))
   assert.match(text, /`open`/)
   assert.doesNotMatch(text, /`done`/)
-})
-
-test("deciding twice is safe and says so, instead of reading as a failure", () => {
-  const r = rig()
-  r.store.record([{ ...lesson(), steps: [9, 18], matches: null, why: "b" }], { session: "ses_a" })
-
-  const first = decide({ id: "lint-skill-no-config", status: "accepted" }, r)
-  assert.ok(first.ok)
-
-  // A live session failed here: the second call answered "no lesson", the agent read that
-  // as broken and went looking through the filesystem for a tool it already had.
-  const again = decide({ id: "lint-skill-no-config", status: "accepted" }, r)
-  assert.ok(again.ok, "a repeat call must not look like a failure")
-  assert.ok(again.already)
-  assert.match(again.detail, /already recorded as accepted/)
-})
-
-test("an unknown id says what is actually open", () => {
-  const r = rig()
-  r.store.record([{ ...lesson(), steps: [9, 18], matches: null, why: "b" }], { session: "ses_a" })
-
-  const got = decide({ id: "typo-in-the-id", status: "accepted" }, r)
-  assert.equal(got.ok, false)
-  assert.match(got.detail, /no lesson `typo-in-the-id` is open or archived/)
-  assert.match(got.detail, /lint-skill-no-config/, "and names what it could have meant")
-})
-
-test("the decision records what was actually done, not what was proposed", () => {
-  const r = rig()
-  r.store.record([{ ...lesson(), steps: [9, 18], matches: null, why: "b" }], { session: "ses_a" })
-
-  decide(
-    {
-      id: "lint-skill-no-config",
-      status: "accepted",
-      note: "the skill was unfixable here, so it went",
-      changed: ["AGENTS.md", ".opencode/skills/lint/SKILL.md"],
-      discovered: "AGENTS.md still pointed at the skill, so removing it alone would have broken that line",
-    },
-    r,
-  )
-
-  const [archived] = r.store.listArchive()
-  assert.equal(archived.status, "accepted")
-  assert.deepEqual(archived.changed, ["AGENTS.md", ".opencode/skills/lint/SKILL.md"], "the real targets")
-  assert.match(archived.discovered, /still pointed at the skill/, "and what only the work could reveal")
-  assert.ok(archived.closedAt)
-})
-
-test("an outcome with nothing to add does not litter the record", () => {
-  const r = rig()
-  r.store.record([{ ...lesson(), steps: [9, 18], matches: null, why: "b" }], { session: "ses_a" })
-  decide({ id: "lint-skill-no-config", status: "rejected", note: "we want eslint eventually" }, r)
-
-  const [archived] = r.store.listArchive()
-  assert.equal(archived.changed, undefined)
-  assert.equal(archived.discovered, undefined)
-  assert.match(archived.note, /eslint eventually/)
-})
-
-test("the decision tool asks for both, since only the work can produce them", () => {
-  assert.match(DECIDE_INPUT.properties.changed.description, /not what the proposal named/)
-  assert.match(DECIDE_INPUT.properties.discovered.description, /only exists because the work happened/)
 })
 
 test("a lesson that has gone unseen for a while says so, in sessions not days", () => {
@@ -301,10 +190,10 @@ test("a batch names a single backlog log in the singular", () => {
 })
 
 test("the batch limit has a default, so nothing has to pass one", () => {
-  const many = Array.from({ length: AUTO_LIMIT + 2 }, (_, i) => lesson({ id: `l${i}`, cost: 20 - i }))
+  const many = Array.from({ length: PROPOSE_LIMIT + 2 }, (_, i) => lesson({ id: `l${i}`, cost: 20 - i }))
   const text = renderBatch(many)
 
-  assert.match(text, new RegExp(`# retro — ${AUTO_LIMIT} lessons waiting`))
+  assert.match(text, new RegExp(`# retro — ${PROPOSE_LIMIT} lessons waiting`))
   assert.match(text, /2 more below the cut/)
 })
 

@@ -73,7 +73,7 @@ The plugin reads the log. The human reads proposals. It stops at the proposal an
 | Command | What it does |
 |---|---|
 | `/retro` | Analyses what has accumulated, then delivers one lesson: the highest scoring one still undecided. |
-| `/retro all` (or `/retro-all`) | The same analysis, then waiting lessons as a single plan, up to `autoLimit` (ten by default), to be approved in one pass. |
+| `/retro all` (or `/retro-all`) | The same analysis, then waiting lessons as a single plan, up to `proposeLimit` (ten by default), to be approved in one pass. |
 
 There is no third command. Whether the plugin is working is reported in `.retro/selfcheck.md`, rewritten from the first prompt of every session and again when it ends.
 
@@ -96,7 +96,7 @@ Needs a decision
 
 The decision belongs to the human and the agent in that session. The agent has the files, the history and the project's own skills, which makes it a better judge of whether a lesson still applies than the plugin can be. Once a decision is made, the agent records it through a `retro_decide` tool. That tool only keeps books: a rejection is remembered, and the lesson is not proposed again.
 
-`/retro all` is the same hand-over for everything at once. Waiting lessons are ranked and handed over together, up to `autoLimit`; the agent checks which still hold and gathers the rest into one plan grouped by file, which is approved once.
+`/retro all` is the same hand-over for everything at once. Waiting lessons are ranked and handed over together, up to `proposeLimit`; the agent checks which still hold and gathers the rest into one plan grouped by file, which is approved once.
 
 ### Where a fix belongs
 
@@ -183,7 +183,7 @@ Everything else is optional:
 - `dir` — where everything lives, default `.retro`.
 - `prompts` — the prompt directory, default `prompts` inside it.
 - `halfLife` — sessions without a recurrence before a lesson's score halves, default ten.
-- `autoLimit` — lessons in one `/retro all`, default ten.
+- `proposeLimit` — lessons in one `/retro all`, default ten.
 - `extractLimit` — logs analysed by one `/retro`, unlimited by default.
 - `maxOutput` — characters of tool output stored in the shadow log per step, default 8000.
 - `extractTimeoutMs` — how long one analysis may take before it is given up on, default 90000.
@@ -199,8 +199,7 @@ Everything the plugin writes stays under `.retro/` in the project, and nowhere e
 .retro/
   prompts/
     extract.md       what counts as a lesson
-    propose.md        how a lesson is handed over
-    propose-all.md   how a batch becomes one plan
+    propose.md       how a lesson is handed over, one or many
     updates/         newer defaults, not in use
   sessions/          raw logs, kept while an open lesson cites them
   lessons/           open questions
@@ -219,7 +218,7 @@ The split is the design rather than a convenience. Lessons and the archive are k
 
 ### Prompts
 
-Three prompts shape what the plugin does, and all three are files in the project: what counts as a lesson, how a lesson is handed over, and how a batch of lessons becomes one plan.
+Two prompts shape what the plugin does, and both are files in the project: what counts as a lesson, and how a lesson is handed over. The second covers a batch as well — `/retro all` sends the same rule, whose last section says what changes when several lessons arrive at once: one plan, grouped by file, the dropped ones named. One rule rather than one per command, so editing it cannot leave a second copy disagreeing with it.
 
 Each is seeded from the packaged default on first run and never written to again. Resolution is the project first, then `~/.config/opencode/retro/prompts/`, then the packaged default, so a prompt can be pinned for one project, for every project, or for neither.
 

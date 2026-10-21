@@ -11,8 +11,8 @@ import { score, staleSessions } from "./lessons.js"
 
 export const OPEN = new Set(["new", "later", undefined, null])
 
-/** How many lessons one `/retro all` will carry. Beyond this, a plan stops being a plan. */
-export const AUTO_LIMIT = 10
+/** How many lessons one `/retro all` carries. Beyond this, a plan stops being a plan. */
+export const PROPOSE_LIMIT = 10
 
 export function pickLesson(lessons, ctx) {
   return pickOpen(lessons, ctx)[0] ?? null
@@ -24,11 +24,11 @@ export function pickOpen(lessons, ctx = {}) {
 
 export function renderBatch(
   lessons,
-  { sessions = null, halfLife, currencies = new Map(), limit = AUTO_LIMIT, leadIn = null, queued = 0 } = {},
+  { sessions = null, halfLife, currencies = new Map(), limit = PROPOSE_LIMIT, leadIn = null, queued = 0 } = {},
 ) {
   const shown = lessons.slice(0, limit)
   const lines = [
-    asLeadIn(leadIn, AUTO_LEAD_IN_FALLBACK),
+    asLeadIn(leadIn),
     "",
     `# retro — ${shown.length} lesson${shown.length === 1 ? "" : "s"} waiting`,
     "",
@@ -74,26 +74,29 @@ export function renderBatch(
 }
 
 /**
- * The semantic half of the hand-off lives in `prompts/propose.md` and
- * `prompts/propose-all.md`, seeded into the user's project and editable there — it decides
- * what the agent treats as its job when a lesson arrives, which is exactly the kind of
- * thing worth iterating on in practice (AGENTS.md decision 13).
+ * The semantic half of the hand-over lives in `prompts/propose.md`, seeded into the user's
+ * project and editable there — it decides what the agent treats as its job when a lesson
+ * arrives, which is exactly the kind of thing worth iterating on in practice (AGENTS.md
+ * decision 13).
  *
- * These constants are only the fallback for when no prompt layer resolves, so that a
- * missing file degrades to a terse hand-off rather than a silent one.
+ * **One rule, not one per command.** There used to be a second file for `/retro all`, and
+ * it was the same rule rewritten shorter: currency, where the fix belongs, local or global,
+ * change nothing before a decision, record the outcome. Two copies of a judgement is one
+ * copy the user edits and one that silently disagrees with it. What a batch actually needs
+ * is nothing from the rule and only the shape of its answer — one plan, grouped by file,
+ * dropped ones named — so that is a conditional section at the end of the same file. The
+ * batch path sends the same rule and lets that section apply.
+ *
+ * This constant is only the fallback for when no prompt layer resolves at all, so that a
+ * missing file degrades to a terse hand-over rather than a silent one.
  */
 export const LEAD_IN_FALLBACK =
-  "_opencode-retro: is this already resolved in this workspace as it is now? If so, say so " +
-  "and record it as accepted. Otherwise relay the proposal below and change nothing until " +
-  "the human has decided, then record it with `retro_decide`._"
-
-export const AUTO_LEAD_IN_FALLBACK =
-  "_opencode-retro: for each lesson below, is it already resolved in this workspace as it is " +
-  "now? Come back with one plan covering the ones that still stand. Change nothing until the " +
-  "human approves it, then record each with `retro_decide`._"
+  "_opencode-retro: is each lesson below already resolved in this workspace as it is now? " +
+  "If so, say so and record it as accepted. Otherwise relay what still stands and change " +
+  "nothing until the human has decided, then record it with `retro_decide`._"
 
 /** Wraps a prompt body as the italic aside the agent reads first. */
-export const asLeadIn = (text, fallback) => {
+export const asLeadIn = (text, fallback = LEAD_IN_FALLBACK) => {
   const body = typeof text === "string" ? text.trim() : ""
   return body ? `_opencode-retro — how to hand this over:_\n\n${body}` : fallback
 }
@@ -103,7 +106,7 @@ export function renderProposal(
   { total = 0, remaining = 0, currency = null, sessions = null, halfLife, leadIn = null, queued = 0 } = {},
 ) {
   const lines = [
-    asLeadIn(leadIn, LEAD_IN_FALLBACK),
+    asLeadIn(leadIn),
     "",
     `# retro — \`${lesson.id}\``,
     "",
@@ -232,79 +235,6 @@ export function renderNothing({ queued = 0, extracted = null } = {}) {
     "`.retro/selfcheck.md` says whether the plugin is actually watching.",
   )
   return lines.join("\n")
-}
-
-/** The decision tool's schema. Bookkeeping only — it never edits the harness. */
-export const DECIDE_INPUT = {
-  type: "object",
-  properties: {
-    id: { type: "string", description: "The lesson id, as shown in the proposal." },
-    status: {
-      type: "string",
-      enum: ["accepted", "rejected", "later"],
-      description:
-        "accepted: the change was made, or the problem turned out to be already settled. " +
-        "rejected: it is wrong for this project, do not propose it again. " +
-        "later: keep it open, ask another time.",
-    },
-    note: { type: "string", description: "Why this was decided, in a line or two." },
-    changed: {
-      type: "array",
-      items: { type: "string" },
-      description:
-        "Files actually changed, if any. Often not what the proposal named — record what was " +
-        "really done, not what was suggested.",
-    },
-    discovered: {
-      type: "string",
-      description:
-        "Anything that came out while doing it and is not in the lesson: a consequence the " +
-        "proposal missed, a second place that needs the same fix, a reason the obvious fix " +
-        "was wrong. This is the part that only exists because the work happened.",
-    },
-  },
-  required: ["id", "status"],
-  additionalProperties: false,
-}
-
-export function decide({ id, status, note, changed, discovered }, { store, state }) {
-  const lesson = store.list().find((l) => l.id === id)
-
-  if (!lesson) {
-    // Idempotent on purpose. A decided lesson has moved to the archive, and a second call
-    // used to answer "no lesson", which reads as a failure: in a live session that sent the
-    // agent hunting the filesystem for a tool it already had, and calling it twice more.
-    const closed = store.listArchive().find((l) => l.id === id)
-    if (closed) {
-      return { ok: true, already: true, detail: `\`${id}\` was already recorded as ${closed.status}` }
-    }
-    return {
-      ok: false,
-      detail: `no lesson \`${id}\` is open or archived. Open lessons: ${
-        store.list().map((l) => l.id).join(", ") || "none"
-      }`,
-    }
-  }
-
-  // A rejection has to outlive the lesson file, or the extractor proposes it again.
-  if (status === "rejected") state.reject(id, note)
-
-  const outcome = {
-    note: note ?? lesson.note,
-    ...(changed?.length ? { changed } : {}),
-    ...(discovered ? { discovered } : {}),
-  }
-
-  if (status === "later") {
-    store.write({ ...lesson, status, ...outcome })
-    return { ok: true, detail: `\`${id}\` kept for later` }
-  }
-
-  // Decided means closed: `lessons/` holds open questions, and nothing is deleted — a
-  // closed lesson moves to `archive/`, where recurrence will find it if it comes back.
-  const closed = store.close(id, status, outcome)
-  if (!closed) return { ok: false, detail: `\`${id}\` could not be closed` }
-  return { ok: true, detail: `\`${id}\` is ${status} and moved to archive/` }
 }
 
 const round = (n) => (Number.isInteger(n) ? n : Number(n.toFixed(1)))

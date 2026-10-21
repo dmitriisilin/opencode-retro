@@ -1,6 +1,6 @@
 ---
 prompt: propose
-base: 6
+base: 7
 ---
 
 A lesson from an earlier session in this project is about to be handed to the human. You
@@ -89,3 +89,23 @@ Record what actually happened, not what was proposed:
 Do this as the last step, before you move on. It is the only part of the review the plugin
 cannot do for itself: if the decision is not recorded, the same lesson is proposed again
 next time, as if nothing had been done.
+
+## If several lessons are listed, not one
+
+Everything above applies to each of them. What changes is only the shape of the answer: the
+human wants one plan, not a conversation per lesson.
+
+- Answer the currency question for each, and carry only the ones that still stand. A lesson
+  that is simply done gets said so and recorded as accepted now, not carried into the plan.
+- Give the order you would do them in, and group anything touching the same file together,
+  so it is one edit and not three.
+- Name the ones you dropped, one line each on why.
+- List the global ones separately. They affect every other project, so they need approval of
+  their own.
+- Call out anything that needs a decision only the human can make. Do not guess at those.
+- If two lessons disagree with each other, say so rather than quietly picking one.
+- Keep it short enough to read in one go.
+
+Change nothing until the plan is approved. Then work through it and record each lesson as you
+go, rather than all at the end, so an interrupted run does not lose what was already
+settled.

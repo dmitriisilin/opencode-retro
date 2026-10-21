@@ -18,7 +18,7 @@ export const DEFAULTS = {
   /** Give up on a silent model call rather than wedging the queue behind it. */
   extractTimeoutMs: 90_000,
   /** Lessons carried by one `/retro all`. Beyond this a plan stops being a plan. */
-  autoLimit: 10,
+  proposeLimit: 10,
   /**
    * Logs analysed by one `/retro`. Unlimited by default: leaving a backlog half-analysed
    * only moves the work, it does not avoid it. Set a number to cap one command's spend.
@@ -57,7 +57,7 @@ export function resolveConfig(ctx) {
     halfLife: options.halfLife ?? DEFAULTS.halfLife,
     keepSessions: options.keepSessions ?? DEFAULTS.keepSessions,
     extractTimeoutMs: options.extractTimeoutMs ?? DEFAULTS.extractTimeoutMs,
-    autoLimit: options.autoLimit ?? DEFAULTS.autoLimit,
+    proposeLimit: options.proposeLimit ?? DEFAULTS.proposeLimit,
     extractLimit: options.extractLimit ?? DEFAULTS.extractLimit,
     autoExtract: options.autoExtract ?? DEFAULTS.autoExtract,
   }

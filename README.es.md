@@ -1,4 +1,4 @@
-<!-- translated-from: README.md@456f881c6ae4 -->
+<!-- translated-from: README.md@37c60cb0a488 -->
 # opencode-retro
 
 [English](README.md) | [Русский](README.ru.md) | [简体中文](README.zh-CN.md) | **Español** | [日本語](README.ja.md)
@@ -76,7 +76,7 @@ El plugin lee el log. La persona lee propuestas. El plugin se detiene en la prop
 | Comando | Qué hace |
 |---|---|
 | `/retro` | Analiza lo acumulado y entrega después una lección: la de mayor puntuación aún sin decidir. |
-| `/retro all` (o `/retro-all`) | El mismo análisis y después las lecciones pendientes como un único plan, hasta `autoLimit` (diez por omisión), para aprobarlo de una pasada. |
+| `/retro all` (o `/retro-all`) | El mismo análisis y después las lecciones pendientes como un único plan, hasta `proposeLimit` (diez por omisión), para aprobarlo de una pasada. |
 
 No hay un tercer comando. Si el plugin funciona se informa en `.retro/selfcheck.md`, reescrito desde el primer prompt de cada sesión y de nuevo cuando termina.
 
@@ -100,7 +100,7 @@ Requiere una decisión
 
 La decisión corresponde a la persona y al agente de esa sesión. El agente tiene los archivos, el historial y las skills propias del proyecto, lo que lo convierte en mejor juez de si una lección sigue aplicándose que el plugin. Una vez tomada la decisión, el agente la registra mediante una herramienta `retro_decide`. Esa herramienta solo lleva la contabilidad: un rechazo se recuerda y la lección no se vuelve a proponer.
 
-`/retro all` es la misma entrega para todo a la vez. Las lecciones pendientes se ordenan y se entregan juntas, hasta `autoLimit`; el agente comprueba cuáles siguen en pie y reúne el resto en un único plan agrupado por archivo, que se aprueba una sola vez.
+`/retro all` es la misma entrega para todo a la vez. Las lecciones pendientes se ordenan y se entregan juntas, hasta `proposeLimit`; el agente comprueba cuáles siguen en pie y reúne el resto en un único plan agrupado por archivo, que se aprueba una sola vez.
 
 ### Dónde corresponde el arreglo
 
@@ -187,7 +187,7 @@ Todo lo demás es opcional:
 - `dir` — dónde vive todo, por omisión `.retro`.
 - `prompts` — el directorio de prompts, por omisión `prompts` dentro de él.
 - `halfLife` — sesiones sin recurrencia antes de que la puntuación de una lección se reduzca a la mitad, por omisión diez.
-- `autoLimit` — lecciones en un `/retro all`, por omisión diez.
+- `proposeLimit` — lecciones en un `/retro all`, por omisión diez.
 - `extractLimit` — logs que analiza un `/retro`, sin límite por omisión.
 - `maxOutput` — caracteres de salida de herramienta que se guardan en el log paralelo por paso, por omisión 8000.
 - `extractTimeoutMs` — cuánto puede tardar un análisis antes de abandonarlo, por omisión 90000.
@@ -203,8 +203,7 @@ Todo lo que el plugin escribe se queda bajo `.retro/` dentro del proyecto, y en 
 .retro/
   prompts/
     extract.md       qué cuenta como lección
-    propose.md        cómo se entrega una lección
-    propose-all.md   cómo un lote se convierte en un plan
+    propose.md       cómo se entrega una lección, una o todas
     updates/         valores por omisión más nuevos, sin usar
   sessions/          logs en bruto, se conservan mientras una lección abierta los cite
   lessons/           cuestiones abiertas
@@ -223,7 +222,7 @@ La separación es el diseño, no una comodidad. Las lecciones y el archivo son c
 
 ### Prompts
 
-Tres prompts determinan lo que hace el plugin, y los tres son archivos dentro del proyecto: qué cuenta como lección, cómo se entrega una lección y cómo un lote de lecciones se convierte en un plan.
+Dos prompts determinan lo que hace el plugin, y ambos son archivos dentro del proyecto: qué cuenta como lección y cómo se entrega una lección. El segundo cubre también un lote: `/retro all` envía la misma regla, cuya última sección dice qué cambia cuando llegan varias lecciones a la vez — un plan, agrupado por archivo, las descartadas nombradas. Una regla, no una por comando, para que editarla no deje una segunda copia que la contradiga.
 
 Cada uno se siembra desde el valor por omisión del paquete en la primera ejecución y no se vuelve a escribir. La resolución va primero por el proyecto, después por `~/.config/opencode/retro/prompts/` y por último por el valor del paquete, de modo que un prompt puede fijarse para un proyecto, para todos o para ninguno.
 

@@ -24,7 +24,7 @@ Motivating example: a project carries a `lint` skill borrowed from another harne
 10. **Lessons are always local to the workspace. There is no such thing as a global lesson.** A lesson is evidence from sessions in one project, so it lives in that project and nowhere else — this is by design, not a stage we grow out of. What *can* be global is the **target of the proposed change**: some friction is about this repository (a skill that does not fit it, an `AGENTS.md` claim that is not true here), and some is about how the person works everywhere (how they deal with Jira, how they want branches named, a convention they carry between projects). The first belongs in the project's harness, the second in the user's global harness — `~/.config/opencode/AGENTS.md`, a global skill. Choosing between them is an integration decision, made when a lesson is handed over, by the agent and the human looking at what the lesson actually says. Not a storage question, and not something the plugin decides. *Replaces an earlier version of this decision that had lessons themselves being promoted to global scope after recurring in ≥2 workspaces. That model was wrong: it would have required a global lesson store, a cross-workspace index and a way to match the same problem across repositories, all to answer a question that belongs to the proposal rather than to the lesson.*
 11. **Autonomy ladder L0–L3.** v1 target is L1, and `/retro all` is the step that makes the rest reachable: the same lessons, the same currency checks, the same `retro_decide` bookkeeping, but batched into one plan a human approves once instead of a decision per lesson. The ladder from here is about how much of that plan runs without being asked, not about new machinery. Promotion between levels is to be driven by accept/reject stats, later.
 12. **Not a memory plugin.** We edit artifacts the harness already reads; we don't build a knowledge base the agent must remember to query.
-13. **The prompts live in the user's project, not in the package.** Three of them, in `.retro/prompts/`: `extract.md` (what counts as a lesson), `propose.md` and `propose-all.md` (what the agent treats as its job when a lesson is handed over — check currency, relay, touch nothing before a decision, record the outcome). The package ships defaults; on first run each missing one is copied in. Resolution order: project → global (`~/.config/opencode/retro/prompts/`) → packaged default → a terse built-in fallback, so a deleted file degrades rather than going silent. `options` can override the directory and the extractor model. *Narrowed in M3 to one prompt on the reasoning that there was no application step to drive, then restored: the hand-over texts do not drive the application, but they do decide what the agent considers its job, which is exactly the semantics worth iterating on in practice.* *Named `review.md` and `review-auto.md` until the owner pointed out that "review" says nothing: the file decides how a lesson is put to a human, and the plugin stops there, so `propose` is what it does — a verb, in a pair with `extract`. `-all` also matches the command, where `-auto` was left over from a `/retro auto` that no longer exists. Nothing is published yet, so there is no migration: a file still sitting under the old name is simply never read, since resolution is by name.*
+13. **The prompts live in the user's project, not in the package.** Two of them, in `.retro/prompts/`: `extract.md` (what counts as a lesson) and `propose.md` (what the agent treats as its job when a lesson is handed over — check currency, relay, touch nothing before a decision, record the outcome). The package ships defaults; on first run each missing one is copied in. Resolution order: project → global (`~/.config/opencode/retro/prompts/`) → packaged default → a terse built-in fallback, so a deleted file degrades rather than going silent. `options` can override the directory and the extractor model. *Narrowed in M3 to one prompt on the reasoning that there was no application step to drive, then restored: the hand-over texts do not drive the application, but they do decide what the agent considers its job, which is exactly the semantics worth iterating on in practice.* *Named `review.md` and `review-auto.md` until the owner pointed out that "review" says nothing: the file decides how a lesson is put to a human, and the plugin stops there, so `propose` is what it does — a verb, in a pair with `extract`.* **And there is one rule, not one per command.** `propose-all.md` was the same judgement rewritten shorter — currency, where the fix belongs, local or global, change nothing before a decision, record the outcome — which is two copies of one rule: one the user edits, and one that silently disagrees with it. What a batch actually needs from the rule is nothing, and what it adds is only the shape of the answer (one plan, grouped by file, the dropped ones named, globals separately), so that is a conditional section at the end of the same file. Both commands send the same rule. The alternative — putting the batch shape in source, next to the output contract — was rejected because it is judgement, and judgement belongs in a file the user can argue with. Nothing is published yet, so there is no migration: resolution is by name, and a file left under an old name is simply never read.*
 14. **The prompts are editable; the machine parts are compiled in.** The project files are entirely the user's — criteria, emphasis, project-specific wording. The output format the parser needs lives in the plugin's source and is wrapped around the prompt at call time. It is never written to disk, so it cannot be edited away by accident, and the prompt file has no "do not touch" region in it. `/retro check` prints the contract for anyone who wants to see it.
 15. **New defaults arrive as news, never as changes.** One live file per prompt, seeded from our default, carrying `base` (the default's version) in frontmatter. We never write to it again — not even when the user has not touched it. A newer default lands in `.retro/prompts/updates/extract.v3.md`, headed by a statement that *this file is not used*, that the live file is what runs, and that if they have their own version they should keep it and consider adapting it to what changed. Named in `selfcheck.md` so it is not just a file in a directory nobody opens. Updates accumulate like release notes; deleting them is the user's call. Rejected alternative: shipping a default file plus a user override file. It forces the user to know what the default said before they can write a meaningful override, makes partial overrides ambiguous, and gives two sources of truth for one prompt.
 15.1. **The decision is the third artifact, and it records the work, not the proposal.** Raw log, lesson, decision — and the decision is where `retro_decide` writes what actually happened: `status`, `note`, the files really changed (`changed`, often not the ones the lesson named), and `discovered`, anything the work turned up that is not in the lesson. That last field exists because the review produces knowledge the log never contained — in one live run the agent found that deleting a skill would leave an `AGENTS.md` line pointing at nothing, which was in neither the lesson nor the proposal. Without recording it, that disappears when the session ends, and the accept/reject record that decision 11 wants autonomy to be earned from is too thin to learn from.
@@ -40,8 +40,7 @@ Motivating example: a project carries a `lint` skill borrowed from another harne
 .retro/
 ├── prompts/
 │   ├── extract.md            # log → lessons        (user-editable, decision 13)
-│   ├── propose.md            # one lesson → hand-over
-│   └── propose-all.md        # every lesson → one plan
+│   └── propose.md            # lesson → hand-over, one or many
 ├── sessions/<sessionID>.jsonl # shadow log, one event per line
 ├── lessons/<lessonID>.md      # YAML frontmatter + body, one per lesson
 ├── archive/                   # evicted lessons
@@ -288,16 +287,15 @@ plugin needed — and it gets the `sessionID`, so it can drive the review conver
 
 ## Customisation: the prompts
 
-Decisions 13–15. Everything this plugin decides semantically, it decides in three prompts,
-so all three are files in the user's project. What stays in source is the machinery around
+Decisions 13–15. Everything this plugin decides semantically, it decides in two prompts,
+so both are files in the user's project. What stays in source is the machinery around
 them: the output contract the parser needs, the order of a lesson's fields, the
 `retro_decide` instruction, the recorded-date hint.
 
 | File | Reads | Writes | Owns the question |
 |---|---|---|---|
 | `.retro/prompts/extract.md` | projection of the shadow log + existing lessons + rejected ids | lessons | *If this session ran again, what should change so it goes shorter and straighter?* |
-| `.retro/prompts/propose.md` | one lesson, handed to the agent in the user's session | a hand-over | *Is this still true, and how do I put it to the human?* |
-| `.retro/prompts/propose-all.md` | every waiting lesson | one plan | *Which of these still stand, and in what order?* |
+| `.retro/prompts/propose.md` | one lesson, or every waiting one, handed to the agent in the user's session | a hand-over, or one plan | *Is this still true, and how do I put it to the human?* |
 
 Resolution per prompt, first hit wins:
 
@@ -330,7 +328,6 @@ file.
 .retro/prompts/
 ├── extract.md                  # live. the only files the plugin reads
 ├── propose.md
-├── propose-all.md
 └── updates/
     └── extract.v3.md           # a newer default, for you to read. nothing was changed.
 ```
@@ -684,13 +681,13 @@ understood is just a diagnostic that was written badly.
 
 **M3 — `/retro` (L1) — done** (92 tests; both commands verified live)
 - [x] `/retro` via `cmds.add({ execute })`: drains the extraction queue, then delivers the
-      top undecided lesson with `ctx.session.synthetic({ resume: true })` (`src/review.js`).
+      top undecided lesson with `ctx.session.synthetic({ resume: true })` (`src/propose.js`).
 - [x] `retro_decide` tool — plain JSON Schema input, no dependency. Bookkeeping only;
       a rejection also lands in `state.json` so the extractor stops proposing it.
 - [x] `/retro check` — the active self-check (`activeCheck` in `src/selfcheck.js`), including
       the contract round trip that M2 deferred to here.
-- [x] `prompts/propose.md` and `prompts/propose-all.md`. There is still no `apply.md` — nothing
-      drives the application itself — but the hand-over texts were hardcoded in `src/review.js`,
+- [x] `prompts/propose.md`. There is still no `apply.md` — nothing
+      drives the application itself — but the hand-over text was hardcoded in `src/propose.js`,
       which put the semantics of "what is your job when a lesson arrives" out of the user's
       reach. Now seeded and resolved like `extract.md`.
 - Dropped: end-of-review summary + `git diff`. One invocation shows one lesson, and the
@@ -780,6 +777,12 @@ Shipping with these known, listed so nobody discovers them as surprises:
   inside the one directory this plugin owns, and the user never edits theirs. Ignored:
   sessions, state, the self-check, the plugin log, prompt update notices. Not ignored:
   `lessons/`, `archive/` and the prompts — the product and the configuration.
+- **One vocabulary, three verbs: extract → propose → decide.** The three artifacts are a raw
+  log, a lesson and a decision, and each step is named the same way everywhere: `src/extract.js`,
+  `src/propose.js`, `src/decide.js`, with `test/<verb>.test.js` beside each, and `prompts/extract.md`
+  and `prompts/propose.md` for the two the user owns. `review` was the old word for the middle
+  step — it named nothing, since the step is putting a lesson to a human and the plugin stops
+  there. If it reappears anywhere, it is drift.
 - **README.md says what the tool is and does, and nothing else.** No roadmap, no levels, no
   plans, no "what this is not", no account of what was tried or measured. Those belong here,
   in this brief. The README describes implemented behaviour, states when and with which model
