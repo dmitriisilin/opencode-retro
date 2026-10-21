@@ -1707,6 +1707,65 @@ test("the hand-over the plugin delivers is in the session's own log", async () =
   assert.equal(log.some((r) => r.k === "prompt"), false, "without pretending the user typed it")
 })
 
+test("a review session driven by a hand-over is not reported as a dead prompt hook", async () => {
+  // Live: `/retro` delivered into a session that had never seen a prompt, the agent there
+  // started working, and selfcheck.md said BROKEN prompt hook / "renamed upstream" — about a
+  // working hook, in the session the plugin had just started. The hand-over is delivered by
+  // `session.synthetic`, which does not fire the prompt hook (Gotcha 12), so it proves
+  // nothing; saying so is not the same as saying the hook is dead.
+  const directory = sandbox()
+  const fake = fakeOpenCode({ directory, options: { model: MODEL } })
+  const cleanup = await plugin.setup(fake.ctx)
+
+  await fake.commands.get("retro").execute({ sessionID: "ses_reviewer", prompt: { text: "" } })
+
+  // The agent in that session starts working, which is what re-evaluates the report.
+  await fake.hooks.get("tool.execute.before")({ sessionID: "ses_reviewer", id: "c1", tool: "read", input: { path: "a.js" } })
+  await fake.hooks.get("tool.execute.after")({
+    sessionID: "ses_reviewer",
+    id: "c1",
+    tool: "read",
+    status: "completed",
+    result: { output: { output: "x" } },
+  })
+
+  const report = readFileSync(join(directory, ".retro", "selfcheck.md"), "utf8")
+  assert.doesNotMatch(report, /BROKEN\s+prompt hook/, "a working hook must not be called dead")
+  assert.match(report, /not exercised\s+prompt hook\s+this session was started by a `\/retro` hand-over/)
+
+  await cleanup?.()
+})
+
+test("a running session with calls still in flight is not reported as a broken tool hook", async () => {
+  // Parallel tool calls mean events can arrive before their `after` hooks. Live: two events
+  // and one hook call for a moment, and the file said BROKEN "the plugin needs an update".
+  // The comparison only settles when the session does.
+  const directory = sandbox()
+  // heartbeatMs 0 so the report is re-evaluated on the tool hook rather than throttled.
+  const fake = fakeOpenCode({ directory, options: { model: MODEL, heartbeatMs: 0 } })
+  const cleanup = await plugin.setup(fake.ctx)
+
+  await fake.hooks.get("session.prompt")({ sessionID: "ses_live", prompt: { text: "go" } })
+  fake.emit({ type: "session.tool.called", durable: { seq: 1 }, data: { sessionID: "ses_live", id: "c1" } })
+  fake.emit({ type: "session.tool.called", durable: { seq: 2 }, data: { sessionID: "ses_live", id: "c2" } })
+  await tick()
+
+  await fake.hooks.get("tool.execute.before")({ sessionID: "ses_live", id: "c1", tool: "read", input: { path: "a.js" } })
+  await fake.hooks.get("tool.execute.after")({
+    sessionID: "ses_live",
+    id: "c1",
+    tool: "read",
+    status: "completed",
+    result: { output: { output: "x" } },
+  })
+
+  const report = readFileSync(join(directory, ".retro", "selfcheck.md"), "utf8")
+  assert.doesNotMatch(report, /BROKEN\s+tool hook/)
+  assert.match(report, /not exercised\s+tool hook\s+2 tool-call events \/ 1 hook calls so far/)
+
+  await cleanup?.()
+})
+
 test("a two-turn session is one session with two executions", () => {
   // The fixture that settles what an execution is, saved from a real run rather than argued
   // about: `opencode run -s <id>` twice, one log, two start/end pairs. The liveness rules read

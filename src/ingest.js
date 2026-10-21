@@ -41,7 +41,7 @@ export function createIngest({
         n: startAt(id) ?? 0,
         pending: new Map(),
         seq: new Map(),
-        counts: { prompts: 0, toolHook: 0, toolEvents: 0, steps: 0, texts: 0, records: 0 },
+        counts: { prompts: 0, handovers: 0, toolHook: 0, toolEvents: 0, steps: 0, texts: 0, records: 0 },
       }
       sessions.set(id, s)
     }
@@ -178,6 +178,10 @@ export function createIngest({
     handover(sessionID, text) {
       const s = session(owner(sessionID))
       s.owned = true
+      // Counted because a hand-over is the only input some sessions ever get. The self-check
+      // reads `prompts` to decide whether the prompt hook worked, and a `/retro` review
+      // session has none — see `assess`, which must not call that a dead hook.
+      s.counts.handovers++
       append(sessionID, { k: "handover", text: text ?? "" })
     },
 

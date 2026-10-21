@@ -74,12 +74,25 @@ export function assess(session) {
   checks.push(
     c.prompts > 0
       ? { status: OK, name: "prompt hook", detail: `${c.prompts} prompt${c.prompts === 1 ? "" : "s"} seen` }
-      : {
-          status: BROKEN,
-          name: "prompt hook",
-          detail: "a session ran but no session.prompt arrived",
-          meaning: "the prompt hook is registered but dead — most likely renamed upstream.",
-        },
+      : c.handovers > 0
+        ? {
+            status: SKIPPED,
+            name: "prompt hook",
+            // Measured: `/retro` delivers its hand-over through `session.synthetic`, which
+            // does not fire the prompt hook (AGENTS.md Gotcha 12). A session whose only
+            // input arrived that way was reported BROKEN — about a hook that was working,
+            // in the very session the plugin had just started. It proves nothing either way.
+            detail: "this session was started by a `/retro` hand-over, not a prompt",
+            meaning:
+              "a hand-over is delivered by the plugin itself and does not fire the prompt " +
+              "hook, so nothing is proved here; the next session you type in will.",
+          }
+        : {
+            status: BROKEN,
+            name: "prompt hook",
+            detail: "a session ran but no session.prompt arrived",
+            meaning: "the prompt hook is registered but dead — most likely renamed upstream.",
+          },
   )
 
   if (!c.toolEvents) {
@@ -94,6 +107,20 @@ export function assess(session) {
     })
   } else if (c.toolHook >= c.toolEvents) {
     checks.push({ status: OK, name: "tool hook", detail: `${c.toolEvents} tool-call events / ${c.toolHook} hook calls` })
+  } else if (session.ended === false) {
+    // Tool calls run in parallel and their `after` hooks arrive in whatever order they
+    // finish, so the event stream can legitimately be ahead of the hooks while calls are
+    // in flight. Measured live: two events and one hook call for a moment, reported as
+    // BROKEN — "the plugin needs an update" — in a healthy session. A shortfall is not
+    // evidence until the session is over; the verdict is written then.
+    checks.push({
+      status: SKIPPED,
+      name: "tool hook",
+      detail: `${c.toolEvents} tool-call events / ${c.toolHook} hook calls so far`,
+      meaning:
+        "the difference is calls that have not finished yet; the verdict is written when " +
+        "the session ends.",
+    })
   } else {
     checks.push({
       status: BROKEN,
@@ -194,8 +221,8 @@ export function render(state) {
     "",
     "**If you are working right now and `heartbeat` is more than a few minutes old, this",
     "plugin is not running.** Nothing else will tell you — OpenCode does not report a plugin",
-    "that failed to load. Check that `opencode.json` points at an absolute path, then run",
-    "`/retro`.",
+    "that failed to load. Check that `opencode.json` still names the plugin — an absolute",
+    "path if you run a checkout — then run `/retro`.",
     "",
     "## Is it working",
     "",

@@ -643,8 +643,8 @@ Evaluated from the first prompt of a session and again when it ends, written int
 
 | Check | Assertion | What a failure means |
 |---|---|---|
-| prompt hook | a session that ran at all produced ≥1 `session.prompt` | the prompt hook is dead |
-| tool hook | `session.tool.called` events seen ⇒ equally many `tool.execute.after` with matching `id` | the tool hook is dead, or the payload shape moved |
+| prompt hook | a session that ran at all produced ≥1 `session.prompt` — a session whose only input was a `/retro` hand-over proves nothing, because `session.synthetic` does not fire this hook | the prompt hook is dead |
+| tool hook | once the session has ended, `session.tool.called` events seen ⇒ equally many `tool.execute.after` with matching `id`; while it runs, a shortfall is just calls still in flight | the tool hook is dead, or the payload shape moved |
 | shadow log | the session's `.jsonl` exists and is non-empty | writing is broken (permissions, path) |
 | trigger | the end-of-session event arrived | our extraction trigger is gone |
 | extraction | ran, and produced either lessons or an explicit "nothing to learn" | the model call or the output contract broke |
@@ -692,7 +692,8 @@ verified   2026-10-19 20:31   (when the checks below were last evaluated)
 
 **If you are working right now and `heartbeat` is more than a few minutes old, this plugin
 is not running.** Nothing else will tell you: OpenCode does not report a plugin that failed
-to load. Check that `opencode.json` points at an absolute path, then run `/retro`.
+to load. Check that `opencode.json` still names the plugin — an absolute path if you run a
+checkout — then run `/retro`.
 
 ## Last session — ses_eabb21faaffeVlcHi1DAhqgq1p
 

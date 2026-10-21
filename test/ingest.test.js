@@ -308,10 +308,21 @@ test("counts are the self-check's evidence, and forgetting a session clears them
   ingest.event({ type: "session.tool.called", durable: { seq: 2 }, data: { sessionID: "s", id: "c1" } })
   ingest.event({ type: "session.text.ended", durable: { seq: 3 }, data: { sessionID: "s", text: "hi" } })
 
-  assert.deepEqual(ingest.counts("s"), { prompts: 1, toolHook: 1, toolEvents: 1, steps: 0, texts: 1, records: 3 })
+  assert.deepEqual(ingest.counts("s"), { prompts: 1, handovers: 0, toolHook: 1, toolEvents: 1, steps: 0, texts: 1, records: 3 })
   assert.deepEqual(ingest.sessions(), ["s"])
   ingest.forget("s")
   assert.deepEqual(ingest.sessions(), [])
+})
+
+test("a hand-over is counted, because it is the only input some sessions get", () => {
+  // `/retro` delivers its message through `session.synthetic`, which does not fire the
+  // prompt hook. The self-check reads the prompt count to decide whether that hook works,
+  // so a review session with no prompt used to be reported BROKEN — about a working hook,
+  // in the session the plugin had just started.
+  const { ingest } = collector()
+  ingest.handover("s", "a lesson")
+  assert.equal(ingest.counts("s").handovers, 1)
+  assert.equal(ingest.counts("s").prompts, 0)
 })
 
 test("a paired call with no input of its own takes the one the before hook recorded", () => {

@@ -56,6 +56,37 @@ test("no tool calls proves nothing and must not claim to", () => {
   assert.equal(status(checks, "tool hook"), STATUS.SKIPPED)
 })
 
+test("a hand-over with no prompt is not evidence that the prompt hook is dead", () => {
+  // Live: `/retro` delivers into a fresh session through `session.synthetic`, which does
+  // not fire the prompt hook. The report said BROKEN prompt hook / "renamed upstream" about
+  // a working hook, in the session the plugin had just created. A hand-over proves nothing.
+  const checks = assess({ ...healthy, counts: { ...healthy.counts, prompts: 0, handovers: 1 } })
+  const prompt = checks.find((c) => c.name === "prompt hook")
+  assert.equal(prompt.status, STATUS.SKIPPED)
+  assert.match(prompt.detail, /hand-over/)
+  assert.doesNotMatch(prompt.detail, /no session\.prompt arrived/)
+})
+
+test("a prompt still proves the prompt hook, hand-over or not", () => {
+  const checks = assess({ ...healthy, counts: { ...healthy.counts, prompts: 1, handovers: 1 } })
+  assert.equal(status(checks, "prompt hook"), STATUS.OK)
+})
+
+test("a running session's tool calls may still be in flight, and that is not BROKEN", () => {
+  // Tool calls run in parallel; their events can arrive before their `after` hooks. Measured
+  // live: 2 events / 1 hook call, reported as BROKEN with "the plugin needs an update" while
+  // the session was healthy. Only the end of the session settles the comparison.
+  const running = assess({ ...healthy, ended: false, counts: { ...healthy.counts, toolHook: 1, toolEvents: 2 } })
+  const tool = running.find((c) => c.name === "tool hook")
+  assert.equal(tool.status, STATUS.SKIPPED)
+  assert.match(tool.detail, /2 tool-call events \/ 1 hook calls so far/)
+  assert.match(tool.meaning, /not finished yet/)
+
+  // Once it ends, the same shortfall is the real drift signature.
+  const ended = assess({ ...healthy, counts: { ...healthy.counts, toolHook: 1, toolEvents: 2 } })
+  assert.equal(status(ended, "tool hook"), STATUS.BROKEN)
+})
+
 test("a missing log and a missing trigger are each BROKEN", () => {
   assert.equal(status(assess({ ...healthy, log: { exists: false, size: 0 } }), "shadow log"), STATUS.BROKEN)
   assert.equal(status(assess({ ...healthy, triggered: null }), "trigger"), STATUS.BROKEN)
@@ -115,7 +146,8 @@ test("the rendered file carries its own cadence, threshold and remedy", () => {
   assert.match(text, /loaded\s+\d{4}-\d{2}-\d{2}/)
   assert.match(text, /heartbeat .*at most once a minute/)
   assert.match(text, /this\n?plugin is not running/, "the staleness rule must be in the file itself")
-  assert.match(text, /absolute path/, "and so must the first thing to check")
+  assert.match(text, /absolute\s+path/, "an absolute path is the checkout remedy")
+  assert.match(text, /still names the plugin/, "and a package install has a remedy too, not only a checkout")
   assert.match(text, /## Notes/)
   assert.match(text, /extract\.v3\.md/)
 })
