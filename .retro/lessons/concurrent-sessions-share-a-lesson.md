@@ -4,15 +4,17 @@ statement: A lesson stays "undecided" while it is being reviewed, so /retro can 
 evidence:
   - session: ses_ea2ab02f8ffeNFJ5mN3ttZfJcr
     steps: [1, 9]
-cost: 12
-recurrence: 1
+  - session: ses_ea28d6c8fffeZDDJFiEiAISzWg
+    steps: [50, 57]
+cost: 18
+recurrence: 2
 confidence: 0.55
 proposal:
   target: prompts/propose.md
   change: "Add a step 0 to the hand-over rule: before anything else, run `git status`. If files you did not touch are modified, or a commit you did not make appears while you work, another session is on this checkout or this lesson — name it, stop, and ask the human instead of editing or re-verifying."
 ask: "Is a prompt-level check enough, or should the plugin record `proposed: { session, at }` in the lesson frontmatter and refuse to hand the same lesson to a second session while that marker is fresh? The second is the real fix but it is code, and the prompt is a one-paragraph edit."
 status: new
-lastSeen: 16
+lastSeen: 21
 recordedAt: 2026-10-21T07:46:59.310Z
 targetFingerprint: cd040389a2c67e2c
 ---
