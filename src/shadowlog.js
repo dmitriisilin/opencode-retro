@@ -1,4 +1,4 @@
-import { appendFileSync, mkdirSync, readdirSync, rmSync, statSync } from "node:fs"
+import { appendFileSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs"
 import { join } from "node:path"
 
 /**
@@ -32,6 +32,15 @@ export function createShadowLog({ dir, onError }) {
       } catch (err) {
         onError?.("shadowlog.write", err)
         return false
+      }
+    },
+
+    /** Records already written for a session, for when a log has to be absorbed. */
+    read(sessionID) {
+      try {
+        return parseShadowLog(readFileSync(join(dir, `${sessionID}.jsonl`), "utf8"))
+      } catch {
+        return []
       }
     },
 

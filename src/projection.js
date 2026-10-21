@@ -54,6 +54,10 @@ function describeCall(r) {
       return `edit: ${input.path ?? ""}`
     case "glob":
       return `glob: ${input.pattern ?? ""}`
+    // The delegation's own instruction. It used to fall to the default case and be cut at
+    // 200 characters, which removed the one thing that explains what the subagent was for.
+    case "subagent":
+      return `delegated to ${input.agent ?? "a subagent"}: ${input.description ?? ""}`
     default:
       return `${r.tool}: ${compact(input)}`
   }
@@ -68,6 +72,9 @@ function describeResult(r, maxToolOutput) {
   if (r.status === "unfinished") {
     out.push("-> never finished (session ended first)")
     return out
+  }
+  if (r.tool === "subagent" && r.input?.prompt) {
+    out.push("asked:", indent(clamp(String(r.input.prompt).trim(), 800).text))
   }
   if (typeof r.exit === "number" && r.exit !== 0) out.push(`-> exit ${r.exit}`)
   for (const f of r.files ?? []) out.push(`-> ${f.status} ${f.file} (+${f.additions ?? 0}/-${f.deletions ?? 0})`)

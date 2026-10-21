@@ -50,6 +50,19 @@ export function createIngest({ emit, maxOutput, now = () => Date.now(), parentOf
   }
 
   return {
+    /**
+     * Records written for a session before it was known to have a parent.
+     *
+     * A subagent's own instruction arrives through `session.prompt` before
+     * `session.created` reaches the event stream, so it lands under the child's id and is
+     * lost from the task it belongs to. Re-appending renumbers it into the parent's
+     * sequence; the caller deletes the orphan log.
+     */
+    absorb(sessionID, records) {
+      for (const { n, t, ...rest } of records) append(sessionID, rest)
+      sessions.delete(sessionID)
+    },
+
     /** Per-session counters, read by the self-check. */
     counts: (sessionID) => session(sessionID).counts,
     sessions: () => [...sessions.keys()],

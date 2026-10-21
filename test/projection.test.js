@@ -38,3 +38,27 @@ test("an unfinished call is shown as unfinished rather than dropped", () => {
   ])
   assert.match(text, /never finished/)
 })
+
+test("a delegation shows which agent, what for, and what it was asked", () => {
+  // This used to fall to the default case and be truncated at 200 characters, cutting off
+  // the instruction — the one thing that says what the subagent was supposed to do.
+  const text = project([
+    {
+      k: "tool",
+      n: 3,
+      tool: "subagent",
+      status: "completed",
+      input: {
+        agent: "explore",
+        description: "Find src/sum.js exports",
+        prompt: "Quick exploration. In the repository at /p, look at src/sum.js and report which functions it exports.",
+      },
+    },
+    { k: "tool", n: 5, tool: "read", agent: "explore", input: { path: "src/sum.js" }, status: "completed" },
+  ])
+
+  assert.match(text, /\[3\] delegated to explore: Find src\/sum\.js exports/)
+  assert.match(text, /asked:/)
+  assert.match(text, /report which functions it exports/, "the instruction survives in full")
+  assert.match(text, /\[5\] read: src\/sum\.js/, "and the subagent's own steps are in the same sequence")
+})

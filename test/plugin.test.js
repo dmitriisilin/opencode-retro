@@ -537,3 +537,44 @@ test("a subagent's work lands in the parent's log, and is not analysed on its ow
   assert.deepEqual(ns, [...ns].sort((a, b) => a - b), "one step sequence, not two interleaved")
   await cleanup?.()
 })
+
+test("the subagent's own instruction is not lost to the race that reveals its parent", async () => {
+  // session.prompt for the child arrives before session.created tells us it has a parent,
+  // so the instruction lands in a log of the child's own. A live run left it there.
+  const directory = sandbox()
+  const parent = "ses_parent"
+  const child = "ses_child"
+  const fake = fakeOpenCode({ directory, options: { model: MODEL } })
+  const cleanup = await plugin.setup(fake.ctx)
+
+  await fake.hooks.get("session.prompt")({ sessionID: parent, messageID: "m1", prompt: { text: "find the exports" } })
+  await fake.hooks.get("session.prompt")({
+    sessionID: child,
+    messageID: "m2",
+    prompt: { text: "You are a subagent spawned by another session.\nLook at src/sum.js." },
+  })
+  assert.ok(existsSync(join(directory, ".retro", "sessions", `${child}.jsonl`)), "it starts out in the wrong place")
+
+  // Then the parent link arrives, by either route.
+  await fake.hooks.get("tool.execute.after")({
+    sessionID: parent,
+    id: "d1",
+    tool: "subagent",
+    input: { agent: "explore", description: "look", prompt: "Look at src/sum.js." },
+    status: "completed",
+    result: { output: { output: "done" }, metadata: { sessionID: child } },
+  })
+
+  assert.ok(!existsSync(join(directory, ".retro", "sessions", `${child}.jsonl`)), "the orphan log is gone")
+  const records = readFileSync(join(directory, ".retro", "sessions", `${parent}.jsonl`), "utf8")
+    .trim()
+    .split("\n")
+    .map((l) => JSON.parse(l))
+
+  const prompts = records.filter((r) => r.k === "prompt")
+  assert.equal(prompts.length, 2, "both instructions are in the parent's log")
+  assert.match(prompts[1].text, /subagent spawned/)
+  const ns = records.map((r) => r.n)
+  assert.deepEqual(ns, [...ns].sort((a, b) => a - b), "renumbered into one sequence")
+  await cleanup?.()
+})

@@ -147,8 +147,9 @@ export default {
 
     await hook("tool", "execute.before", (p) => ingest.toolBefore(p))
     await hook("tool", "execute.after", (p) => {
-      const child = p.tool === "subagent" ? p.result?.metadata?.sessionID : null
-      if (child) parents.set(child, p.sessionID)
+      if (p.tool === "subagent" && p.result?.metadata?.sessionID) {
+        adopt(p.result.metadata.sessionID, p.sessionID)
+      }
       ingest.toolAfter(p)
       beat()
     })
@@ -225,7 +226,7 @@ export default {
 
     function handleEvent(event) {
       if (event.type === "session.created" && event.data?.parentID && event.data?.sessionID) {
-        parents.set(event.data.sessionID, event.data.parentID)
+        adopt(event.data.sessionID, event.data.parentID)
       }
       ingest.event(event)
 
@@ -337,6 +338,23 @@ export default {
       for (const id of log.list()) {
         if (!cited.has(id) && !owed.has(id)) log.remove(id)
       }
+    }
+
+    /**
+     * Learn that a session is a delegation, and claim anything already written under it.
+     *
+     * The child's own instruction reaches `session.prompt` before `session.created` reaches
+     * the event stream, so by the time we know, a record or two may already sit in a log of
+     * the child's own. Those are the delegation's instructions — the most useful part — so
+     * they are moved into the parent's sequence and the orphan log is removed.
+     */
+    function adopt(child, parent) {
+      if (parents.get(child) === parent) return
+      parents.set(child, parent)
+      const stray = log.read(child)
+      if (!stray.length) return
+      ingest.absorb(child, stray)
+      log.remove(child)
     }
 
     /** Sessions an open lesson points at. The reason a log is still on disk. */

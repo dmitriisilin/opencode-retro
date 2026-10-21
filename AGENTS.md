@@ -162,9 +162,19 @@ twice against `recurrence`; and the fragment would be read without the instructi
 caused it — the child's prompt is a delegation, not the user's request. Its start and end
 events are dropped for the same reason: a delegation is a step, not a session.
 
+The child's own instruction arrives through `session.prompt` too, reading *"You are a
+subagent spawned by another session…"* — and it arrives **before** `session.created` reveals
+the parent. So by the time the link is known, that record already sits in a log of the
+child's own. A live run left it there, and the instruction was lost from the task it
+belonged to. Learning the link now absorbs whatever was already written: the records are
+renumbered into the parent's sequence and the orphan log is removed. Either route does it,
+`session.created` or the parent's own `subagent` result.
+
 Verified live — the parent's log held one ordered sequence containing
 `build/execute`, `explore/read` and `build/subagent`, with a single session end, and only
-the parent queued.
+the parent queued. The delegation is rendered in the projection as the instruction it is
+(`delegated to explore: …` plus the prompt in full) rather than a JSON blob cut at 200
+characters, which is what the default case did to it.
 
 **Step index.** Every *event* carries `durable: { aggregateID, seq, version }`, where
 `aggregateID` is the session and `seq` is monotonic per session. Hooks carry no `seq` at
@@ -250,8 +260,12 @@ plugin needed — and it gets the `sessionID`, so it can drive the review conver
 
 ### Still unverified
 
-- `session.hook("compaction")` — registered without error but never fired; no session got
-  long enough. Decision 3 means we do not depend on it, but the payload is still unknown.
+- `session.hook("compaction")` — its payload is unknown, because the plugin does not hook it
+  and the M0 probe never saw it fire: no test session grew long enough to be compacted.
+  Nothing depends on it. Decision 3 is precisely that the shadow log is written as the
+  session runs, so compaction cannot take anything from us; this is an unexplored corner of
+  the API, not a gap in behaviour. The one thing it might be worth later: compaction is
+  itself a signal that a session got long, and length is friction.
 - `ctx.storage` vs our own files. Storage is plugin-scoped JSON KV and would be the natural
   home for `state.json`, but decision 12 / the "human-readable files" convention argues
   for staying on disk. Not urgent.
