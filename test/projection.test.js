@@ -163,3 +163,82 @@ test("the two budgets are honoured: tool output is trimmed, prompts are kept who
   assert.ok(result.length < 200, "and is cut to the budget")
   assert.equal((text.match(/characters elided/g) ?? []).length, 2, "both budgets were applied")
 })
+
+test("a log over budget loses tool output before it loses steps", () => {
+  // The order matters: tool output is volume, a step is evidence. Measured reason for having
+  // a budget at all — on deepseek-flash an input of 39,518 characters was answered and the
+  // same input padded to 41,029 came back empty, with no error.
+  const records = [
+    { v: 1, n: 1, k: "prompt", text: "fix the lint skill" },
+    ...Array.from({ length: 12 }, (_, i) => ({
+      v: 1,
+      n: i + 2,
+      k: "tool",
+      id: `c${i}`,
+      tool: "shell",
+      input: { command: `npx eslint run-${i}` },
+      status: "completed",
+      exit: 2,
+      output: "E".repeat(900),
+    })),
+  ]
+
+  const full = project(records)
+  const trimmed = project(records, { budget: full.length - 1000 })
+
+  assert.ok(trimmed.length <= full.length - 1000, "it respects the budget")
+  assert.doesNotMatch(trimmed, /elided to fit/, "trimming the output was enough; no step was dropped")
+  for (let i = 0; i < 12; i++) {
+    assert.match(trimmed, new RegExp(`npx eslint run-${i}`), `step ${i} is still there`)
+  }
+})
+
+test("when trimming is not enough, steps go from the middle and the gap says how many", () => {
+  const records = [
+    { v: 1, n: 1, k: "prompt", text: "start here" },
+    ...Array.from({ length: 30 }, (_, i) => ({
+      v: 1,
+      n: i + 2,
+      k: "tool",
+      id: `c${i}`,
+      tool: "shell",
+      input: { command: `step-${i}` },
+      status: "completed",
+      exit: 0,
+      output: "ok",
+    })),
+    { v: 1, n: 32, k: "text", text: "and this is where it went wrong" },
+  ]
+
+  const out = project(records, { budget: 500 })
+
+  assert.ok(out.length <= 560, `budget respected, got ${out.length}`)
+  assert.match(out, /\[\.\.\.\] \d+ steps elided to fit the budget/)
+  assert.match(out, /start here/, "the prompt is never dropped: it is why the session happened")
+  assert.match(out, /and this is where it went wrong/, "nor the assistant text")
+  assert.match(out, /step-0/, "the beginning survives, where the goal is set")
+  assert.match(out, /step-29/, "and the end, where the trouble shows")
+  assert.doesNotMatch(out, /step-15\b/, "the middle is what goes")
+})
+
+test("the numbering is left alone, so evidence still points at real steps", () => {
+  const records = [
+    { v: 1, n: 1, k: "prompt", text: "go" },
+    ...Array.from({ length: 20 }, (_, i) => ({
+      v: 1,
+      n: i + 2,
+      k: "tool",
+      id: `c${i}`,
+      tool: "shell",
+      input: { command: `cmd-${i}` },
+      status: "completed",
+      exit: 0,
+      output: "ok",
+    })),
+  ]
+
+  const out = project(records, { budget: 400 })
+  // A lesson's evidence names `n`, and the log on disk keeps every one of them. Renumbering
+  // an excerpt would make those references point at the wrong steps.
+  assert.match(out, /\[21\] shell/, "the last step keeps the number it has in the log")
+})

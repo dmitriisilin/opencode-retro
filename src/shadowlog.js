@@ -65,6 +65,35 @@ export function createShadowLog({ dir, onError }) {
       }
     },
 
+    /**
+     * The highest `n` already in a session's log, or 0.
+     *
+     * The counter lives in memory, so a second process appending to the same log used to
+     * start again at 1 — measured on real logs here, three and four blocks of `n` restarting
+     * at 1 inside one file. A lesson's evidence is a session id and a step range, and
+     * decision 18 keeps the log on disk precisely so that range resolves; against duplicate
+     * numbering it resolves to several records and the reviewer has to rebuild the file by
+     * hand to see which. Reading the tail once per session per process is cheaper than that.
+     */
+    lastN(sessionID) {
+      try {
+        const lines = readFileSync(join(dir, `${sessionID}.jsonl`), "utf8").split("\n")
+        for (let i = lines.length - 1; i >= 0; i--) {
+          const line = lines[i].trim()
+          if (!line) continue
+          try {
+            const n = JSON.parse(line)?.n
+            if (Number.isFinite(n)) return n
+          } catch {
+            /* a half-written last line: keep looking back */
+          }
+        }
+      } catch {
+        /* no log yet, which is the normal case */
+      }
+      return 0
+    },
+
     /** Used by the self-check: the log must exist and be non-empty. */
     stat(sessionID) {
       try {

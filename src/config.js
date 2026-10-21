@@ -6,6 +6,9 @@ export const DEFAULTS = {
   prompts: "prompts",
   /** Per-entry cap on captured tool output. Head and tail are kept, the middle is elided. */
   maxOutput: 8000,
+  // Characters of composed input one analysis may send. Measured on deepseek-flash: 39,518
+  // was answered, 41,029 came back empty with no error at all, so this sits well under it.
+  maxInput: 32_000,
   /** Lower bound between heartbeat writes. See AGENTS.md "Three timestamps". */
   heartbeatMs: 60_000,
   /**
@@ -53,6 +56,7 @@ export function resolveConfig(ctx) {
     pluginLog: join(dir, "plugin.log"),
     model: options.model ?? null,
     maxOutput: options.maxOutput ?? DEFAULTS.maxOutput,
+    maxInput: options.maxInput ?? DEFAULTS.maxInput,
     heartbeatMs: options.heartbeatMs ?? DEFAULTS.heartbeatMs,
     halfLife: options.halfLife ?? DEFAULTS.halfLife,
     keepSessions: options.keepSessions ?? DEFAULTS.keepSessions,

@@ -20,7 +20,16 @@ import { clamp } from "./config.js"
  * second log, a second model call and a second count against the same problem — and the
  * fragment would be read without the instruction that caused it.
  */
-export function createIngest({ emit, maxOutput, now = () => Date.now(), parentOf = () => null }) {
+export function createIngest({
+  emit,
+  maxOutput,
+  now = () => Date.now(),
+  parentOf = () => null,
+  // Where this session's numbering left off. The counter is in memory, so without this a new
+  // process appending to an existing log starts again at 1 and a lesson's step range stops
+  // resolving to one record. Measured on real logs: three and four such blocks in one file.
+  startAt = () => 0,
+}) {
   /** sessionID -> { n, pending: Map<callID, started>, seq: Map<callID, number>, counts } */
   const sessions = new Map()
 
@@ -29,7 +38,7 @@ export function createIngest({ emit, maxOutput, now = () => Date.now(), parentOf
     if (!s) {
       s = {
         id,
-        n: 0,
+        n: startAt(id) ?? 0,
         pending: new Map(),
         seq: new Map(),
         counts: { prompts: 0, toolHook: 0, toolEvents: 0, steps: 0, texts: 0, records: 0 },

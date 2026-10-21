@@ -33,6 +33,12 @@ test("every command named in shipped text is a command that exists", () => {
   // `/retro all` is an argument to `/retro`, so both spellings are legitimate.
   const allowed = new Set([...registered, "retro all"])
   const offenders = []
+  // SHIPPED only, and AGENTS.md deliberately not. Widening it there was tried and reverted:
+  // the brief legitimately *records* removed commands ("there was a third, and it is gone",
+  // and the plan entries that built them), so a rule of "a removed command may not be named"
+  // flags five correct sentences to catch one wrong one. Telling an assertion from a record
+  // mechanically is the open question in the `agents-md-drift-not-guarded` lesson, and it is
+  // the owner's to answer.
   for (const file of SHIPPED) {
     for (const [, named] of read(file).matchAll(/`\/(retro[a-z -]*)`/g)) {
       const name = named.trim()

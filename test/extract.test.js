@@ -366,3 +366,118 @@ test("every model call is bounded by default, because one hang used to wedge the
   // cannot be quietly dropped and leave a silent stall in its place.
   assert.equal(DEFAULT_TIMEOUT_MS, 90_000)
 })
+
+test("the composed input stays inside maxInput, and says when it had to", async () => {
+  // The reason this exists, measured on deepseek-flash through session.generate: an input of
+  // 39,518 characters was answered, and the same input padded to 41,029 came back as an
+  // empty string — no error, no refusal, nothing to report. Silence is the one failure this
+  // plugin cannot afford, because long sessions are where the friction is, so without a
+  // budget the sessions most worth reading would be the ones that reliably yield nothing.
+  const r = rig({ reply: REPLY() })
+  const records = [
+    { v: 1, n: 1, k: "prompt", text: "fix the lint skill" },
+    ...Array.from({ length: 200 }, (_, i) => ({
+      v: 1,
+      n: i + 2,
+      k: "tool",
+      id: `c${i}`,
+      tool: "shell",
+      input: { command: `npx eslint pass-${i}` },
+      status: "completed",
+      exit: 2,
+      output: "no config found ".repeat(60),
+    })),
+  ]
+
+  const unbounded = await extract({ ...r, records, session: "ses_long" })
+  assert.ok(r.calls[0].prompt.length > 20_000, "the whole thing is big enough to be worth bounding")
+  assert.doesNotMatch(unbounded.detail, /excerpt/, "nothing was dropped, so nothing is claimed")
+
+  const bounded = rig({ reply: REPLY() })
+  const result = await extract({ ...bounded, records, session: "ses_long", maxInput: 12_000 })
+
+  assert.ok(result.ok)
+  assert.ok(
+    bounded.calls[0].prompt.length <= 12_000,
+    `sent ${bounded.calls[0].prompt.length} characters against a budget of 12000`,
+  )
+  assert.match(bounded.calls[0].prompt, /elided to fit the budget/, "and the model is told it is an excerpt")
+  assert.match(result.detail, /from an excerpt: the log was over budget/, "as is the human")
+})
+
+test("a budget that leaves no room for the log still leaves room for the log", async () => {
+  // The prompt, the contract and the lesson list are not negotiable, so an absurd budget
+  // cannot be honoured. It must degrade to a small excerpt rather than to an empty section.
+  const r = rig({ reply: REPLY() })
+  const records = [
+    { v: 1, n: 1, k: "prompt", text: "do the thing" },
+    { v: 1, n: 2, k: "tool", id: "c1", tool: "shell", input: { command: "npx eslint ." }, status: "completed", exit: 2, output: "no config" },
+  ]
+
+  const result = await extract({ ...r, records, session: "ses_tiny", maxInput: 10 })
+
+  assert.ok(result.ok, "it still runs")
+  assert.match(r.calls[0].prompt, /do the thing/, "and the log is still in there")
+})
+
+test("an empty reply is answered by asking again with less, not by asking again", async () => {
+  // Measured on deepseek-flash: the same content answered at 26,034 and 32,034 characters
+  // and came back as an empty string at 40,254 — no error, no refusal. Retrying across
+  // `/retro` runs was already possible and useless, because all three attempts sent the
+  // identical oversized input and got the identical silence before the log was retired.
+  const root = mkdtempSync(join(tmpdir(), "retro-empty-"))
+  const sent = []
+  const r = {
+    store: createStore({ dir: join(root, "lessons"), archive: join(root, "archive") }),
+    state: createState({ path: join(root, "state.json") }),
+    prompts: createPrompts({ dir: join(root, "prompts"), updates: join(root, "prompts", "updates") }),
+    model: MODEL,
+    generate: async (input) => {
+      sent.push(input.prompt)
+      return { text: sent.length === 1 ? "" : REPLY() }
+    },
+  }
+  const records = [
+    { v: 1, n: 1, k: "prompt", text: "fix the lint skill" },
+    ...Array.from({ length: 120 }, (_, i) => ({
+      v: 1,
+      n: i + 2,
+      k: "tool",
+      id: `c${i}`,
+      tool: "shell",
+      input: { command: `npx eslint pass-${i}` },
+      status: "completed",
+      exit: 2,
+      output: "no config found ".repeat(40),
+    })),
+  ]
+
+  const result = await extract({ ...r, records, session: "ses_silent", maxInput: 20_000 })
+
+  assert.equal(sent.length, 2, "exactly one more attempt, not a loop")
+  assert.ok(sent[1].length < sent[0].length, `second attempt must be smaller: ${sent[0].length} then ${sent[1].length}`)
+  assert.ok(result.ok, "and the lesson is recorded from the answer that came back")
+  assert.match(result.detail, /from an excerpt/, "with the human told it was an excerpt")
+})
+
+test("an empty reply with nothing left to trim is reported, not retried for ever", async () => {
+  const root = mkdtempSync(join(tmpdir(), "retro-empty2-"))
+  let calls = 0
+  const r = {
+    store: createStore({ dir: join(root, "lessons"), archive: join(root, "archive") }),
+    state: createState({ path: join(root, "state.json") }),
+    prompts: createPrompts({ dir: join(root, "prompts"), updates: join(root, "prompts", "updates") }),
+    model: MODEL,
+    generate: async () => (calls++, { text: "" }),
+  }
+  const records = [
+    { v: 1, n: 1, k: "prompt", text: "do the thing" },
+    { v: 1, n: 2, k: "tool", id: "c1", tool: "shell", input: { command: "npx eslint ." }, status: "completed", exit: 2, output: "no config" },
+  ]
+
+  const result = await extract({ ...r, records, session: "ses_mute", maxInput: 20_000 })
+
+  assert.ok(calls <= 2, `at most two calls, made ${calls}`)
+  assert.equal(result.ok, false)
+  assert.match(result.detail, /returned nothing at all/, "and says what happened, in the model's terms")
+})

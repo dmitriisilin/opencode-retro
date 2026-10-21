@@ -1,9 +1,10 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs"
+import { appendFileSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { createShadowLog, parseShadowLog } from "../src/shadowlog.js"
+import { createIngest } from "../src/ingest.js"
 
 const sandbox = () => {
   const root = mkdtempSync(join(tmpdir(), "retro-shadow-"))
@@ -84,4 +85,35 @@ test("a half-written final line is skipped, not fatal", () => {
 
   const withGap = '{"n":1}\nnot json at all\n{"n":3}\n\n'
   assert.deepEqual(parseShadowLog(withGap), [{ n: 1 }, { n: 3 }])
+})
+
+test("numbering continues from the log, so a step range resolves to one record", () => {
+  // Found by the plugin on its own logs: `n` lives in memory, so a second process appending
+  // to an existing session log started again at 1. Real files here had three and four blocks
+  // of `n` restarting inside them, and a lesson's evidence range then pointed at several
+  // records — while decision 18 keeps the log on disk precisely so that range resolves.
+  const dir = mkdtempSync(join(tmpdir(), "retro-log-n-"))
+  const log = createShadowLog({ dir })
+
+  assert.equal(log.lastN("ses_a"), 0, "nothing written yet")
+  log.write("ses_a", { v: 1, n: 1, k: "prompt", text: "go" })
+  log.write("ses_a", { v: 1, n: 2, k: "tool", tool: "shell" })
+  assert.equal(log.lastN("ses_a"), 2)
+
+  // A fresh writer for a session that already has a log: the next record is 3, not 1.
+  const second = createIngest({ maxOutput: 8000, emit: (id, r) => log.write(id, r), startAt: (id) => log.lastN(id) })
+  second.prompt({ sessionID: "ses_a", messageID: "m2", prompt: { text: "again" } })
+
+  const ns = log.read("ses_a").map((r) => r.n)
+  assert.deepEqual(ns, [1, 2, 3])
+  assert.equal(new Set(ns).size, ns.length, "every step number appears once")
+})
+
+test("a half-written last line does not reset the numbering", () => {
+  const dir = mkdtempSync(join(tmpdir(), "retro-log-n2-"))
+  const log = createShadowLog({ dir })
+  log.write("ses_b", { v: 1, n: 7, k: "prompt", text: "go" })
+  appendFileSync(join(dir, "ses_b.jsonl"), '{"v":1,"n":8,"k":"to')
+
+  assert.equal(log.lastN("ses_b"), 7, "the last whole record is what counts")
 })

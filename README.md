@@ -186,6 +186,7 @@ Everything else is optional:
 - `proposeLimit` — lessons in one `/retro all`, default ten.
 - `extractLimit` — logs analysed by one `/retro`, unlimited by default.
 - `maxOutput` — characters of tool output stored in the shadow log per step, default 8000.
+- `maxInput` — characters one analysis may send, default 32000. Past a limit of its own the model returns an empty answer rather than an error, so a long log is trimmed to fit: less tool output first, then whole steps from the middle, each gap saying how many went.
 - `extractTimeoutMs` — how long one analysis may take before it is given up on, default 90000.
 - `heartbeatMs` — the shortest gap between self-check writes while a session works, default 60000.
 - `keepSessions` — keep every log, including ones nothing cites; off by default.

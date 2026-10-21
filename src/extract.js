@@ -25,6 +25,7 @@ export async function extract({
   state,
   fingerprint,
   timeoutMs = DEFAULT_TIMEOUT_MS,
+  maxInput = Infinity,
 }) {
   // Skip only a session that cannot contain evidence of anything: one instruction, one
   // answer, nothing done. Everything else is analysed.
@@ -60,29 +61,78 @@ export async function extract({
   if (!prompt) return { ok: false, detail: "no extract prompt could be resolved" }
 
   const existing = store.list().filter((l) => l.status !== "rejected")
-  const input = [
-    prompt.text,
-    section("Session", `id: ${session}`),
-    section("Log", project(records)),
-    section("Lessons already recorded", renderExisting(existing)),
-    section("Rejected — do not propose these again", renderRejected(state.rejected)),
-    OUTPUT_CONTRACT,
-  ]
-    .filter(Boolean)
-    .join("\n\n")
+  const compose = (log) =>
+    [
+      prompt.text,
+      section("Session", `id: ${session}`),
+      section("Log", log),
+      section("Lessons already recorded", renderExisting(existing)),
+      section("Rejected — do not propose these again", renderRejected(state.rejected)),
+      OUTPUT_CONTRACT,
+    ]
+      .filter(Boolean)
+      .join("\n\n")
 
-  let reply
-  try {
-    const { from, ...ref } = model
-    const result = await withTimeout(generate({ prompt: input, model: ref }), timeoutMs)
-    reply = result?.text ?? ""
-  } catch (err) {
-    const message = String(err?.message ?? err)
-    const hint = /free tier/i.test(message)
-      ? ". A plugin may not use OpenCode's own free tier; pin a different model in options.model."
-      : ""
-    return { ok: false, detail: `model call failed: ${message}${hint}` }
+  /**
+   * The log gets whatever the budget leaves after everything else.
+   *
+   * Measured, not guessed: on `deepseek/deepseek-flash` through `session.generate`, an input
+   * of 39,518 characters came back with a parseable answer and the same input padded to
+   * 41,029 came back **empty** — no error, no refusal, an empty string. Whatever the limit
+   * is exactly, crossing it produces silence, and silence is the one failure this plugin
+   * cannot afford: long sessions are where the friction lives, so without a budget the
+   * sessions most worth reading are the ones that reliably yield nothing.
+   *
+   * It is a character count rather than a token count on purpose. Tokenisation is
+   * model-specific and would need a dependency to estimate; characters are exact, and the
+   * budget only has to be comfortably under a cliff, not next to it.
+   */
+  const overhead = compose("").length
+  const budget = Number.isFinite(maxInput) ? Math.max(2000, maxInput - overhead) : Infinity
+
+  const { from, ...ref } = model
+  const ask = async (log) => {
+    try {
+      const result = await withTimeout(generate({ prompt: compose(log), model: ref }), timeoutMs)
+      return { text: result?.text ?? "" }
+    } catch (err) {
+      const message = String(err?.message ?? err)
+      const hint = /free tier/i.test(message)
+        ? ". A plugin may not use OpenCode's own free tier; pin a different model in options.model."
+        : ""
+      return { failed: `model call failed: ${message}${hint}` }
+    }
   }
+
+  let log = project(records, { budget })
+  let answer = await ask(log)
+  if (answer.failed) return { ok: false, detail: answer.failed }
+
+  /**
+   * An empty reply is this model's way of declining, and it gets more likely as the input
+   * grows. Measured on `deepseek/deepseek-flash` through `session.generate`, same content
+   * each time: 26,034 characters answered, 32,034 answered, 40,254 came back as an empty
+   * string — no error, no refusal, nothing to report. Near the top of that range it is not a
+   * clean cliff either; one 39,518-character input was answered once and a 32,000 one was
+   * not.
+   *
+   * So the second attempt is not the same attempt again. Retrying across `/retro` runs was
+   * already possible and useless: three attempts sent the identical oversized input and got
+   * the identical silence, then the log was retired. Halving the budget changes the one
+   * thing that correlates, costs one extra call, and only happens when the first reply was
+   * empty.
+   */
+  if (!answer.text.trim() && Number.isFinite(budget)) {
+    const smaller = project(records, { budget: Math.max(1000, Math.floor(budget / 2)) })
+    if (smaller !== log) {
+      log = smaller
+      answer = await ask(log)
+      if (answer.failed) return { ok: false, detail: answer.failed }
+    }
+  }
+
+  const reply = answer.text
+  const elided = /\d+ steps? elided to fit the budget/.test(log)
 
   const parsed = parseLessons(reply)
   if (!parsed.ok) return { ok: false, detail: `unparseable reply: ${parsed.error}${excerpt(reply)}`, reply }
@@ -95,7 +145,9 @@ export async function extract({
     ok: true,
     lessons,
     recorded,
-    detail: summarise(recorded, lessons.length),
+    // Said out loud: a lesson drawn from an excerpt is still a lesson, but the human should
+    // know the extractor did not see the whole session.
+    detail: summarise(recorded, lessons.length) + (elided ? " (from an excerpt: the log was over budget)" : ""),
   }
 }
 

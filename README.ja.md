@@ -1,4 +1,4 @@
-<!-- translated-from: README.md@37c60cb0a488 -->
+<!-- translated-from: README.md@21bd0c114154 -->
 # opencode-retro
 
 [English](README.md) | [Русский](README.ru.md) | [简体中文](README.zh-CN.md) | [Español](README.es.md) | **日本語**
@@ -189,6 +189,7 @@ OpenCode が npm からプラグインを取得します。`opencode.json` に�
 - `proposeLimit` — `/retro all` 一回あたりの教訓数。既定は十。
 - `extractLimit` — `/retro` 一回で分析するログ数。既定は無制限。
 - `maxOutput` — シャドーログに一ステップごとに保存するツール出力の文字数。既定は 8000。
+- `maxInput` — 一回の分析が送る文字数。既定は 32000。モデルは自身のある限度を超えると、エラーではなく空の答えを返すため、長いログは収まるように削られます。まずツール出力を減らし、次に中央から段ごと落とし、空いた箇所はいくつ落ちたかを述べます。
 - `extractTimeoutMs` — 一回の分析を諦めるまでの待ち時間。既定は 90000。
 - `heartbeatMs` — セッション作業中のセルフチェック書き込みの最短間隔。既定は 60000。
 - `keepSessions` — 誰も引用していないものも含め、すべてのログを残す。既定では無効。

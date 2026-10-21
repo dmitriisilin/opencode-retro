@@ -162,6 +162,13 @@ export function createStore({ dir, archive, cap = DEFAULT_CAP, halfLife = DEFAUL
         // A problem that comes back after being closed is not a new problem — it is the
         // same one, plus the news that closing it did not work.
         const buried = !explicit && !sameId ? (archived.get(lesson.matches) ?? archived.get(lesson.id)) : null
+
+        // A problem the user rejected does not come back, whatever the extractor thinks.
+        // `state.rejected` is told to the extractor and filters its answer, but that list is
+        // one file away from being lost — it was, here — and the archive is the record of the
+        // decision itself. "Do not propose this again" has to survive both.
+        if (buried?.status === "rejected") continue
+
         if (buried) {
           const reopened = {
             ...buried,

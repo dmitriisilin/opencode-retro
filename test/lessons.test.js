@@ -334,3 +334,42 @@ test("a store that cannot create its directory reports it and carries on", () =>
   assert.deepEqual(errors, ["lessons.mkdir"])
   assert.deepEqual(store.list(), [], "and a store that cannot be written reads as empty")
 })
+
+test("a lesson the user rejected does not come back from the archive", () => {
+  // `state.rejected` is fed to the extractor and filters its answer, but that list lives in
+  // one file and was lost once here. The archive is the record of the decision itself, so
+  // "do not propose this again" has to hold from either side.
+  const root = mkdtempSync(join(tmpdir(), "retro-rejected-"))
+  const store = createStore({ dir: join(root, "lessons"), archive: join(root, "archive") })
+
+  store.record([{ id: "lint-skill-no-config", statement: "eslint is not configured here", steps: [1, 2], cost: 3, confidence: 0.8, why: "x" }], { session: "ses_a" })
+  store.close("lint-skill-no-config", "rejected", { note: "wrong for this project" })
+  assert.deepEqual(store.list(), [])
+
+  // The same problem, seen again in a later session.
+  const again = store.record(
+    [{ id: "lint-skill-no-config", statement: "eslint is not configured here", steps: [9, 11], cost: 4, confidence: 0.9, why: "y" }],
+    { session: "ses_b" },
+  )
+
+  assert.deepEqual(again.created, [], "not created")
+  assert.deepEqual(again.reopened, [], "and not reopened: the answer was no")
+  assert.deepEqual(store.list(), [], "lessons/ stays empty")
+  assert.equal(store.listArchive().find((l) => l.id === "lint-skill-no-config").status, "rejected")
+})
+
+test("a lesson that was accepted and comes back is reopened, because the fix did not hold", () => {
+  const root = mkdtempSync(join(tmpdir(), "retro-reopen-"))
+  const store = createStore({ dir: join(root, "lessons"), archive: join(root, "archive") })
+
+  store.record([{ id: "build-script-missing", statement: "AGENTS.md names a build script that does not exist", steps: [1, 2], cost: 3, confidence: 0.8, why: "x" }], { session: "ses_a" })
+  store.close("build-script-missing", "accepted", { note: "removed the line" })
+
+  const again = store.record(
+    [{ id: "build-script-missing", statement: "AGENTS.md names a build script that does not exist", steps: [4, 6], cost: 2, confidence: 0.9, why: "y" }],
+    { session: "ses_b" },
+  )
+
+  assert.deepEqual(again.reopened, ["build-script-missing"], "this one does come back")
+  assert.equal(store.list()[0].reopenedFrom, "accepted")
+})

@@ -159,6 +159,7 @@ export default {
       maxOutput: config.maxOutput,
       emit: (sessionID, record) => log.write(sessionID, record),
       parentOf: (sessionID) => parents.get(sessionID) ?? null,
+      startAt: (sessionID) => log.lastN(sessionID),
     })
 
     // Hooks. Registration proving nothing is the whole reason the self-check exists:
@@ -688,6 +689,7 @@ export default {
             state,
             fingerprint,
             timeoutMs: config.extractTimeoutMs,
+            maxInput: config.maxInput,
           })
         } catch (err) {
           onError("extract", err)

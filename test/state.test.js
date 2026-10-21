@@ -151,3 +151,45 @@ test("a save that cannot happen is reported, never thrown at the session", () =>
   assert.doesNotThrow(() => state.countSession())
   assert.deepEqual(errors, ["state.save"])
 })
+
+test("a save merges with the file instead of overwriting another writer", () => {
+  // Measured here: a rejection recorded out of band vanished when a long-running instance
+  // saved its own older copy. A rejection is the one thing that must outlive the lesson it
+  // belongs to, so losing it silently is the worst case this file has.
+  const path = join(mkdtempSync(join(tmpdir(), "retro-state-merge-")), "state.json")
+  const mine = createState({ path })
+  mine.queue("ses_a")
+
+  // Somebody else records a rejection and an extraction while we hold our own copy.
+  const theirs = createState({ path })
+  theirs.reject("lint-skill-no-config", "wrong for this project")
+  theirs.markExtracted("ses_b", { ok: true, detail: "nothing to learn" })
+  theirs.countSession()
+
+  mine.countSession()
+
+  const saved = JSON.parse(readFileSync(path, "utf8"))
+  assert.deepEqual(
+    saved.rejected.map((r) => r.id),
+    ["lint-skill-no-config"],
+    "the other writer's rejection survived our save",
+  )
+  assert.ok(saved.extracted.ses_b, "and its extraction")
+  // The larger of the two, not the sum: two writers counting the same session must not count
+  // it twice, and freshness only needs the counter to move forward.
+  assert.equal(saved.sessions, 1, "the counter never goes backwards")
+  assert.deepEqual(saved.pending.map((p) => p.session), ["ses_a"], "our own queue is ours")
+})
+
+test("an entry the file says is extracted leaves our queue on the next save", () => {
+  const path = join(mkdtempSync(join(tmpdir(), "retro-state-merge2-")), "state.json")
+  const mine = createState({ path })
+  mine.queue("ses_a")
+  mine.queue("ses_b")
+
+  createState({ path }).markExtracted("ses_a", { ok: true, detail: "done elsewhere" })
+  mine.countSession()
+
+  const saved = JSON.parse(readFileSync(path, "utf8"))
+  assert.deepEqual(saved.pending.map((p) => p.session), ["ses_b"], "no work is done twice")
+})

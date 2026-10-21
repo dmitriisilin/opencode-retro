@@ -1,4 +1,4 @@
-<!-- translated-from: README.md@37c60cb0a488 -->
+<!-- translated-from: README.md@21bd0c114154 -->
 # opencode-retro
 
 [English](README.md) | [Русский](README.ru.md) | [简体中文](README.zh-CN.md) | **Español** | [日本語](README.ja.md)
@@ -190,6 +190,7 @@ Todo lo demás es opcional:
 - `proposeLimit` — lecciones en un `/retro all`, por omisión diez.
 - `extractLimit` — logs que analiza un `/retro`, sin límite por omisión.
 - `maxOutput` — caracteres de salida de herramienta que se guardan en el log paralelo por paso, por omisión 8000.
+- `maxInput` — caracteres que puede enviar un análisis, por omisión 32000. Pasado un límite propio, el modelo devuelve una respuesta vacía en lugar de un error, así que un log largo se recorta para encajar: primero menos salida de herramientas, luego pasos enteros del medio, y cada hueco dice cuántos se fueron.
 - `extractTimeoutMs` — cuánto puede tardar un análisis antes de abandonarlo, por omisión 90000.
 - `heartbeatMs` — el intervalo mínimo entre escrituras de la autocomprobación mientras una sesión trabaja, por omisión 60000.
 - `keepSessions` — conservar todos los logs, incluidos los que nadie cita; desactivado por omisión.

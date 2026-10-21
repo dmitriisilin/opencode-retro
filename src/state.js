@@ -23,8 +23,47 @@ export function createState({ path, onError }) {
     /* absent or hand-broken: start clean rather than refuse to run */
   }
 
+  /**
+   * Written by merging with whatever is on disk, not by overwriting it.
+   *
+   * The file is read once at load and used from memory, so a second writer — another plugin
+   * instance on this project, or anything editing it between a load and a save — used to be
+   * silently clobbered. Measured here: a rejection recorded out of band disappeared when a
+   * long-running instance saved its own older copy, and a rejection is the one thing that
+   * must outlive the lesson it belongs to (decision 9).
+   *
+   * Only the append-only parts are merged, because only they have a safe answer: rejections
+   * and extractions are unions, the session counter and each `looked` size are maxima. The
+   * queue is not append-only, so the writer's own view of it wins — minus anything the disk
+   * says has since been extracted, which is the one way another writer removes an entry.
+   */
   const save = () => {
     try {
+      let disk = null
+      try {
+        const parsed = JSON.parse(readFileSync(path, "utf8"))
+        if (parsed && typeof parsed === "object") disk = parsed
+      } catch {
+        /* absent or unreadable: nothing to merge with */
+      }
+
+      if (disk) {
+        const rejected = [...(Array.isArray(disk.rejected) ? disk.rejected : [])]
+        for (const r of data.rejected) if (!rejected.some((o) => o?.id === r.id)) rejected.push(r)
+        data.rejected = rejected
+
+        data.extracted = { ...(disk.extracted ?? {}), ...data.extracted }
+        data.sessions = Math.max(data.sessions ?? 0, typeof disk.sessions === "number" ? disk.sessions : 0)
+
+        const looked = { ...(disk.looked ?? {}) }
+        for (const [id, size] of Object.entries(data.looked ?? {})) {
+          looked[id] = Math.max(size, looked[id] ?? 0)
+        }
+        data.looked = looked
+
+        data.pending = data.pending.filter((p) => !data.extracted[p.session])
+      }
+
       mkdirSync(dirname(path), { recursive: true })
       writeFileSync(path, JSON.stringify(data, null, 2) + "\n")
     } catch (err) {

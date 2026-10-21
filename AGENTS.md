@@ -25,10 +25,11 @@ Motivating example: a project carries a `lint` skill borrowed from another harne
 11. **Autonomy ladder L0–L3.** v1 target is L1, and `/retro all` is the step that makes the rest reachable: the same lessons, the same currency checks, the same `retro_decide` bookkeeping, but batched into one plan a human approves once instead of a decision per lesson. The ladder from here is about how much of that plan runs without being asked, not about new machinery. Promotion between levels is to be driven by accept/reject stats, later.
 12. **Not a memory plugin.** We edit artifacts the harness already reads; we don't build a knowledge base the agent must remember to query.
 13. **The prompts live in the user's project, not in the package.** Two of them, in `.retro/prompts/`: `extract.md` (what counts as a lesson) and `propose.md` (what the agent treats as its job when a lesson is handed over — check currency, relay, touch nothing before a decision, record the outcome). The package ships defaults; on first run each missing one is copied in. Resolution order: project → global (`~/.config/opencode/retro/prompts/`) → packaged default → a terse built-in fallback, so a deleted file degrades rather than going silent. `options` can override the directory and the extractor model. *Narrowed in M3 to one prompt on the reasoning that there was no application step to drive, then restored: the hand-over texts do not drive the application, but they do decide what the agent considers its job, which is exactly the semantics worth iterating on in practice.* *Named `review.md` and `review-auto.md` until the owner pointed out that "review" says nothing: the file decides how a lesson is put to a human, and the plugin stops there, so `propose` is what it does — a verb, in a pair with `extract`.* **And there is one rule, not one per command.** `propose-all.md` was the same judgement rewritten shorter — currency, where the fix belongs, local or global, change nothing before a decision, record the outcome — which is two copies of one rule: one the user edits, and one that silently disagrees with it. What a batch actually needs from the rule is nothing, and what it adds is only the shape of the answer (one plan, grouped by file, the dropped ones named, globals separately), so that is a conditional section at the end of the same file. Both commands send the same rule. The alternative — putting the batch shape in source, next to the output contract — was rejected because it is judgement, and judgement belongs in a file the user can argue with. Nothing is published yet, so there is no migration: resolution is by name, and a file left under an old name is simply never read.*
-14. **The prompts are editable; the machine parts are compiled in.** The project files are entirely the user's — criteria, emphasis, project-specific wording. The output format the parser needs lives in the plugin's source and is wrapped around the prompt at call time. It is never written to disk, so it cannot be edited away by accident, and the prompt file has no "do not touch" region in it. `/retro check` prints the contract for anyone who wants to see it.
+14. **The prompts are editable; the machine parts are compiled in.** The project files are entirely the user's — criteria, emphasis, project-specific wording. The output format the parser needs lives in the plugin's source and is wrapped around the prompt at call time. It is never written to disk, so it cannot be edited away by accident, and the prompt file has no "do not touch" region in it. It is `OUTPUT_CONTRACT` in `src/contract.js` for anyone who wants to read it, and the seeded prompt says in one line that it is appended and is not part of the file. *This used to say `/retro check` prints it. That command was removed and this sentence was not, so the brief sent people to a command the same file says further down is gone — found by the extractor reading a session log, not by the audit.*
 15. **New defaults arrive as news, never as changes.** One live file per prompt, seeded from our default, carrying `base` (the default's version) in frontmatter. We never write to it again — not even when the user has not touched it. A newer default lands in `.retro/prompts/updates/extract.v3.md`, headed by a statement that *this file is not used*, that the live file is what runs, and that if they have their own version they should keep it and consider adapting it to what changed. Named in `selfcheck.md` so it is not just a file in a directory nobody opens. Updates accumulate like release notes; deleting them is the user's call. Rejected alternative: shipping a default file plus a user override file. It forces the user to know what the default said before they can write a meaningful override, makes partial overrides ambiguous, and gives two sources of truth for one prompt.
 15.1. **The decision is the third artifact, and it records the work, not the proposal.** Raw log, lesson, decision — and the decision is where `retro_decide` writes what actually happened: `status`, `note`, the files really changed (`changed`, often not the ones the lesson named), and `discovered`, anything the work turned up that is not in the lesson. That last field exists because the review produces knowledge the log never contained — in one live run the agent found that deleting a skill would leave an `AGENTS.md` line pointing at nothing, which was in neither the lesson nor the proposal. Without recording it, that disappears when the session ends, and the accept/reject record that decision 11 wants autonomy to be earned from is too thin to learn from.
 16. **A lesson is checked for currency before it is proposed.** A lesson can sit for weeks, and by the time anyone looks the thing it complains about may be fixed, moved or gone. Proposing a fix for a problem that no longer exists wastes the attention this plugin exists to save. So `/retro` runs a cheap deterministic check first — is the target file gone, or changed since the lesson was recorded (a content fingerprint taken at extraction time) — and when it has, the proposal carries that warning at the top. It never decides on its own: a changed file is a reason to look, not proof. The other half is the agent receiving the proposal, which is told to verify the claims against the repository before relaying them, and does it well.
+17. **Decided means closed, and closed means archived — and a rejection is closed for good.** A problem the user rejected does not come back, whichever way the extractor arrives at it: `state.rejected` is told to the extractor and filters its answer, and `record()` refuses to reopen a lesson the archive has as `rejected`. Both, because the list is one file away from being lost — it *was* lost here, to a stale whole-file write, and the archive is the record of the decision itself. An **accepted** lesson that comes back is a different matter and does reopen: that is the news that the fix did not hold.
 17. **Decided means closed, and closed means archived.** `lessons/` holds open questions only; accepting or rejecting moves the file to `archive/`. Nothing is deleted, because recurrence consults the archive: a problem that comes back after being closed is the same problem *plus* the news that the fix did not hold, so it is reopened with its history and a `reopenedFrom` marker rather than started over at recurrence 1. `later` stays open.
 18. **A log lives as long as an open lesson cites it — and always while its session works.** Every lesson carries `evidence` as a session id and a step range, and during review the human may ask what actually happened at those steps — a summary cannot answer that and the log can, so the reference has to resolve. Once every lesson citing a log has been decided and archived, nothing will ask about it again and the log is removed. Growth is therefore bounded by the number of open lessons, which is capped, rather than by the age of the project. `keepSessions: true` keeps everything, which is how `fixtures/sessions/` gets filled. *Replaces "deleted once extracted", which made the evidence reference a dead link and threw away the only thing that could answer a follow-up question.*
 19. **The plugin must prove it is alive, in a file.** `.retro/selfcheck.md`. Registration proves nothing (see "Gotchas": wrong hook names register happily), so the report asserts *liveness*, not setup. It carries three timestamps — `loaded`, `heartbeat`, `verified` — because they fail separately and the gaps between them name which half broke.
@@ -262,6 +263,23 @@ plugin needed — and it gets the `sessionID`, so it can drive the review conver
 15. **Nothing tells the user a plugin failed to load.** A bad path, a throwing `setup`, a
    module that does not import — the session just runs without us. Hence "if `selfcheck.md`
    is older than your last session, the plugin is not running".
+17. **An input the model will not answer comes back empty, not refused.** Measured on
+   `deepseek/deepseek-flash` through `session.create` + `session.generate`, the same content
+   each time: 26,034 characters answered, 32,034 answered, 40,254 came back as an empty
+   string. No error, no refusal, no log line — `{ text: "" }`. Near the top of that range it
+   is not a clean cliff either: one 39,518-character input was answered once, and a ~32,000
+   one was not. For this plugin that is the worst possible failure shape, because long
+   sessions are where the friction is, so the sessions most worth reading would be the ones
+   that reliably yield nothing. Two defences, in `src/extract.js`: the composed input is
+   bounded by `maxInput` (default 32,000 characters — characters, not tokens, because
+   tokenisation is model-specific and a dependency, while the budget only has to be under a
+   cliff rather than beside it), and an empty reply is answered by halving the budget and
+   asking once more. The retry matters more than the number: three attempts across `/retro`
+   runs had already sent the identical oversized input and collected the identical silence
+   before retiring the log. The projection spends its budget in the order that loses least —
+   less tool output first, then whole steps from the middle outward, never a prompt or an
+   assistant reply, with each gap saying how many steps went so the model knows it is reading
+   an excerpt. Found by the extractor failing on a real 146 KB session log, not by a test.
 16. **`opencode run "/retro all"` does not run the command.** The text arrives as an
    ordinary prompt and the registered command never fires; the agent in that session reads
    "/retro all" as an instruction and improvises. Observed while dogfooding: the session's
@@ -281,7 +299,13 @@ plugin needed — and it gets the `sessionID`, so it can drive the review conver
   not change when a session's history does.
 - `ctx.storage` vs our own files. Storage is plugin-scoped JSON KV and would be the natural
   home for `state.json`, but decision 12 / the "human-readable files" convention argues
-  for staying on disk. Not urgent.
+  for staying on disk. Not urgent — and `state.json` now merges with the file on every save
+  rather than overwriting it, because it is read once at load and used from memory, so a
+  second writer was silently clobbered. Measured: a rejection recorded out of band vanished
+  when a long-running instance saved its older copy. Only the append-only parts merge —
+  rejections and extractions as unions, the session counter and each `looked` size as maxima
+  — because only they have a safe answer; the queue is the writer's own, minus whatever the
+  file says has since been extracted.
 - Whether `/api/experimental/session/{id}/log` (the durable event log) makes the shadow log
   redundant. Decision 3 says keep our own; worth a look before M1 ships.
 
@@ -501,6 +525,10 @@ automatically either way — so there is no value in paying earlier.
 - **Cheap when there is nothing to read.** A session of one prompt with no tool calls is
   skipped without a model call. Anything more is read, including a conversation that ran no
   tools at all.
+- **Bounded in size, not only in count.** One analysis sends at most `maxInput` characters,
+  and an empty reply — which is what an over-long input produces rather than an error, see
+  Gotcha 17 — is retried once at half that. Without it, the longest sessions were the ones
+  that silently produced nothing.
 - **`autoExtract` restores the old behaviour** — analysis at the first prompt of the next
   session — for anyone who wants lessons ready before asking. It was the default until the
   owner pointed out that it spends money on a schedule the user did not choose.
@@ -699,7 +727,9 @@ understood is just a diagnostic that was written badly.
 - [x] Freshness in the score, counted in sessions (`src/lessons.js`, `state.sessions`).
 - [x] Currency check before a proposal, by target fingerprint (`src/currency.js`).
 - [x] Closing archives; recurrence reopens from the archive with history.
-- [x] Shadow logs deleted after a successful extraction.
+- [x] Shadow logs deleted after a successful extraction. *Replaced in M4 by decision 18: a
+      log lives while an open lesson cites it, because the evidence names step ranges and
+      only the log can answer what happened at them.*
 - [x] Every model call bounded, so a hang is reported rather than wedging the queue.
 - [x] `/retro auto` — every waiting lesson, one plan, approved once (`renderBatch`).
 - [x] Currency as a question to the agent, with a local fingerprint and the record date as
