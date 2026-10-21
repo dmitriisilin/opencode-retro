@@ -3,6 +3,7 @@ import assert from "node:assert/strict"
 import { readFileSync, readdirSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
+import { REQUIRED_SURFACE } from "../src/selfcheck.js"
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..")
 const read = (p) => readFileSync(join(root, p), "utf8")
@@ -84,4 +85,34 @@ test("nothing exported from src is unreachable", () => {
     }
   }
   assert.deepEqual(dead, [], `exported and never used:\n  ${dead.join("\n  ")}`)
+})
+
+test("the self-check requires exactly the ctx surface the plugin calls", () => {
+  // The surface check is the one API break detectable without waiting for traffic, so it is
+  // only worth what it names. It required `generate.text`, which index.js mentions only to
+  // say why it is not used, and left out session.create/generate/remove — the calls every
+  // analysis runs through. Present-but-unused proves nothing; absent-and-used is invisible.
+  const source = read("index.js")
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/^\s*\/\/.*$/gm, "")
+
+  const used = new Set()
+  for (const [, domain, member] of source.matchAll(/\bctx\.([a-z]+)\.([a-zA-Z]+)\s*\(/g)) {
+    used.add(`${domain}.${member}`)
+  }
+  // Hooks go through one helper, so the domain is a literal argument rather than a property.
+  for (const [, domain] of source.matchAll(/\bhook\(\s*"([a-z]+)"\s*,/g)) used.add(`${domain}.hook`)
+
+  const declared = new Set(REQUIRED_SURFACE.map(([d, m]) => `${d}.${m}`))
+
+  assert.deepEqual(
+    [...used].sort().filter((m) => !declared.has(m)),
+    [],
+    "the plugin calls something the self-check does not watch",
+  )
+  assert.deepEqual(
+    [...declared].sort().filter((m) => !used.has(m)),
+    [],
+    "the self-check watches something the plugin does not call",
+  )
 })

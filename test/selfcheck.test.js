@@ -145,12 +145,15 @@ const activeRig = () => {
     root,
     dir,
     updates,
+    // Written out by hand rather than derived from the plugin's own list, so that the two
+    // can disagree. The analysis runs through session create/generate/remove; `generate.text`
+    // is deliberately absent, because the plugin does not call it.
     ctx: {
       tool: { hook() {}, transform() {} },
-      session: { hook() {}, synthetic() {} },
+      session: { hook() {}, synthetic() {}, create() {}, generate() {}, remove() {} },
       command: { transform() {} },
       event: { subscribe() {} },
-      generate: { text() {} },
+      model: { default() {} },
     },
     config: {},
     prompts: createPrompts({ dir, updates, global: join(root, "global") }),
@@ -168,7 +171,7 @@ test("the active check passes when every member the plugin depends on is present
   const report = await activeCheck(r)
 
   assert.equal(activeStatus(report, "ctx surface").status, STATUS.OK)
-  assert.match(activeStatus(report, "ctx surface").detail, /7 members present/)
+  assert.match(activeStatus(report, "ctx surface").detail, /10 members present/)
   assert.equal(activeStatus(report, "extract prompt").status, STATUS.OK)
   assert.match(activeStatus(report, "extract prompt").detail, /^packaged \(base \d+\)$/, "and which layer is live")
   assert.equal(activeStatus(report, "store").status, STATUS.OK)

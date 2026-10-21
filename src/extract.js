@@ -4,7 +4,8 @@ import { project } from "./projection.js"
 /**
  * One extraction: shadow log -> lessons (AGENTS.md decision 5).
  *
- * Runs with a clean context — a single `ctx.generate.text` call, no session, no history —
+ * Runs with a clean context — one call through a session of its own, no agent, no tools and
+ * no history —
  * because the agent that did the work would defend its own choices.
  *
  * There are no detectors in front of it. There used to be three, marking suspicious step
@@ -43,8 +44,11 @@ export async function extract({
     }
   }
 
-  // Without an explicit model, generate.text resolves to OpenCode's free tier and fails
-  // from inside a plugin (AGENTS.md Gotcha 10). Refusing up front beats hanging.
+  // Reaching here with no model means `options.model`, the session's own model and
+  // `ctx.model.default()` all came up empty, so there is nothing to create the analysis
+  // session with. Refusing with the remedy named beats an empty `lessons/` nobody can
+  // account for. (Free-tier models are fine — see AGENTS.md Gotcha 10 — it is the absence
+  // of any model that stops us.)
   if (!model?.providerID || !model?.id) {
     return {
       ok: false,

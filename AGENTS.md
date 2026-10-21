@@ -15,8 +15,8 @@ Motivating example: a project carries a `lint` skill borrowed from another harne
 1. **Name:** `opencode-retro` (retrospective). npm name reserved by `dmitriisilin`. "loop" was rejected: in the OpenCode ecosystem `/loop` already means recurring prompts / Ralph loops.
 2. **v2 only.** No v1 compatibility layer.
 3. **Shadow log.** Plugin writes its own append-only log of every tool call and prompt to `.opencode/retro/sessions/<sessionID>.jsonl` in real time. No LLM, no batching. We do *not* depend on session history surviving compaction.
-4. **No detectors in front of the model.** There were three — `repeat`, `revert`, `skill-failure` — marking suspicious step ranges in the prompt. They are gone, and `fixtures/ab-anchors/` is why: given the same log, the model found the same lessons with them and without. What they encoded was never really detection, it was *guidance about what to look for*, and guidance belongs in `prompts/extract.md`, where the user can read it, disagree with it and change it — not in 196 lines of JavaScript that decide in advance what the model is allowed to notice. So the signals the detectors knew are now prose in that prompt: a call repeated with nothing changed between attempts, an edit undone, a skill followed into a dead end, a non-zero exit hiding behind a "completed" status, a task quietly dropped, a correction the user had to repeat. Stated as a place to start, explicitly not a checklist. The one mechanical thing left is a cost guard: fewer than three tool calls and the model is not called at all — which claims nothing about the session, only that there is too little in it to read.
-5. **Extraction runs when asked, in a clean context**, not the working agent (it would defend its own choices) — one `ctx.generate.text` call, no session, no history. Input: compressed projection of the shadow log (tool outputs trimmed to head/tail, prompts and assistant text in full) + existing lessons + rejected ids. Core question: *"If this session were run again, what should change so it goes shorter and straighter?"* **When** it runs is a deliberate choice, not an API constraint: see "When the analysis runs".
+4. **No detectors in front of the model.** There were three — `repeat`, `revert`, `skill-failure` — marking suspicious step ranges in the prompt. They are gone, and `fixtures/ab-anchors/` is why: given the same log, the model found the same lessons with them and without. What they encoded was never really detection, it was *guidance about what to look for*, and guidance belongs in `prompts/extract.md`, where the user can read it, disagree with it and change it — not in 196 lines of JavaScript that decide in advance what the model is allowed to notice. So the signals the detectors knew are now prose in that prompt: a call repeated with nothing changed between attempts, an edit undone, a skill followed into a dead end, a non-zero exit hiding behind a "completed" status, a task quietly dropped, a correction the user had to repeat. Stated as a place to start, explicitly not a checklist. The one mechanical thing left is a cost guard: one prompt and no tool calls at all, and the model is not called — which claims nothing about the session, only that there is nothing in it to read. A conversation with no tool calls *is* analysed, because a wrong instruction file shows up exactly there: a wrong answer and a correction, with nothing executed.
+5. **Extraction runs when asked, in a clean context**, not the working agent (it would defend its own choices) — one call through a session created for it and removed after, no agent, no tools, no history (see decision 10 for why not `generate.text`). Input: compressed projection of the shadow log (tool outputs trimmed to head/tail, prompts and assistant text in full) + existing lessons + rejected ids. Core question: *"If this session were run again, what should change so it goes shorter and straighter?"* **When** it runs is a deliberate choice, not an API constraint: see "When the analysis runs".
 6. **No separate "incident" entity.** Log → lessons. Each lesson carries `evidence` (session id + step ranges).
 7. **Lesson ≠ proposal.** Extracting the lesson is mandatory; proposing where to apply it is optional. Targets `skill | instruction | tool | refactor | other` are prompt hints, not an enum the extractor must fit into. "Doesn't fit the ontology" is a normal outcome — the human decides.
 8. **Lessons are workspace-scoped and keyed by problem, not by session.** One file per lesson, `lessons/<id>.md`, scoped to `location.project.id`. Sessions appear only as evidence refs, and a second session hitting the same problem increments `recurrence` and appends evidence rather than creating a second file. Score = `cost × recurrence × confidence × freshness`, where freshness halves every `halfLife` sessions (default 10) since the problem was last seen — counted in **sessions, not days**, because at one session a day a wall-clock decay buries everything. Recurrence matters more than one expensive incident: a lesson that shows up in three sessions *will* show up in the fourth. Overflow past the cap (default 30) is archived, never deleted.
@@ -40,7 +40,8 @@ Motivating example: a project carries a `lint` skill borrowed from another harne
 .retro/
 ├── prompts/
 │   ├── extract.md            # log → lessons        (user-editable, decision 13)
-│   └── apply.md              # lesson → proposal    (user-editable, decision 13)
+│   ├── review.md             # one lesson → hand-over
+│   └── review-auto.md        # every lesson → one plan
 ├── sessions/<sessionID>.jsonl # shadow log, one event per line
 ├── lessons/<lessonID>.md      # YAML frontmatter + body, one per lesson
 ├── archive/                   # evicted lessons
@@ -257,6 +258,13 @@ plugin needed — and it gets the `sessionID`, so it can drive the review conver
 14. **Nothing tells the user a plugin failed to load.** A bad path, a throwing `setup`, a
    module that does not import — the session just runs without us. Hence "if `selfcheck.md`
    is older than your last session, the plugin is not running".
+15. **`opencode run "/retro all"` does not run the command.** The text arrives as an
+   ordinary prompt and the registered command never fires; the agent in that session reads
+   "/retro all" as an instruction and improvises. Observed while dogfooding: the session's
+   first move was `git status`, not our batch. Headless, a command has to be posted to a
+   session — `POST /api/session/{sessionID}/command` — which is how the dogfooding run
+   eventually triggered it. `/retro` typed in the TUI is unaffected. Worth knowing before
+   believing a scripted review did anything.
 
 ### Still unverified
 
@@ -315,8 +323,9 @@ file.
 
 ```
 .retro/prompts/
-├── extract.md                  # live. the only file the plugin reads
-├── apply.md
+├── extract.md                  # live. the only files the plugin reads
+├── review.md
+├── review-auto.md
 └── updates/
     └── extract.v3.md           # a newer default, for you to read. nothing was changed.
 ```
@@ -452,9 +461,10 @@ the proposal rather than patching: the agent has the files and the human; we hav
 
 ## When the analysis runs
 
-`ctx.generate.text` only settles when the call originates inside a hook callback or a
-command's `execute` (Gotcha 9). From the event stream — which is where a session *ends* —
-it hangs for good. So the trigger and the work cannot be the same moment.
+A session ends in the event stream, and the event stream is the one place a model call
+cannot be made from: `ctx.generate.text` hangs there for good (Gotcha 9), and the session
+route has never been tried from it. So the trigger and the work are not the same moment —
+which turned out to be what we wanted anyway.
 
 **The work happens in `/retro`.** A finished session's log is kept and nothing more. One
 command then compresses what has accumulated, turns it into lessons, and only then looks
@@ -466,10 +476,14 @@ this plugin spends the user's money without being asked. Lessons sitting unextra
 lessons sitting unreviewed are the same thing from the user's side, since nothing is applied
 automatically either way — so there is no value in paying earlier.
 
-- **Bounded.** Up to `extractLimit` logs (default 10) per command, with the remainder
-  reported. A month of unreviewed sessions cannot bill in one keystroke.
-- **Cheap when there is nothing to read.** A session with fewer than three tool calls is
-  skipped without a model call.
+- **Bounded on request.** `extractLimit` caps the attempts one command makes, with the
+  remainder reported; it is unlimited by default, because a backlog that is never finished
+  is a backlog that keeps asking. It counts attempts rather than successes: an attempt is
+  what costs a model call, and a queue of failing logs would otherwise spend without limit
+  under a limit that only counted the ones that worked.
+- **Cheap when there is nothing to read.** A session of one prompt with no tool calls is
+  skipped without a model call. Anything more is read, including a conversation that ran no
+  tools at all.
 - **`autoExtract` restores the old behaviour** — analysis at the first prompt of the next
   session — for anyone who wants lessons ready before asking. It was the default until the
   owner pointed out that it spends money on a schedule the user did not choose.
@@ -527,13 +541,20 @@ does not prove the tool hook works and must not claim to.
 
 ### The checks a session cannot make for itself
 
-Free, so it runs on every review. Adds: versions (`ctx.app.version`,
-ours, the resolved `@opencode/plugin`); the `ctx` surface we depend on, member by member
-(this part *is* detectable — missing ones read `undefined`, Gotcha 8); connectivity via
-`ctx.generate.text`; a round-trip of the real extraction prompt over a bundled fixture
-session, checking the result still parses into lessons — the only check that exercises the
-whole pipeline including a user-edited prompt; and which resolution layer each prompt came
-from, with any pending update named.
+Free, so it runs on every review. It adds the `ctx` surface we depend on, member by member
+— this part *is* detectable, since a missing member reads `undefined` (Gotcha 8) — which
+resolution layer each prompt came from with any pending update named, and how much is
+stocked up, so that "is it doing anything" is answered in the same place.
+
+The surface list is only worth what it names, and it got that wrong once: it required
+`generate.text`, which the plugin mentions only to explain why it does not use it, and left
+out `session.create / generate / remove`, which every analysis runs through. A renamed
+`session.generate` would have passed. It is now `REQUIRED_SURFACE` in `src/selfcheck.js`,
+held to what `index.js` actually calls by `test/consistency.test.js`.
+
+It used to also ask the model whether it answers and whether the output contract still
+round-trips over a fixture. Both cost a call nobody requested, and both are answered for
+free by every analysis — with the model's own words when they fail.
 
 ### It is about the plugin, not about the session
 

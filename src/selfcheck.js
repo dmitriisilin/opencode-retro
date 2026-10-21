@@ -264,25 +264,37 @@ export const STATUS = { OK, DEGRADED, BROKEN, SKIPPED }
  * and both questions are answered for free by the analysis itself, every time, with the
  * model's own words when it fails.
  *
- * It checks:
- * that the `ctx` surface we depend on is still there, that the model answers, that the
- * prompts resolve, and that a real extraction prompt still round-trips into a parseable
- * lesson — which is the only check that exercises a user-edited prompt end to end.
+ * What is left is what stays free: that the `ctx` surface we depend on is still there,
+ * which prompt layer is in force and whether a newer default is waiting, and how much is
+ * stocked up — so that "is it doing anything" is answered in the same place.
  */
+/**
+ * The `ctx` members the plugin calls, which is what makes checking them worth anything: a
+ * member we do not use proves nothing when it is present, and says nothing about the one
+ * that moved. This list used to name `generate.text`, which `index.js` now mentions only to
+ * explain why it is *not* used, and to omit the session calls every analysis runs through —
+ * so a renamed `session.generate` would have passed the check and broken all of it.
+ * `test/consistency.test.js` holds the list to what `index.js` actually does.
+ */
+export const REQUIRED_SURFACE = [
+  ["tool", "hook"],
+  ["tool", "transform"],
+  ["session", "hook"],
+  ["session", "synthetic"],
+  ["session", "create"],
+  ["session", "generate"],
+  ["session", "remove"],
+  ["command", "transform"],
+  ["event", "subscribe"],
+  ["model", "default"],
+]
+
 export async function activeCheck({ ctx, config, prompts, store, state }) {
   const checks = []
   const notes = []
 
   // 1. Surface. This part *is* detectable at load: a missing member reads undefined.
-  const required = [
-    ["tool", "hook"],
-    ["tool", "transform"],
-    ["session", "hook"],
-    ["session", "synthetic"],
-    ["command", "transform"],
-    ["event", "subscribe"],
-    ["generate", "text"],
-  ]
+  const required = REQUIRED_SURFACE
   const missing = required.filter(([domain, member]) => typeof ctx?.[domain]?.[member] !== "function")
   checks.push(
     missing.length
@@ -295,8 +307,7 @@ export async function activeCheck({ ctx, config, prompts, store, state }) {
       : { status: OK, name: "ctx surface", detail: `${required.length} members present` },
   )
 
-  // 2. Connectivity.
-  // 3. Prompts: which layer is in force, and is a newer default waiting.
+  // 2. Prompts: which layer is in force, and is a newer default waiting.
   const prompt = prompts.resolve("extract")
   checks.push(
     prompt
@@ -307,8 +318,7 @@ export async function activeCheck({ ctx, config, prompts, store, state }) {
     notes.push(`prompts/updates/${file} is a newer default waiting to be read. Nothing was changed for you.`)
   }
 
-  // 4. Round trip: does the contract still produce something we can parse?
-  // 5. Stock, so the answer to "is it doing anything" is in the same place.
+  // 3. Stock, so the answer to "is it doing anything" is in the same place.
   const lessons = store.list()
   checks.push({
     status: OK,
