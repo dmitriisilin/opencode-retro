@@ -147,6 +147,24 @@ Observed tool names: `read`, `glob`, `edit`, `shell`, `skill`. Not `bash` — `s
 
 **Prompts.** `session.prompt` → `{ sessionID, messageID, prompt: { text, files }, delivery }`.
 
+**`session.execution.*` is one pair per turn, not per session.** Measured directly: one
+session given two prompts (`opencode run -s <id>` twice) produced two `started`/`succeeded`
+pairs in one log —
+
+```
+[1] user: one      [2] session start  …  [5] session end: succeeded
+[6] user: two      [7] session start  …  [10] session end: succeeded
+```
+
+This is load-bearing, because the first version of the live/settled rules read an execution
+as a session. A session with two prompts was therefore marked ended for good after the first
+turn: treated as finished, settled mid-work, its log prunable while it was still being
+written, and the second turn's end dropped so nothing was ever queued for it. The freshness
+counter moved per turn too, so a twenty-turn session aged every lesson by two half-lives
+while the person was still in the session that produced them. "A session ends" means "a turn
+ended"; what makes a session finished is that nothing more arrives, which is why the growth
+mark rather than the end event decides whether there is anything to read.
+
 **Subagents run in sessions of their own, and yes, we see all of it.** Measured with
 `explore`: the parent calls a tool named `subagent` with `{ agent, description, prompt }`
 and gets `result.metadata.sessionID` — the child's id. The child announces itself first on
@@ -303,9 +321,10 @@ plugin needed — and it gets the `sessionID`, so it can drive the review conver
   rather than overwriting it, because it is read once at load and used from memory, so a
   second writer was silently clobbered. Measured: a rejection recorded out of band vanished
   when a long-running instance saved its older copy. Only the append-only parts merge —
-  rejections and extractions as unions, the session counter and each `looked` size as maxima
-  — because only they have a safe answer; the queue is the writer's own, minus whatever the
-  file says has since been extracted.
+  rejections, extractions and counted sessions as unions, the session counter and each
+  `looked` size as maxima — because only they have a safe answer; the queue is the writer's
+  own, minus entries a recorded extraction has already covered (compared by the byte size
+  each entry was queued at, so a session picked up again after being settled is not lost).
 - Whether `/api/experimental/session/{id}/log` (the durable event log) makes the shadow log
   redundant. Decision 3 says keep our own; worth a look before M1 ships.
 

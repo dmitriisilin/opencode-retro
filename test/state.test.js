@@ -214,3 +214,79 @@ test("the step mark only moves forward, and an old byte-count file still loads",
   state.look("ses_a", { n: 2, size: 10 })
   assert.deepEqual(state.looked("ses_a"), { n: 30, size: 9000 })
 })
+
+test("settling keeps the step mark, because the session may be picked up again", () => {
+  // Sessions are left open and returned to. Deleting the mark when one is settled meant the
+  // next read started at step 1 again, paid for everything a second time, and re-derived the
+  // lessons already integrated. It never actually deleted it either — `save` merges with the
+  // file, so the old number came straight back — but relying on that accident is not a rule.
+  const s = sandbox()
+  const state = createState({ path: s.path })
+  state.look("ses_a", { n: 12, size: 4096 })
+  state.markExtracted("ses_a", { ok: true, detail: "done" })
+
+  assert.deepEqual(state.looked("ses_a"), { n: 12, size: 4096 }, "still the same process")
+  assert.deepEqual(createState({ path: s.path }).looked("ses_a"), { n: 12, size: 4096 }, "and after a reload")
+})
+
+test("a rebased mark is not resurrected by the merge", () => {
+  // A pruned log written again under the same id starts at step 1 and is shorter than the
+  // mark. A size that only ever grows would then call the new file already read, for ever.
+  const s = sandbox()
+  const state = createState({ path: s.path })
+  state.look("ses_a", { n: 40, size: 9000 })
+  state.rebase("ses_a")
+
+  assert.deepEqual(state.looked("ses_a"), { n: 0, size: 0 }, "forgotten, not maxed")
+  assert.deepEqual(createState({ path: s.path }).looked("ses_a"), { n: 0, size: 0 }, "and the write wins over the old file")
+
+  state.look("ses_a", { n: 3, size: 120 })
+  assert.deepEqual(state.looked("ses_a"), { n: 3, size: 120 }, "and the new file can be read from its own start")
+})
+
+test("an entry queued before an extraction is done; one queued for later work is not", () => {
+  const s = sandbox()
+  const state = createState({ path: s.path })
+
+  // Settled at byte 100. A run of the queue that predates that settle is stale work.
+  state.look("ses_a", { n: 10, size: 100 })
+  state.markExtracted("ses_a", { ok: true, detail: "done" })
+  state.queue("ses_a", 90)
+  assert.deepEqual(state.pending, [], "the extraction covered what was queued")
+
+  // The session was prompted again and wrote past where the analysis stopped.
+  state.queue("ses_a", 240)
+  assert.deepEqual(state.pending.map((p) => p.session), ["ses_a"], "new material is owed")
+  assert.deepEqual(
+    createState({ path: s.path }).pending.map((p) => p.session),
+    ["ses_a"],
+    "and a reload does not drop it as though it had been extracted",
+  )
+})
+
+test("a rebase also clears what the old extraction covered", () => {
+  // The extraction's byte size describes the file that was replaced. A shorter new log would
+  // otherwise look already covered and be dropped from the queue on the next save.
+  const s = sandbox()
+  const state = createState({ path: s.path })
+  state.look("ses_a", { n: 40, size: 9000 })
+  state.markExtracted("ses_a", { ok: true, detail: "done", size: 9000 })
+  state.rebase("ses_a")
+  state.queue("ses_a", 30)
+
+  assert.deepEqual(state.pending.map((p) => p.session), ["ses_a"], "new bytes are not covered by an extraction of the old file")
+})
+
+test("a session is counted once, however many times it runs", () => {
+  // Freshness is counted in sessions, and OpenCode emits an execution per prompt: a session
+  // left open and prompted five times is still one session, and counting turns would age the
+  // lesson it just produced while the person is still working in the same place.
+  const s = sandbox()
+  const state = createState({ path: s.path })
+  assert.equal(state.countSession("ses_a"), 1)
+  assert.equal(state.countSession("ses_a"), 1, "a second turn is not a second session")
+  assert.equal(state.countSession("ses_b"), 2)
+  assert.equal(state.countSession(), 3, "without an id it still just counts")
+  assert.equal(createState({ path: s.path }).sessions, 3, "and the count survives a restart")
+})
+

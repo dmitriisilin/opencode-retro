@@ -48,8 +48,24 @@ export function createIngest({
     return s
   }
 
-  /** A subagent's records belong to the session that delegated to it. */
-  const owner = (sessionID) => parentOf(sessionID) ?? sessionID
+  /**
+   * The session whose log this work belongs to: a delegation's root, not the child.
+   *
+   * One level is not enough. A subagent can delegate to another, and `parentOf` gives one
+   * link at a time, so the work of the deepest child would land in the middle session's log —
+   * which is never analysed, because a session that is somebody's child is never queued. The
+   * link may also be learned in either order, so this has to be resolved at write time.
+   */
+  const owner = (sessionID) => {
+    let current = sessionID
+    // A guard, not a depth limit: a malformed map must not hang the user's session.
+    for (let i = 0; i < 64; i++) {
+      const parent = parentOf(current)
+      if (!parent || parent === current) return current
+      current = parent
+    }
+    return current
+  }
 
   function append(sessionID, record) {
     const target = owner(sessionID)
@@ -68,12 +84,33 @@ export function createIngest({
      * sequence; the caller deletes the orphan log.
      */
     absorb(sessionID, records) {
+      // Whatever a child did before the link was known was done for the parent, so the
+      // parent is ours from that moment too.
+      const target = owner(sessionID)
+      const parent = session(target)
+      parent.owned = true
+      const child = sessions.get(sessionID)
       for (const { n, t, ...rest } of records) append(sessionID, rest)
-      sessions.delete(sessionID)
+      if (child && target !== sessionID) {
+        // The counters recorded before the link are part of the parent's evidence now. If the
+        // prompt is not moved with it, the self-check reports the parent's prompt hook dead
+        // because the only prompt it ever saw was the child's instruction.
+        for (const key of ["prompts", "texts", "steps", "toolHook", "toolEvents"]) {
+          parent.counts[key] += child.counts[key]
+        }
+        sessions.delete(sessionID)
+      }
+      return parent
     },
 
-    /** Per-session counters, read by the self-check. */
-    counts: (sessionID) => session(sessionID).counts,
+    /**
+     * Whether this session is one we own: a hook fired for it, or for a session that
+     * delegated to it. The event stream can only annotate; it may never open a session.
+     */
+    owned: (sessionID) => Boolean(sessions.get(owner(sessionID))?.owned),
+
+    /** Per-session counters, read by the self-check. A child is read through its owner. */
+    counts: (sessionID) => session(owner(sessionID)).counts,
     sessions: () => [...sessions.keys()],
     forget: (sessionID) => sessions.delete(sessionID),
 

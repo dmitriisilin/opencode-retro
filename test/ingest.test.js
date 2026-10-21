@@ -182,6 +182,42 @@ test("absorb renumbers records written before the parent link was known", () => 
   assert.equal(out.at(-1).n, 1, "renumbered into the parent's sequence")
   assert.equal(out.at(-1).t, 1000, "with the parent's clock, not the orphan's")
   assert.deepEqual(ingest.sessions(), ["parent"], "the orphan session is forgotten")
+  assert.equal(ingest.owned("parent"), true, "and the parent is ours by association, even if its own hook was missed")
+  assert.equal(ingest.counts("parent").prompts, 1, "the prompt moves with the record, or the report calls the hook dead")
+})
+
+test("a delegation inside a delegation belongs to the session that asked for it", () => {
+  // A subagent can spawn one of its own, and `parentOf` gives one link at a time. Writing to
+  // the middle session's log loses the deepest work: a session that is somebody's child is
+  // never queued or analysed, and its log is pruned as uncited.
+  const links = { leaf: "middle", middle: "root" }
+  const { out, ingest } = collector({ parentOf: (id) => links[id] ?? null })
+
+  ingest.prompt({ sessionID: "root", prompt: { text: "the task" } })
+  ingest.prompt({ sessionID: "leaf", prompt: { text: "You are a subagent spawned by another session." } })
+  ingest.toolAfter({
+    sessionID: "leaf",
+    id: "c1",
+    tool: "read",
+    status: "completed",
+    result: { output: { output: "export function sum" } },
+  })
+
+  assert.ok(out.every((r) => r.sessionID === "root"), "nothing is written under an intermediate delegation")
+  assert.deepEqual(out.map((r) => r.n), [1, 2, 3], "and it joins the one sequence")
+})
+
+test("ownership is a hook having fired, and the counters follow the owner", () => {
+  const { ingest } = collector({ parentOf: (id) => (id === "child" ? "parent" : null) })
+  assert.equal(ingest.owned("parent"), false, "an event alone may not open a session")
+
+  ingest.prompt({ sessionID: "parent", prompt: { text: "go" } })
+  assert.equal(ingest.owned("parent"), true)
+  assert.equal(ingest.owned("child"), true, "a child is ours through its owner")
+
+  ingest.toolAfter({ sessionID: "child", id: "c1", tool: "read", status: "completed" })
+  assert.equal(ingest.counts("child").toolHook, 1, "read through the owner, not a session of its own")
+  assert.equal(ingest.counts("parent").toolHook, 1)
 })
 
 test("an event with no session is ignored rather than crashing the stream", () => {

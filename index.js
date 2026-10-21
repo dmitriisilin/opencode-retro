@@ -1,4 +1,5 @@
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
+import { resolve as resolvePath } from "node:path"
 import { createIngest } from "./src/ingest.js"
 import { createPrompts } from "./src/prompts.js"
 import { createSelfCheck } from "./src/selfcheck.js"
@@ -180,7 +181,8 @@ export default {
 
     await hook("session", "prompt", (p) => {
       ingest.prompt(p)
-      observe(p.sessionID)
+      touch(p.sessionID)
+      observe(rootOf(p.sessionID))
       // Analysis is what `/retro` does, not something a new session triggers: a model call
       // costs money and nothing here spends it unprompted. `autoExtract` restores the old
       // behaviour for anyone who wants lessons ready before they ask.
@@ -196,13 +198,20 @@ export default {
       }
     })
 
-    await hook("tool", "execute.before", (p) => ingest.toolBefore(p))
+    await hook("tool", "execute.before", (p) => {
+      touch(p.sessionID)
+      ingest.toolBefore(p)
+    })
     await hook("tool", "execute.after", (p) => {
       if (p.tool === "subagent" && p.result?.metadata?.sessionID) {
         adopt(p.result.metadata.sessionID, p.sessionID)
       }
       ingest.toolAfter(p)
-      observe(p.sessionID)
+      touch(p.sessionID)
+      // Measured on the parent, never on the child: the child's records are written into
+      // the parent's log, so the self-check would otherwise look for sessions/<child>.jsonl,
+      // not find it, and report BROKEN about a healthy session.
+      observe(rootOf(p.sessionID))
     })
 
     // Commands. A command's execute is a context where generate.text returns (Gotcha 9),
@@ -250,7 +259,7 @@ export default {
           input: DECIDE_INPUT,
           execute: async (input, context) => {
             const result = decide(input, { store, state, session: context?.sessionID ?? null })
-            pruneLogs()
+            pruneLogs(context?.sessionID ?? null)
             writeSelfCheck()
             return { output: result, content: result.detail }
           },
@@ -293,19 +302,42 @@ export default {
     const foreign = new Set()
 
     function handleEvent(event) {
-      if (event.type === "session.created" && event.data?.sessionID) {
-        const directory = event.data?.location?.directory
-        if (directory && ctx.location?.directory && directory !== ctx.location.directory) {
-          foreign.add(event.data.sessionID)
-        }
-        if (event.data?.parentID) adopt(event.data.sessionID, event.data.parentID)
+      const sessionID = event?.data?.sessionID
+
+      if (event.type === "session.created" && sessionID) {
+        // A directory that names the same place two ways is still ours. Comparing raw
+        // strings made a trailing slash, or a relative path, look like another checkout —
+        // and then the whole session was ignored by the event stream that decides when it
+        // is over.
+        if (isForeign(event)) return
+        if (event.data?.parentID) adopt(sessionID, event.data.parentID)
       }
-      if (foreign.has(event?.data?.sessionID)) return
+      if (sessionID && foreign.has(sessionID)) return
       ingest.event(event)
 
-      if (event.type === "session.execution.started" && event.data?.sessionID && !parents.has(event.data.sessionID)) {
-        started.add(event.data.sessionID)
+      if (event.type === "session.execution.started" && sessionID) {
+        // An execution is one turn, not the life of the session: a session left open and
+        // prompted again starts another one. Keeping the previous end here made the second
+        // turn look finished — never live, so another `/retro` could settle it mid-work, and
+        // its own end was dropped as a duplicate, so nothing was ever queued.
+        //
+        // This runs before the ownership gate on purpose. The start event arrives before the
+        // turn's first hook, and the previous end dropped the session from the ingest map, so
+        // an owned-only check here would skip exactly the event that says the session is
+        // working again. Marking liveness is safe for a session that never turns out to be
+        // ours: with no log, nothing reads or prunes it.
+        ended.delete(sessionID)
+        // A subagent's execution is a step in its parent's task, not a session.
+        if (!parents.has(sessionID)) started.add(sessionID)
       }
+
+      // Only a session a hook has fired for is ours. `ctx.event.subscribe` reaches every
+      // session in the project, including one in another checkout whose hooks never come
+      // here, and we may not have seen its `session.created` (plugins load lazily). Without
+      // this gate its end event still counted it towards freshness, queued a log that does
+      // not exist, and rewrote selfcheck.md as BROKEN prompt hook / missing log — about a
+      // session that is perfectly healthy somewhere else.
+      if (!sessionID || !ingest.owned(sessionID)) return
 
       // session.idle never fires outside the TUI (AGENTS.md Gotcha 2), so the end of work
       // is session.execution.*.
@@ -315,8 +347,7 @@ export default {
         event.type === "session.execution.interrupted"
       if (!done) return
 
-      const sessionID = event?.data?.sessionID
-      if (!sessionID || ended.has(sessionID)) return
+      if (ended.has(sessionID)) return
       // A subagent finishing is a step in its parent's task, not a session to analyse.
       if (parents.has(sessionID)) return
       ended.add(sessionID)
@@ -335,9 +366,9 @@ export default {
       ingest.forget(sessionID)
 
       // Not extracted here: a model call from the event stream never returns. Queued, and
-      // drained from the next session's prompt hook.
-      state.countSession()
-      state.queue(sessionID)
+      // drained from the next session's prompt hook — or by `/retro`, which settles it.
+      state.countSession(sessionID)
+      state.queue(sessionID, log.stat(sessionID).size)
       lastVerified.set(sessionID, verified)
       check.verify({ ...verified, extraction: { queued: true } })
       writeSelfCheck()
@@ -423,6 +454,67 @@ export default {
     }
 
     /**
+     * A session is live from its first hook until its execution ends.
+     *
+     * `started` only knows about sessions whose `session.execution.started` this process
+     * saw. A hook firing is the older fact and the more reliable one: after a restart in the
+     * middle of a session, the start event has already gone by, and the session would look
+     * finished — queued, settled and possibly pruned while it is still writing. A hook that
+     * arrives after the end does not resurrect it: the next turn starts with an execution
+     * event, which clears the mark deliberately.
+     */
+    function touch(id) {
+      if (!id || ended.has(id) || parents.has(id)) return
+      started.add(id)
+    }
+
+    /**
+     * The session a chain of delegations ends at. A subagent's work belongs to the root that
+     * asked for it, and a subagent may itself delegate: one level would measure the middle
+     * session, which has no log of its own.
+     */
+    function rootOf(id) {
+      let current = id
+      for (let i = 0; i < 64; i++) {
+        const parent = parents.get(current)
+        if (!parent || parent === current) return current
+        current = parent
+      }
+      return current
+    }
+
+    /**
+     * Where this session's log has been read to, after making sure the mark describes the
+     * file that is actually there.
+     *
+     * `looked.size` never goes backwards — that is what stops the same bytes being paid for
+     * twice — so a log that was pruned and then written again under the same id would stay
+     * "already read" for ever. A mark larger than the file is the one safe signal that the
+     * file was replaced, and it is checked here rather than trusted.
+     */
+    function markOf(id) {
+      if (log.stat(id).size < state.looked(id).size) state.rebase(id)
+      return state.looked(id)
+    }
+
+    /**
+     * Whether a session from `session.created` belongs to another checkout of this project.
+     *
+     * A git worktree is the same project in a different directory, so its sessions reach
+     * this instance through the event stream while its hooks fire somewhere else. Comparing
+     * resolved paths, not raw strings: `<dir>` and `<dir>/` are the same place, and treating
+     * the second as foreign would silently discard a session of our own.
+     */
+    function isForeign(event) {
+      const sessionID = event?.data?.sessionID
+      const directory = event?.data?.location?.directory
+      if (!sessionID || !directory || !ctx.location?.directory) return false
+      if (resolvePath(directory) === resolvePath(ctx.location.directory)) return false
+      foreign.add(sessionID)
+      return true
+    }
+
+    /**
      * What this session has already been concluded to mean. Told to the extractor so it does
      * not re-derive a lesson that was accepted and archived — which the store would then
      * reopen as though the fix had not held, when all that happened is a second read.
@@ -434,15 +526,22 @@ export default {
         .map((l) => ({ id: l.id, status: l.status ?? "closed", statement: l.statement ?? "" }))
     }
 
-    function pruneLogs() {
+    function pruneLogs(invoking = null) {
       if (config.keepSessions) return
       const cited = citedSessions()
       const owed = new Set(state.pending.map((p) => p.session))
       for (const id of log.list()) {
         // Never a session that is working. Its log is the only record of what is happening
-        // right now, it is still being appended to, and nothing about it is settled.
-        if (isLive(id)) continue
-        if (!cited.has(id) && !owed.has(id)) log.remove(id)
+        // right now, it is still being appended to, and nothing about it is settled. The
+        // session the command is running in counts as working even if a restart meant its
+        // start event was never seen: deleting the log under the session that asked is the
+        // worst possible answer.
+        if (isLive(id, invoking)) continue
+        if (!cited.has(id) && !owed.has(id) && log.remove(id)) {
+          // The mark described a file that no longer exists. Leaving it would make the next
+          // log written under this id look already read, because size only moves forward.
+          state.rebase(id)
+        }
       }
     }
 
@@ -457,10 +556,14 @@ export default {
     function adopt(child, parent) {
       if (parents.get(child) === parent) return
       parents.set(child, parent)
+      started.delete(child)
+      ended.delete(child)
+      observedSessions.delete(child)
       const stray = log.read(child)
-      if (!stray.length) return
       ingest.absorb(child, stray)
-      log.remove(child)
+      if (stray.length) log.remove(child)
+      // The self-check may have been measuring the child's log, which no longer exists.
+      observe(rootOf(parent), { force: true })
     }
 
     /** Sessions an open lesson points at. The reason a log is still on disk. */
@@ -529,16 +632,23 @@ export default {
       // but whose end never reached us — a server that stops takes its sessions with it, and
       // no event arrives — would otherwise sit on disk for ever, never analysed and never
       // removed. It is not live, so it is finished, so it joins the queue.
+      //
+      // Being settled is not permanent. A session left open and prompted again produces
+      // another execution, and this loop must pick that up too: the question is whether the
+      // log has grown since it was last read, not whether it was ever extracted. `extracted`
+      // records the outcome of the last settle; the byte mark is what decides the cost.
       for (const id of log.list()) {
-        if (isLive(id, sessionID) || state.wasExtracted(id) || state.isPending(id)) continue
-        state.queue(id)
+        if (isLive(id, sessionID) || state.isPending(id)) continue
+        const size = log.stat(id).size
+        if (size <= markOf(id).size) continue
+        state.queue(id, size)
       }
 
       while (attempted < config.extractLimit) {
-        const owed = state.nextPending(sessionID, skip)
+        const owed = nextToSettle(sessionID, skip)
         if (!owed) break
         attempted++
-        const result = await runExtraction(owed.session)
+        const result = await runExtraction(owed.session, { invoking: sessionID })
         if (!result?.ok) {
           failures.push({ session: owed.session, detail: result?.detail ?? "unknown failure" })
           skip.add(owed.session)
@@ -563,13 +673,10 @@ export default {
        */
       for (const id of log.list()) {
         if (attempted >= config.extractLimit) break
-        if (!isLive(id, sessionID) || state.wasExtracted(id)) continue
+        if (!isLive(id, sessionID)) continue
         const size = log.stat(id).size
-        if (size <= state.looked(id).size) continue
+        if (size <= markOf(id).size) continue
         attempted++
-        // The size is recorded whatever happens, so a failure on these bytes is not paid for
-        // twice; the step mark only moves on success, inside runExtraction.
-        state.look(id, { size })
         const result = await runExtraction(id, { settle: false })
         if (!result?.ok) failures.push({ session: id, detail: result?.detail ?? "unknown failure" })
         else if (!result.skipped) reread.push(id)
@@ -634,13 +741,31 @@ export default {
       }
     }
 
+    /**
+     * The oldest owed session that is not one somebody is working in.
+     *
+     * A session queued when one execution ended may have been picked up again before the
+     * queue was drained. Settling it now would settle material still being written and
+     * could delete a log that is still growing; the live pass reads it instead, and it is
+     * settled when the execution it is in now ends. `skip` is the caller's own, so a session
+     * set aside for this run is not picked again by the same loop.
+     */
+    function nextToSettle(exclude, skip) {
+      let owed = state.nextPending(exclude, skip)
+      while (owed && isLive(owed.session, exclude)) {
+        skip.add(owed.session)
+        owed = state.nextPending(exclude, skip)
+      }
+      return owed
+    }
+
     async function drainQueue(currentSession) {
       if (draining) return
-      const owed = state.nextPending(currentSession)
+      const owed = nextToSettle(currentSession, new Set())
       if (!owed) return
       draining = true
       try {
-        await runExtraction(owed.session)
+        await runExtraction(owed.session, { invoking: currentSession })
       } catch (err) {
         onError("drain", err)
       } finally {
@@ -671,16 +796,43 @@ export default {
       return null
     }
 
-    async function runExtraction(sessionID, { settle = true } = {}) {
-      if (state.wasExtracted(sessionID)) return { ok: true, already: true }
+    async function runExtraction(sessionID, { settle = true, invoking = null } = {}) {
       if (settle) state.attempt(sessionID)
 
-      let records = null
+      // The mark is checked against the file that is actually there first: a log that was
+      // pruned and written again is smaller than the mark that described the old one.
+      let mark = markOf(sessionID)
+
+      let raw = null
       try {
-        records = parseShadowLog(readFileSync(log.path(sessionID), "utf8"))
+        raw = readFileSync(log.path(sessionID))
       } catch (err) {
         onError("extract.read", err)
       }
+      const text = raw == null ? null : raw.toString("utf8")
+      const records = text == null ? null : parseShadowLog(text)
+      const lastN = records?.length ? Math.max(...records.map((r) => r.n ?? 0)) : 0
+
+      // A log whose numbering ends before the mark does is not the log the mark described,
+      // even if it is longer: the file was replaced rather than appended to. Starting over
+      // is the only reading that makes the step references resolve.
+      if (lastN > 0 && lastN < mark.n) {
+        state.rebase(sessionID)
+        mark = { n: 0, size: 0 }
+      }
+
+      /**
+       * How much was actually read, not how large the file is now.
+       *
+       * The session may be working while the model answers, and the earlier version recorded
+       * `stat` size on success — so every record appended during the call was marked as sent
+       * without ever being sent, and the growth gate then skipped it for good.
+       */
+      const readSize = raw == null ? log.stat(sessionID).size : raw.length
+
+      // These bytes have been read, or were there to be read: either way a failure must not
+      // pay for the same material twice. The step mark below still moves only on success.
+      if (readSize > 0) state.look(sessionID, { size: readSize })
 
       // A log we could not read is a failure like any other, and it reaches the same retry
       // policy below. It used to be marked extracted here and returned early, which did two
@@ -697,9 +849,7 @@ export default {
        * prompts are kept whatever their step, because they say what the session was for and
        * an excerpt without them is a list of commands with no account of why.
        */
-      const mark = state.looked(sessionID)
       const fresh = mark.n > 0 && records ? records.filter((r) => r.n > mark.n || r.k === "prompt") : records
-      const lastN = records?.length ? Math.max(...records.map((r) => r.n ?? 0)) : 0
 
       let result = { ok: false, detail: "shadow log could not be read" }
       if (records) {
@@ -735,13 +885,15 @@ export default {
       // Nothing is settled for a session that is still working: not marked extracted, so the
       // rest of it is still analysed when it ends, and not pruned, because it is being
       // written to as we read it.
-      // The mark moves only on success: a failed analysis must not skip the material it
-      // failed on. The size was already recorded by the caller, so nothing is paid twice.
-      if (result.ok && lastN > 0) state.look(sessionID, { n: lastN, size: log.stat(sessionID).size })
+      // The step mark moves only on success: a failed analysis must not skip the material it
+      // failed on. The size was already recorded above, so nothing is paid twice.
+      if (result.ok && lastN > 0) state.look(sessionID, { n: lastN })
 
       if (settle && (result.ok || state.pending.find((p) => p.session === sessionID)?.attempts >= 3)) {
-        state.markExtracted(sessionID, { ok: result.ok, detail: result.detail })
-        if (result.ok) pruneLogs()
+        // `size` is what this settle actually covered, so a queue entry for later material
+        // is not mistaken for one this extraction already answered.
+        state.markExtracted(sessionID, { ok: result.ok, detail: result.detail, size: readSize })
+        if (result.ok) pruneLogs(invoking)
       }
 
       const verified = lastVerified.get(sessionID)
