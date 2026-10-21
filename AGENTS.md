@@ -843,6 +843,11 @@ Shipping with these known, listed so nobody discovers them as surprises:
   inside the one directory this plugin owns, and the user never edits theirs. Ignored:
   sessions, state, the self-check, the plugin log, prompt update notices. Not ignored:
   `lessons/`, `archive/` and the prompts — the product and the configuration.
+- **`npm test` expands its glob in the shell, not in Node.** `node --test "test/*.test.js"`
+  needs Node's own glob support, which is 21+, while `engines` allows 18 — so a contributor on
+  18 saw the suite find nothing. The quotes are gone, so a POSIX shell expands it. A directory
+  argument is not an option: Node treats every file under a directory named `test` as a test
+  file, which picks up `test/replay.js` and fails.
 - **One vocabulary, three verbs: extract → propose → decide.** The three artifacts are a raw
   log, a lesson and a decision, and each step is named the same way everywhere: `src/extract.js`,
   `src/propose.js`, `src/decide.js`, with `test/<verb>.test.js` beside each, and `prompts/extract.md`

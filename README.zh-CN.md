@@ -1,4 +1,4 @@
-<!-- translated-from: README.md@c987944e129a -->
+<!-- translated-from: README.md@e84c7984f3cf -->
 # opencode-retro
 
 [English](README.md) | [Русский](README.ru.md) | **简体中文** | [Español](README.es.md) | [日本語](README.ja.md)
@@ -9,7 +9,7 @@
 
 智能体不会从自己的会话中学习。它在哪里受阻，唯一的记录就是日志，而日志通常没人看。本插件负责读日志，并带回建议。
 
-> 状态：功能完整且可用，已在 OpenCode 2.0.32 上验证。npm 包将随 `v0.1.0` 一同发布；在该标签发布之前，请在 `opencode.json` 中指向一份本地检出。
+> 状态：功能完整且可用，已在 OpenCode 2.0.32 上验证。npm 包名为 `opencode-retro`；`v0.1.0` 是它第一个具备功能的版本。
 
 ## 要解决的问题
 
@@ -69,7 +69,7 @@
 
 该文件中明确写着：这是一个起点，而不是检查清单。
 
-### 复核
+### 提议
 
 插件读日志，人读建议。插件到建议为止，不会改动项目文件。
 

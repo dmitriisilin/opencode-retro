@@ -6,7 +6,7 @@ Retrospectives for coding agents. An [OpenCode](https://opencode.ai) v2 plugin t
 
 An agent does not learn from its own sessions. The only record of where it struggled is the log, and logs go unread. This plugin reads the log and comes back with proposals.
 
-> Status: complete and working, verified against OpenCode 2.0.32. The npm package goes live with `v0.1.0`; until that tag lands, point `opencode.json` at a checkout.
+> Status: complete and working, verified against OpenCode 2.0.32. The npm package is `opencode-retro`; `v0.1.0` is its first release with functionality.
 
 ## The problem
 
@@ -66,7 +66,7 @@ The criteria are not compiled into the plugin. They live in [`prompts/extract.md
 
 The file states that this is a starting point and not a checklist.
 
-### Review
+### Propose
 
 The plugin reads the log. The human reads proposals. It stops at the proposal and does not edit project files.
 

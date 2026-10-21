@@ -1,4 +1,4 @@
-<!-- translated-from: README.md@c987944e129a -->
+<!-- translated-from: README.md@e84c7984f3cf -->
 # opencode-retro
 
 [English](README.md) | [Русский](README.ru.md) | [简体中文](README.zh-CN.md) | **Español** | [日本語](README.ja.md)
@@ -9,7 +9,7 @@ Retrospectivas para agentes de programación. Un plugin de [OpenCode](https://op
 
 Un agente no aprende de sus propias sesiones. El único registro de dónde se atascó es el log, y los logs no se leen. Este plugin lee el log y vuelve con propuestas.
 
-> Estado: completo y en funcionamiento, verificado contra OpenCode 2.0.32. El paquete de npm se publica con `v0.1.0`; hasta que llegue esa etiqueta, apunta `opencode.json` a una copia local.
+> Estado: completo y en funcionamiento, verificado contra OpenCode 2.0.32. El paquete de npm es `opencode-retro`; `v0.1.0` es su primera versión con funcionalidad.
 
 ## El problema
 
@@ -69,7 +69,7 @@ Los criterios no están compilados en el plugin. Residen en [`prompts/extract.md
 
 El propio archivo indica que esto es un punto de partida y no una lista de verificación.
 
-### Revisión
+### Propuesta
 
 El plugin lee el log. La persona lee propuestas. El plugin se detiene en la propuesta y no edita los archivos del proyecto.
 

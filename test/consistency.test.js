@@ -75,6 +75,42 @@ test("every record kind the log can hold is rendered to the extractor", () => {
   }
 })
 
+test("the three steps are named extract, propose and decide — and no name is `review`", () => {
+  // Names, not prose: `review` is still ordinary English for reading something ("nothing to
+  // review", "a lesson can sit for weeks before anyone reviews it") and that is fine. What is
+  // not fine is a name a user types or edits — a prompt file, an option, a command, a section
+  // heading — because that is where the vocabulary lives. This was the drift that left
+  // `### Review` in five READMEs and "Review …" in both command descriptions.
+  const prompts = readdirSync(join(root, "prompts")).filter((f) => f.endsWith(".md"))
+  assert.deepEqual(
+    prompts.sort(),
+    ["extract.md", "propose.md"],
+    "one prompt per step the user owns; `propose-all.md` was two copies of one rule",
+  )
+  for (const name of ["extract", "propose"]) {
+    const frontmatter = read(`prompts/${name}.md`).match(/^---\n([\s\S]*?)\n---/)?.[1] ?? ""
+    assert.match(frontmatter, new RegExp(`^prompt: ${name}$`, "m"), `prompts/${name}.md must name itself ${name}`)
+  }
+
+  const options = [...read("src/config.js").matchAll(/^  ([a-zA-Z]+):/gm)].map((m) => m[1])
+  const commands = [...read("index.js").matchAll(/name: "(retro[a-z-]*)"/g)].map((m) => m[1])
+  const named = [...options.map((o) => `option ${o}`), ...commands.map((c) => `/${c}`)]
+  assert.deepEqual(named.filter((n) => /review/i.test(n)), [], "a step was renamed; no name may still carry the old word")
+
+  const tool = read("index.js").match(/name: "(retro_[a-z_]+)"/)?.[1] ?? null
+  assert.equal(tool, "retro_decide", "the decision step is recorded through `retro_decide`")
+
+  // English headings are matched by word; translated ones only by structure, because a
+  // translated heading cannot be compared with an English one. The four translations used to
+  // say "Revisión" / "レビュー" / "复核" / "Разбор" where English now says "Propose".
+  const headings = (file) => [...read(file).matchAll(/^#{1,6} .*$/gm)].map((m) => m[0])
+  assert.deepEqual(headings("README.md").filter((h) => /review/i.test(h)), [], "README.md still has a `review` heading")
+  const levels = headings("README.md").map((h) => h.match(/^#+/)[0])
+  for (const file of SHIPPED.filter((f) => /^README\..+\.md$/.test(f))) {
+    assert.deepEqual(headings(file).map((h) => h.match(/^#+/)[0]), levels, `${file} has a different section structure`)
+  }
+})
+
 test("nothing exported from src is unreachable", () => {
   const files = readdirSync(join(root, "src")).filter((f) => f.endsWith(".js"))
   const everywhere = [...files.map((f) => read(`src/${f}`)), read("index.js"), ...readdirSync(join(root, "test")).map((f) => read(`test/${f}`))].join("\n")

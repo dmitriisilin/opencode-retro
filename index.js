@@ -230,7 +230,7 @@ export default {
       await ctx.command.transform((cmds) => {
         cmds.add({
           name: "retro",
-          description: "Review what the last sessions should have taught this project",
+          description: "Propose what the last sessions should have taught this project",
           execute: command("retro", ({ sessionID, prompt }) => {
             const text = String(prompt?.text ?? "").trim().toLowerCase()
             return text.startsWith("all") ? proposeAll(sessionID) : proposeOne(sessionID)
@@ -238,7 +238,7 @@ export default {
         })
         cmds.add({
           name: "retro-all",
-          description: "Review everything waiting at once, as one plan",
+          description: "Propose everything waiting at once, as one plan",
           execute: command("retro-all", ({ sessionID }) => proposeAll(sessionID)),
         })
       })

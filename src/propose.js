@@ -1,4 +1,5 @@
 import { score, staleSessions } from "./lessons.js"
+import { DEFAULTS } from "./config.js"
 
 /**
  * `/retro` (AGENTS.md decision 9, as amended).
@@ -12,7 +13,7 @@ import { score, staleSessions } from "./lessons.js"
 export const OPEN = new Set(["new", "later", undefined, null])
 
 /** How many lessons one `/retro all` carries. Beyond this, a plan stops being a plan. */
-export const PROPOSE_LIMIT = 10
+export const PROPOSE_LIMIT = DEFAULTS.proposeLimit
 
 export function pickLesson(lessons, ctx) {
   return pickOpen(lessons, ctx)[0] ?? null

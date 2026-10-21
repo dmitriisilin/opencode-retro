@@ -275,13 +275,13 @@ test("with no model configured, the workspace default is used", async () => {
   await cleanup2?.()
 })
 
-test("an edited review prompt is what reaches the agent", async () => {
+test("an edited propose prompt is what reaches the agent", async () => {
   const directory = sandbox()
   const first = fakeOpenCode({ directory, options: { model: MODEL } })
   const seeded = await plugin.setup(first.ctx)
   await seeded?.()
 
-  writeFileSync(join(directory, ".retro", "prompts", "propose.md"), "---\nprompt: review\nbase: 1\n---\n\nMY OWN WORDING.\n")
+  writeFileSync(join(directory, ".retro", "prompts", "propose.md"), "---\nprompt: propose\nbase: 1\n---\n\nMY OWN WORDING.\n")
   mkdirSync(join(directory, ".retro", "lessons"), { recursive: true })
   writeFileSync(
     join(directory, ".retro", "lessons", "l.md"),
@@ -1476,10 +1476,10 @@ test("deciding a lesson never prunes the log of the session it was decided in", 
   // the decision is made. It is not in `started` if the plugin loaded after this turn's
   // start event, so it looked finished and its log was deleted under it.
   const directory = sandbox()
-  const review = "ses_deciding_here"
+  const deciding = "ses_deciding_here"
   mkdirSync(join(directory, ".retro", "lessons"), { recursive: true })
   mkdirSync(join(directory, ".retro", "sessions"), { recursive: true })
-  writeFileSync(join(directory, ".retro", "sessions", `${review}.jsonl`), JSON.stringify({ v: 1, n: 1, k: "prompt", text: "review" }) + "\n")
+  writeFileSync(join(directory, ".retro", "sessions", `${deciding}.jsonl`), JSON.stringify({ v: 1, n: 1, k: "prompt", text: "decide" }) + "\n")
   writeFileSync(
     join(directory, ".retro", "lessons", "a.md"),
     "---\nid: a\nstatement: problem a\ncost: 5\nrecurrence: 1\nconfidence: 1\nstatus: new\n---\n\nbody\n",
@@ -1487,11 +1487,11 @@ test("deciding a lesson never prunes the log of the session it was decided in", 
 
   const fake = fakeOpenCode({ directory, options: { model: MODEL } })
   const cleanup = await plugin.setup(fake.ctx)
-  const result = await fake.tools.get("retro_decide").execute({ id: "a", status: "accepted" }, { sessionID: review })
+  const result = await fake.tools.get("retro_decide").execute({ id: "a", status: "accepted" }, { sessionID: deciding })
 
   assert.equal(result.output.ok, true)
   assert.ok(
-    existsSync(join(directory, ".retro", "sessions", `${review}.jsonl`)),
+    existsSync(join(directory, ".retro", "sessions", `${deciding}.jsonl`)),
     "the session that asked still has its log",
   )
   await cleanup?.()

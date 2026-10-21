@@ -28,7 +28,7 @@ const lesson = (over = {}) => ({
 })
 
 const rig = ({ cap } = {}) => {
-  const root = mkdtempSync(join(tmpdir(), "retro-review-"))
+  const root = mkdtempSync(join(tmpdir(), "retro-decide-"))
   return {
     store: createStore({ dir: join(root, "lessons"), archive: join(root, "archive"), cap }),
     state: createState({ path: join(root, "state.json") }),
