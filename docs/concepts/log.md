@@ -19,6 +19,12 @@ stream reaches every session in the project, including foreign ones, so an event
 the file. It is the coordinate a lesson's evidence uses, so it must be unique within a
 file and must not restart when a new process appends to an existing log.
 
+**One call id, one record.** A tool call is identified by its `id`. A tool run through Code
+Mode's `execute` arrives as a second `before`/`after` pair under the same id as the inner
+call; it is one action, so it is recorded once, as the inner call. Two records for one id
+would make the projection show work that happened once as two calls — measured live, an
+extractor read a single `retro_decide` as a duplicate call and derived a lesson about it.
+
 **Hand-over record.** `k: "handover"`: text the plugin itself delivered into the session
 with `session.synthetic`, which does not fire the prompt hook. Written so the log of a
 review session shows the instruction behind the work. It is not a prompt and is not
@@ -52,6 +58,8 @@ lesson cites it, nothing is owed for it, and its session is not live.
 - Step numbers are unique within a file and continue across processes.
   `numbering continues from the log, so a step range resolves to one record`
   `a half-written last line does not reset the numbering`
+- A call id names one call, even when a wrapper reports the same call twice.
+  `a tool run through execute is one call, not two records with the same id`
 - The hand-over the plugin delivers is in the session's own log, as a hand-over.
   `the hand-over the plugin delivers is in the session's own log`
 - A working session is read, and nothing about it is settled.

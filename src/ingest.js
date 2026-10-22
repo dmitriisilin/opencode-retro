@@ -30,7 +30,16 @@ export function createIngest({
   // resolving to one record. Measured on real logs: three and four such blocks in one file.
   startAt = () => 0,
 }) {
-  /** sessionID -> { n, pending: Map<callID, started>, seq: Map<callID, number>, counts } */
+  /**
+   * sessionID -> { n, pending: Map<callID, started>, completed: Set<callID>,
+   *                seq: Map<callID, number>, counts }
+   *
+   * `completed` exists because one call id can produce two after hooks: a tool invoked
+   * through Code Mode's `execute` arrives as the inner tool and again as its wrapper, both
+   * with the same id. Recording both made the extractor read one action as two — measured
+   * live, it derived a lesson saying `retro_decide` had been called twice — so the first
+   * record wins.
+   */
   const sessions = new Map()
 
   function session(id) {
@@ -40,6 +49,7 @@ export function createIngest({
         id,
         n: startAt(id) ?? 0,
         pending: new Map(),
+        completed: new Set(),
         seq: new Map(),
         counts: { prompts: 0, handovers: 0, toolHook: 0, toolEvents: 0, steps: 0, texts: 0, records: 0 },
       }
@@ -141,6 +151,9 @@ export function createIngest({
     toolBefore(p) {
       const before = session(owner(p.sessionID))
       before.owned = true
+      // A second before with the same id is the `execute` wrapper around a tool we have
+      // already been told about. Keep the inner call, which is the action itself.
+      if (before.pending.has(p.id)) return
       before.pending.set(p.id, {
         id: p.id,
         tool: p.tool,
@@ -157,6 +170,11 @@ export function createIngest({
       s.counts.toolHook++
       const started = s.pending.get(p.id)
       s.pending.delete(p.id)
+      // One call id is one record. Code Mode's `execute` reports its inner tool and the
+      // wrapper separately, both under the same id; appending both made the extractor read
+      // one action as two calls and invent a lesson about it (measured live).
+      if (s.completed.has(p.id)) return
+      s.completed.add(p.id)
       append(p.sessionID, {
         k: "tool",
         seq: s.seq.get(p.id) ?? null,

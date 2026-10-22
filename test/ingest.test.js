@@ -64,6 +64,35 @@ test("tool calls are paired by id, not by arrival order", () => {
   }
 })
 
+test("a tool run through execute is one call, not two records with the same id", () => {
+  const { out, ingest } = collector()
+  // Measured live: an agent calling `retro_decide` through Code Mode's `execute` produced two
+  // `tool` records with the same call id, one naming the inner tool and one naming `execute`.
+  // The extractor read that as the same decision being recorded twice and derived a lesson
+  // about the plugin from work that happened once.
+  ingest.toolBefore({ sessionID: "s", id: "c1", tool: "retro_decide", input: { id: "lesson" } })
+  ingest.toolBefore({ sessionID: "s", id: "c1", tool: "execute", input: { code: "tools.retro_decide(...)" } })
+  ingest.toolAfter({
+    sessionID: "s",
+    id: "c1",
+    tool: "retro_decide",
+    status: "completed",
+    result: { output: { output: "recorded" } },
+  })
+  ingest.toolAfter({
+    sessionID: "s",
+    id: "c1",
+    tool: "execute",
+    status: "completed",
+    result: { output: { output: "recorded" } },
+  })
+
+  const tools = out.filter((r) => r.k === "tool")
+  assert.equal(tools.length, 1, "one call id is one record")
+  assert.equal(tools[0].tool, "retro_decide", "the inner tool is the action, so it is the record kept")
+  assert.deepEqual(tools[0].input, { id: "lesson" }, "and the wrapper's before did not overwrite its input")
+})
+
 test("step records carry what the git snapshot and the changed files say", () => {
   const { records } = replay("session-lint-trap.jsonl")
   const steps = records.filter((r) => r.k === "step")
