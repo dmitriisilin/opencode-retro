@@ -144,5 +144,8 @@ proves nothing.
   `a re-read of a session that did work is analysed even when the new material is a reply alone`
 - On a re-read, only what is new counts: a person's new prompt, a tool call, or a reply to a
   person. A reply to the plugin's own hand-over, with nothing done, is the plugin talking to
-  itself and costs no model call.
+  itself and costs no model call. A review that used tools to check the lesson is read — one
+  call, since checking can turn up friction of its own — and its check is not counted as the
+  problem recurring (lesson.md). A known cost, not a loop: the next review answers a new
+  hand-over only when there is a new lesson to hand over.
   `a reply to the plugin's own hand-over, with nothing done, costs no model call`

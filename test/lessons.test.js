@@ -521,7 +521,7 @@ test("a lesson that comes back marks its earlier evidence as released, and does 
   ])
 
   const text = renderProposal(back)
-  assert.match(text, /From `sessions\/ses_new\.jsonl` steps 4–6\./, "the current evidence is offered to read")
+  assert.match(text, /From `\.retro\/sessions\/ses_new\.jsonl` steps 4–6\./, "the current evidence is offered to read")
   assert.doesNotMatch(text, /sessions\/ses_old\.jsonl/, "the released log is not")
   assert.match(text, /Seen before it was closed in `ses_old` — those logs were released/)
 })

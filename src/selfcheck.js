@@ -90,7 +90,18 @@ export function assess(session) {
               "a hand-over is delivered by the plugin itself and does not fire the prompt " +
               "hook, so nothing is proved here; the next turn you type in will.",
           }
-        : {
+        : c.startSeen === false
+          ? {
+              status: SKIPPED,
+              name: "prompt hook",
+              // A process loaded in the middle of a turn — a restart, or opencode.json edited
+              // mid-session, which reloads the plugin — never saw that turn's prompt. Measured:
+              // a stranger pinned options.model as the README suggests, and the report said
+              // BROKEN about a session whose log had its prompt at step 1.
+              detail: "the plugin was loaded after this turn began",
+              meaning: "a restart or a config change reloads the plugin; the next turn you type in proves the hook.",
+            }
+          : {
             status: BROKEN,
             name: "prompt hook",
             detail: "a session ran but no session.prompt arrived",
@@ -344,8 +355,8 @@ function renderStock({
     // and why it did not work.
     lines.push(
       `- ${failing} log${failing === 1 ? "" : "s"} whose analysis failed — tried again on the next ` +
-        "`/retro`, and given up on after three. `plugin.log` says why; an empty reply from the " +
-        "model on a long log is the usual reason.",
+        "`/retro`, and given up on after three. `plugin.log` says why — an empty reply or a " +
+        "timeout, usually; if it keeps happening, `options.model` pins a different model.",
     )
   }
   if (queued) {

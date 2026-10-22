@@ -1,5 +1,5 @@
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
-import { resolve as resolvePath } from "node:path"
+import { relative as relativePath, resolve as resolvePath, sep } from "node:path"
 import { createIngest } from "./src/ingest.js"
 import { createPrompts } from "./src/prompts.js"
 import { createSelfCheck } from "./src/selfcheck.js"
@@ -71,6 +71,13 @@ export default {
     }
 
     const log = createShadowLog({ dir: config.sessions, onError })
+    /**
+     * How the hand-over should name the log directory: relative to the project, so it reads
+     * `.retro/sessions/...` rather than an absolute path, and still names the real one when
+     * `options.dir` moves it.
+     */
+    const logDir = relativePath(config.directory, config.sessions).split(sep).join("/") || config.sessions
+    const retroDir = relativePath(config.directory, config.dir).split(sep).join("/") || config.dir
     const state = createState({ path: config.state, onError, probe: (id) => log.probe(id) })
     const store = createStore({
       dir: config.lessons,
@@ -91,6 +98,13 @@ export default {
      * re-verify. Only the self-check reads this; nothing about what is analysed or pruned does.
      */
     const ended = new Set()
+    /**
+     * Sessions whose current turn this process saw begin — its prompt, or its execution
+     * starting. A process loaded in the middle of a turn (a restart, or `opencode.json` edited
+     * mid-session, which reloads the plugin) has no prompt to count for that turn, and used to
+     * report the prompt hook BROKEN about a session that had one. Only the self-check reads it.
+     */
+    const turnSeen = new Set()
     /** Evidence from each finished session, kept so a later extraction can complete its report. */
     const lastVerified = new Map()
     let lastBeat = 0
@@ -182,11 +196,12 @@ export default {
       check.verify(
         {
           id: sessionID,
-          counts: ingest.counts(sessionID),
+          counts: { ...ingest.counts(sessionID), startSeen: turnSeen.has(sessionID) },
           log: logFacts(sessionID),
           triggered: null,
           ended: false,
-          extraction: lastExtraction.get(sessionID) ?? null,
+          // From disk when this process ran none: a reload must not unsay an analysis.
+          extraction: lastExtraction.get(sessionID) ?? state.extractionOf(sessionID) ?? null,
         },
         now,
       )
@@ -226,6 +241,11 @@ export default {
     }
 
     await hook("session", "prompt", (p) => {
+      if (p?.sessionID) {
+        // A prompt starts a turn; one arriving after the last turn's end is a new turn.
+        ended.delete(p.sessionID)
+        turnSeen.add(p.sessionID)
+      }
       ingest.prompt(p)
       observe(rootOf(p.sessionID))
       // Analysis is what `/retro` does, not something a new session triggers: a model call
@@ -365,6 +385,7 @@ export default {
         // the previous turn's. Before the ownership gate on purpose: the start event arrives
         // before the turn's first hook.
         ended.delete(sessionID)
+        turnSeen.add(sessionID)
       }
 
       // Only a session a hook has fired for is ours. `ctx.event.subscribe` reaches every
@@ -391,7 +412,7 @@ export default {
 
       const verified = {
         id: sessionID,
-        counts: ingest.counts(sessionID),
+        counts: { ...ingest.counts(sessionID), startSeen: turnSeen.has(sessionID) },
         log: logFacts(sessionID),
         triggered: event.type,
         extraction: null,
@@ -399,6 +420,7 @@ export default {
       check.verify(verified)
       writeSelfCheck()
       ingest.forget(sessionID)
+      turnSeen.delete(sessionID)
 
       // Not extracted here: a model call from the event stream never returns, and nothing is
       // analysed unasked. The log is owed because it grew; `/retro` reads it.
@@ -648,7 +670,7 @@ export default {
       const open = pickOpen(store.list(), { sessions: state.sessions, halfLife: config.halfLife })
       await diagnose()
       writeSelfCheck()
-      if (!open.length) return say(sessionID, renderNothing({ queued: extracted.left, extracted }))
+      if (!open.length) return say(sessionID, renderNothing({ queued: extracted.left, extracted, dir: retroDir }))
 
       const shown = open.slice(0, config.proposeLimit)
       const currencies = new Map()
@@ -750,7 +772,7 @@ export default {
       writeSelfCheck()
 
       if (!lesson) {
-        return say(sessionID, renderNothing({ queued: extracted.left, extracted }))
+        return say(sessionID, renderNothing({ queued: extracted.left, extracted, dir: retroDir }))
       }
       const open = lessons.filter((l) => ["new", "later", undefined, null].includes(l.status)).length
       return say(
@@ -764,6 +786,7 @@ export default {
           halfLife: config.halfLife,
           leadIn: prompts.resolve("propose")?.text,
           queued: extracted.left,
+          logs: logDir,
         }),
       )
     }

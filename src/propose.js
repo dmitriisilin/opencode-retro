@@ -12,6 +12,15 @@ import { DEFAULTS } from "./config.js"
 
 export const OPEN = new Set(["new", "later", undefined, null])
 
+/**
+ * Where the evidence logs live, as the hand-over should say it. A bare `sessions/` is
+ * relative to `.retro/`, not to the project — and a reader has no reason to know that. A
+ * live review was told `sessions/`, went to the project root, found nothing, and wrote the
+ * mistake into `discovered`; the prompt file was corrected then, and this footer was the
+ * same mistake in source. The caller passes the real directory when `options.dir` moves it.
+ */
+const SESSIONS = `${DEFAULTS.dir}/sessions`
+
 /** How many lessons one `/retro all` carries. Beyond this, a plan stops being a plan. */
 export const PROPOSE_LIMIT = DEFAULTS.proposeLimit
 
@@ -104,7 +113,16 @@ export const asLeadIn = (text, fallback = LEAD_IN_FALLBACK) => {
 
 export function renderProposal(
   lesson,
-  { total = 0, remaining = 0, currency = null, sessions = null, halfLife, leadIn = null, queued = 0 } = {},
+  {
+    total = 0,
+    remaining = 0,
+    currency = null,
+    sessions = null,
+    halfLife,
+    leadIn = null,
+    queued = 0,
+    logs = SESSIONS,
+  } = {},
 ) {
   const lines = [
     asLeadIn(leadIn),
@@ -153,7 +171,7 @@ export function renderProposal(
   const evidence = Array.isArray(lesson.evidence) ? lesson.evidence : lesson.evidence ? [lesson.evidence] : []
   if (evidence.length) {
     const cite = (e) =>
-      `\`sessions/${e.session}.jsonl\`${Array.isArray(e.steps) && e.steps.length ? ` steps ${e.steps.join("–")}` : ""}`
+      `\`${logs}/${e.session}.jsonl\`${Array.isArray(e.steps) && e.steps.length ? ` steps ${e.steps.join("–")}` : ""}`
     const current = evidence.filter((e) => !e?.released)
     const earlier = evidence.filter((e) => e?.released)
     if (current.length) lines.push("", "From " + current.map(cite).join(", ") + ".", "")
@@ -217,7 +235,7 @@ export function renderFailures(extracted) {
   )
 }
 
-export function renderNothing({ queued = 0, extracted = null } = {}) {
+export function renderNothing({ queued = 0, extracted = null, dir = DEFAULTS.dir } = {}) {
   const failures = extracted?.failures ?? []
   const lines = ["# retro", "", "Nothing to review."]
   for (const f of failures) {
@@ -236,13 +254,13 @@ export function renderNothing({ queued = 0, extracted = null } = {}) {
     lines.push(
       "",
       `The log${failures.length === 1 ? "" : "s"} above ${failures.length === 1 ? "was" : "were"} not read, so this is not a clean result: the next \`/retro\` tries again.`,
-      "`.retro/plugin.log` says why each read failed; `.retro/selfcheck.md` says whether the plugin is still watching.",
+      `\`${dir}/plugin.log\` says why each read failed; \`${dir}/selfcheck.md\` says whether the plugin is still watching.`,
     )
   } else {
     lines.push(
       "",
       "Either the sessions have been going straight, or nothing is recorded yet.",
-      "`.retro/selfcheck.md` says whether the plugin is actually watching.",
+      `\`${dir}/selfcheck.md\` says whether the plugin is actually watching.`,
     )
   }
   return lines.join("\n")

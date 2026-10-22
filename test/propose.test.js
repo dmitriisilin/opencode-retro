@@ -71,6 +71,7 @@ test("the proposal says what it is, what it would change, and that nothing was c
   assert.match(text, /## It needs your call/)
   assert.match(text, /Is eslint meant to be part of this project\?/)
   assert.match(text, /sessions\/ses_a\.jsonl` steps 9–18/)
+  assert.match(text, /From `\.retro\/sessions\/ses_a\.jsonl` steps 9–18\./, "the log is named where it lives, not at the project root")
   assert.match(text, /This is a proposal, not a change — nothing has been edited/)
   assert.match(text, /2 more lessons waiting of 3/)
   assert.match(text, /^_opencode-retro: is each lesson below already resolved/, "the fallback, when no prompt resolves")
@@ -90,6 +91,20 @@ test("an empty store explains itself rather than looking broken", () => {
   assert.match(text, /Analysed 3 session logs just now/, "say the work was done")
   assert.match(text, /2 logs not analysed yet. Run `\/retro` again/, "and that more is left, with what to do")
   assert.match(text, /selfcheck\.md/)
+})
+
+test("the evidence names the log where the plugin keeps it, not at the project root", () => {
+  // Cycle 7 found the prompt body sending a reviewer to `sessions/`; the footer built in
+  // source said the same thing. Both are relative to `.retro/`, which the reader has no
+  // reason to know, so the hand-over names the whole path.
+  const text = renderProposal(lesson())
+  assert.match(text, /From `\.retro\/sessions\/ses_a\.jsonl` steps 9–18\./)
+})
+
+test("the evidence follows options.dir when the log directory moves", () => {
+  const text = renderProposal(lesson(), { logs: "harness/sessions" })
+  assert.match(text, /From `harness\/sessions\/ses_a\.jsonl` steps 9–18\./)
+  assert.doesNotMatch(text, /\.retro\/sessions/, "the default is not named when the caller knows better")
 })
 
 test("a log that could not be read is not reported as a session that went straight", () => {
@@ -250,4 +265,13 @@ test("an evidence entry without steps is cited by session, not as an empty range
   const text = renderProposal(lesson({ evidence: [{ session: "ses_solo", steps: [] }] }))
   assert.match(text, /sessions\/ses_solo\.jsonl`/)
   assert.doesNotMatch(text, /steps\s*[.`]/)
+})
+
+test("an empty hand-over names the plugin's files where options.dir put them", () => {
+  // A stranger's run: with the directory moved, "see `.retro/plugin.log`" named a file that
+  // did not exist — the same class of mistake as the evidence footer.
+  const failed = renderNothing({ extracted: { failures: [{ session: "ses_a", detail: "empty" }] }, dir: "tools/retro" })
+  assert.match(failed, /`tools\/retro\/plugin\.log` says why/)
+  assert.doesNotMatch(failed, /\.retro\//)
+  assert.match(renderNothing({ dir: "tools/retro" }), /`tools\/retro\/selfcheck\.md`/)
 })

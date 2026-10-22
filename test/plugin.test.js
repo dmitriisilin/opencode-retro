@@ -2767,3 +2767,47 @@ test("two instances on one project neither lose nor prune each other's work", as
   await stopB?.()
 })
 
+
+test("a plugin reloaded in the middle of a turn does not call the prompt hook dead", async () => {
+  // Measured by a stranger: pinning options.model mid-session, as the README suggests when the
+  // analysis comes back empty, reloads the plugin. The new instance never saw the turn's
+  // prompt, counted tool calls and no prompt, and reported BROKEN prompt hook — about a session
+  // whose log had its prompt at step 1.
+  const directory = sandbox()
+  const session = "ses_reloaded"
+  const before = fakeOpenCode({ directory, options: { model: MODEL } })
+  const stopBefore = await plugin.setup(before.ctx)
+  await before.hooks.get("session.prompt")({ sessionID: session, messageID: "m1", prompt: { text: "do it" } })
+  before.emit({ type: "session.execution.started", durable: { seq: 1 }, data: { sessionID: session } })
+  await tick()
+  await stopBefore?.()
+
+  const after = fakeOpenCode({ directory, options: { model: MODEL } })
+  const stopAfter = await plugin.setup(after.ctx)
+  await after.hooks.get("tool.execute.before")({ sessionID: session, id: "c1", tool: "shell", input: { command: "x" } })
+  after.emit({ type: "session.tool.called", durable: { seq: 2 }, data: { sessionID: session, id: "c1", input: { command: "x" } } })
+  await after.hooks.get("tool.execute.after")({
+    sessionID: session, id: "c1", tool: "shell", input: { command: "x" }, status: "completed",
+    result: { output: { exit: 0, output: "ok" }, metadata: { exit: 0 } },
+  })
+  after.emit({ type: "session.execution.succeeded", durable: { seq: 3 }, data: { sessionID: session } })
+  await tick()
+
+  const report = readFileSync(join(directory, ".retro", "selfcheck.md"), "utf8")
+  assert.doesNotMatch(report, /BROKEN/, "nothing is broken")
+  assert.match(report, /prompt hook\s+the plugin was loaded after this turn began/)
+
+  // And a turn this instance did see begin, with no prompt, is still called what it is.
+  after.emit({ type: "session.execution.started", durable: { seq: 4 }, data: { sessionID: session } })
+  await tick()
+  await after.hooks.get("tool.execute.before")({ sessionID: session, id: "c2", tool: "shell", input: { command: "y" } })
+  await after.hooks.get("tool.execute.after")({
+    sessionID: session, id: "c2", tool: "shell", input: { command: "y" }, status: "completed",
+    result: { output: { exit: 0, output: "ok" }, metadata: { exit: 0 } },
+  })
+  after.emit({ type: "session.execution.succeeded", durable: { seq: 5 }, data: { sessionID: session } })
+  await tick()
+  assert.match(readFileSync(join(directory, ".retro", "selfcheck.md"), "utf8"), /BROKEN\s+prompt hook/)
+
+  await stopAfter?.()
+})

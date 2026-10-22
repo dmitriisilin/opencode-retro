@@ -35,9 +35,22 @@ closed. Accepting or rejecting moves the file to `archive/`; `later` keeps it op
   hand-over rather than a silent one.
   `the hand-over instructions come from the prompt file, not from source`
   `a missing prompt degrades to a terse hand-off rather than a silent one`
+- (untested) A hand-over into a session that is busy — mid-turn, or waiting on a question
+  the agent put to the human — is queued by OpenCode like any other input, and appears when
+  that turn ends. That is OpenCode's delivery, not something the plugin can see or change;
+  headless, it means a review that stopped on a question form holds every later hand-over
+  until the form is answered (AGENTS.md Gotcha 16). A known limit, measured live in cycle 8;
+  no fake can reproduce OpenCode's queue.
 - An empty hand-over after a failed read says the read failed, and does not conclude that
   the sessions went straight.
   `a log that could not be read is not reported as a session that went straight`
+- The evidence a hand-over offers names the log where the plugin actually keeps it, and
+  follows `options.dir` when that directory moves. A bare `sessions/` is relative to
+  `.retro/`, which the reader has no reason to know; a live reviewer followed it to the
+  project root and found nothing.
+  `the evidence names the log where the plugin keeps it, not at the project root`
+  `the evidence follows options.dir when the log directory moves`
+  `an empty hand-over names the plugin's files where options.dir put them`
 - `/retro all` is one plan over every open lesson, capped, and says what it left out.
   `/retro all delivers every waiting lesson as one plan`
   `proposeLimit caps one plan and says what it left out`

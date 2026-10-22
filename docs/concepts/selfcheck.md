@@ -35,6 +35,11 @@ last analysis of the session whichever path ran it.
 - The checked block does not count waiting logs: that is the stock's job, recomputed every
   time the file is written, so the two cannot contradict each other.
   `the checked block does not count waiting logs, so it cannot contradict the stock`
+- A turn this process did not see begin — the plugin reloaded mid-turn by a restart or an
+  edit to `opencode.json` — proves nothing about the prompt hook and is not reported as a
+  dead one; a turn it did see begin with no prompt still is. The last analysis is read from
+  disk, so a reload does not unsay it.
+  `a plugin reloaded in the middle of a turn does not call the prompt hook dead`
 - A log read in part is named as such, not as not analysed yet — and later growth does not
   turn the part already read back into an unopened log.
   `a log read in part is named as such, not as not analysed yet`
