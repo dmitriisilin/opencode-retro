@@ -105,8 +105,8 @@ export function assess(session) {
       // Present tense about a session still running would be a claim this cannot support:
       // the counts are re-evaluated at most once a minute, so a session calling tools right
       // now reads as having called none. "Not yet" is what is actually known.
-      detail: session.ended === false ? "no tool calls seen yet" : "no tool calls in this session",
-      meaning: "nothing to compare against; a session without tool calls cannot prove the hook works.",
+      detail: session.ended === false ? "no tool calls seen yet" : "no tool calls in this turn",
+      meaning: "nothing to compare against; a turn without tool calls cannot prove the hook works.",
     })
   } else if (c.toolHook + (c.unfinished ?? 0) >= c.toolEvents) {
     // A call the turn ended in the middle of has an event and no after-hook by nature, and the
@@ -207,7 +207,10 @@ export function assess(session) {
       status: DEGRADED,
       name: "extraction",
       detail: x.detail,
-      meaning: "no lessons from this session. Check `options.model` in opencode.json, then run `/retro` again.",
+      meaning:
+        "no lessons from this session yet; the next `/retro` tries again, three times in all. " +
+        "`plugin.log` says why it failed; if the model keeps failing, `options.model` in " +
+        "opencode.json pins a different one.",
     })
   }
 
@@ -295,6 +298,7 @@ function renderStock({
   topScore = null,
   top = null,
   queued = 0,
+  partial = 0,
   failing = 0,
   cited = 0,
   decided = 0,
@@ -346,6 +350,12 @@ function renderStock({
   }
   if (queued) {
     lines.push(`- ${queued} log${queued === 1 ? "" : "s"} not analysed yet — \`/retro\` analyses them`)
+  }
+  if (partial) {
+    lines.push(
+      `- ${partial} log${partial === 1 ? "" : "s"} read in part — too long for one call, so each ` +
+        "`/retro` reads one more part, from where the last one stopped",
+    )
   }
   // Counted, not inferred. An earlier version derived this by subtracting the queue from
   // the logs on disk and announced that open lessons cited them — while there were no

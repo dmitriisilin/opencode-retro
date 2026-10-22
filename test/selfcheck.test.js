@@ -67,6 +67,16 @@ test("no tool calls proves nothing and must not claim to", () => {
   assert.equal(status(checks, "tool hook"), STATUS.SKIPPED)
 })
 
+test("a turn with no tool calls does not claim the whole session had none", () => {
+  // Live: after a `/retro` turn that ran no tools, the report said "no tool calls in this
+  // session" beside a shadow-log line counting 135 entries from the same session. The
+  // counters are per turn (session.md, selfcheck.md), and the sentence has to say so.
+  const checks = assess({ ...healthy, counts: { ...healthy.counts, toolHook: 0, toolEvents: 0 } })
+  const tool = checks.find((c) => c.name === "tool hook")
+  assert.match(tool.detail, /in this turn/)
+  assert.doesNotMatch(tool.detail, /in this session/)
+})
+
 test("a hand-over with no prompt is not evidence that the prompt hook is dead", () => {
   // Live: `/retro` delivers into a fresh session through `session.synthetic`, which does
   // not fire the prompt hook. The report said BROKEN prompt hook / "renamed upstream" about
@@ -274,4 +284,14 @@ test("a lesson file that cannot be read is named, with what to do about it", () 
   const text = check.render()
   assert.match(text, /`lessons\/lint-skill-no-config\.md` cannot be read as a lesson/)
   assert.match(text, /Nothing was changed; fix or remove it\./)
+})
+
+test("a log read in part is named as such, not as not analysed yet", () => {
+  // Measured by a stranger's run: right after `/retro` read a long log as an excerpt, the
+  // report said "1 log not analysed yet", and the command looked as if it had not finished.
+  const check = createSelfCheck({ versions: {}, repo: "r" })
+  check.stock({ lessons: 1, partial: 1 })
+  const text = check.render()
+  assert.match(text, /1 log read in part — too long for one call/)
+  assert.doesNotMatch(text, /not analysed yet/)
 })

@@ -408,7 +408,14 @@ export function createState({ path, onError, now = () => Date.now(), probe = nul
     },
 
     markExtracted(session, summary) {
-      data.extracted[session] = { at: new Date().toISOString(), ...summary }
+      // Strictly after whatever outcome is already known for the session, mine or another
+      // writer's: two outcomes in one millisecond are still ordered, the one recorded now being
+      // the later, and the merge keeps the later one. An equal stamp kept the copy on disk, so
+      // the outcome recorded second was lost when both landed in the same millisecond.
+      refresh()
+      const before = Date.parse(data.extracted[session]?.at ?? "")
+      const t = Math.max(now(), Number.isFinite(before) ? before + 1 : 0)
+      data.extracted[session] = { at: new Date(t).toISOString(), ...summary }
       save()
     },
   }

@@ -46,6 +46,7 @@ per session either way — not with the age of the project.
 - A save merges with the file instead of overwriting another writer.
   `a save merges with the file instead of overwriting another writer`
   `a later outcome wins the merge, whichever writer holds it`
+  `a later outcome wins even when both writers land in the same millisecond`
   `a writer reads what another saved since, not only what it loaded`
   `two writers' marks are merged, so neither loses what the other read`
   `two writers counting different sessions count two, not one`

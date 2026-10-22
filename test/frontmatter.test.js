@@ -58,6 +58,18 @@ test("writing twice is byte-identical, so git diffs stay honest", () => {
   assert.equal(stringifyFrontmatter(data, body), stringifyFrontmatter(parseFrontmatter(stringifyFrontmatter(data, body)).data, body))
 })
 
+test("a quoted value survives a second write without growing its escapes", () => {
+  // Found live: a proposal containing "Retro workflow" in quotes was re-saved when the
+  // lesson recurred, and its `change` came back with another layer of backslashes each time.
+  const value = 'Add a "Retro workflow" section: keep C:\\tmp literal'
+  const once = parseFrontmatter(stringifyFrontmatter({ proposal: { change: value } }))
+  assert.equal(once.data.proposal.change, value, "the first round trip is exact")
+
+  const twice = parseFrontmatter(stringifyFrontmatter(once.data))
+  assert.equal(twice.data.proposal.change, value, "and a recurrence does not escape it again")
+  assert.equal(stringifyFrontmatter(twice.data), stringifyFrontmatter(once.data), "the file is stable")
+})
+
 test("no frontmatter is not an error", () => {
   const { data, body } = parseFrontmatter("just a body\n")
   assert.deepEqual(data, {})

@@ -144,7 +144,17 @@ function parseScalar(raw) {
     const inner = raw.slice(1, -1).trim()
     return inner ? inner.split(",").map((p) => parseScalar(p.trim())) : []
   }
-  if (/^".*"$/.test(raw) || /^'.*'$/.test(raw)) return raw.slice(1, -1)
+  if (/^".*"$/.test(raw)) {
+    // The writer emits JSON strings, so read one back with the same rules. Stripping the
+    // quotes alone left `\"` in the value, and the next write escaped it again: a lesson
+    // re-saved on recurrence grew a backslash per save until its proposal was unreadable.
+    try {
+      return JSON.parse(raw)
+    } catch {
+      return raw.slice(1, -1)
+    }
+  }
+  if (/^'.*'$/.test(raw)) return raw.slice(1, -1).replace(/''/g, "'")
   return raw
 }
 

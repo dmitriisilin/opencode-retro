@@ -112,12 +112,18 @@ export default {
     function stockFacts() {
       let queued = 0
       let failing = 0
+      let partial = 0
       for (const id of log.list()) {
         if (parents.has(id) || !isOwed(id)) continue
-        if (state.looked(id).failed) failing++
+        const mark = state.looked(id)
+        if (mark.failed) failing++
+        // Read in part and nothing new since: a log too long for one call, which the next
+        // command reads on from where this one stopped. Calling it "not analysed yet" right
+        // after `/retro` read it made the command look as if it had not finished.
+        else if (mark.open && log.stat(id).size <= mark.size) partial++
         else queued++
       }
-      return { queued, failing }
+      return { queued, failing, partial }
     }
 
     const writeSelfCheck = () => {

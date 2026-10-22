@@ -24,18 +24,23 @@ turn, so a session prompted earlier and handed a lesson later was not "started b
 hand-over"; a shortfall of hook calls against events is not evidence while calls are in
 flight; the trigger cannot be judged before the session ends.
 
-**Stock.** What is waiting for the human: open lessons, logs owed an analysis, logs whose
-analysis failed, logs kept because a lesson cites them, logs given up on, and lesson files
+**Stock.** What is waiting for the human: open lessons, logs owed an analysis, logs read in
+part (an excerpt the next command reads on from), logs whose analysis failed, logs kept because a lesson cites them, logs given up on, and lesson files
 that cannot be read. Kept in its own section, because it is the one part a person has to act
 on. A failed analysis is a failure, not something nobody looked at, and is named as one. The extraction line reports the
 last analysis of the session whichever path ran it.
 
 ## Invariants
 
+- A log read in part is named as such, not as not analysed yet.
+  `a log read in part is named as such, not as not analysed yet`
 - A lesson file that cannot be read is named in the stock, with what to do about it.
   `a lesson file that cannot be read is named, with what to do about it`
 - The report is written from the first prompt, not once the session is over.
   `the report is written from the first prompt, not once the session is over`
+- A turn with no tool calls proves nothing about the tool hook, and is described as a turn,
+  not as the session having run none.
+  `a turn with no tool calls does not claim the whole session had none`
 - A finished session proves the hooks ran, with numbers.
   `a finished session is owed an analysis, and the report proves the hooks ran`
 - Events the hooks never received are reported as a dead hook, with numbers — at the end

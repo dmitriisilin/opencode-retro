@@ -370,6 +370,26 @@ test("a later outcome wins the merge, whichever writer holds it", () => {
   assert.equal(JSON.parse(readFileSync(path, "utf8")).extracted.ses_a.ok, false, "the newer outcome stands")
 })
 
+test("a later outcome wins even when both writers land in the same millisecond", () => {
+  // The comparison was on ISO strings at millisecond resolution, so two writes inside one
+  // millisecond compared equal and the copy already on disk won. The outcome written second
+  // was silently dropped; the test above only passed when the writes crossed a boundary.
+  const path = join(mkdtempSync(join(tmpdir(), "retro-outcome-tie-")), "state.json")
+  const frozen = () => Date.parse("2026-10-22T12:00:00.000Z")
+
+  const stale = createState({ path, now: frozen })
+  stale.markExtracted("ses_a", { ok: true, detail: "read" })
+  const fresh = createState({ path, now: frozen })
+  fresh.markExtracted("ses_a", { ok: false, detail: "given up after three failed analyses" })
+
+  stale.countSession("ses_other") // any save, from the writer holding the older outcome
+  assert.equal(
+    JSON.parse(readFileSync(path, "utf8")).extracted.ses_a.ok,
+    false,
+    "the outcome recorded second wins at one timestamp",
+  )
+})
+
 test("a writer reads what another saved since, not only what it loaded", () => {
   // Reads used to come from memory, refreshed only by the reader's own next save: a second
   // instance counted a third failure as a first and re-read what the other had just read.

@@ -33,7 +33,7 @@ Every tool call and every prompt is appended to a shadow log at `.retro/sessions
 
 When a session ends its log is kept, and by default nothing further happens until asked. Analysis costs a model call, and by default nothing in this plugin spends that unprompted.
 
-`/retro` is the moment it happens. One command compresses the logs that have accumulated, turns them into lessons, and only then looks for something to hand over. Every waiting log is analysed in one command; `options.extractLimit` caps how many, and anything left over is reported so another `/retro` takes the next batch.
+`/retro` is the moment it happens. One command compresses the logs that have accumulated, turns them into lessons, and only then looks for something to hand over. Every waiting log is analysed in one command; `options.extractLimit` caps how many, and anything left over is reported so another `/retro` takes the next batch. A log too long for one call is read a part at a time, one part per command, each continuing from where the last one stopped; `selfcheck.md` lists it as read in part until it is done.
 
 Each log is analysed in a session of its own, created for that one call and removed afterwards: the log goes in, no agent, no history and no tools are involved, and text comes out. The agent that did the work is deliberately excluded, since it would defend its own decisions.
 

@@ -9,10 +9,10 @@ global is where a *fix* belongs, decided at hand-over.
 
 **Evidence.** `{ session, steps }` entries: which session, which step range in its log.
 The log is kept on disk while the lesson is open precisely so a range resolves to real
-records. A range is replaced only by a non-empty one. Evidence a lesson carried when it left
-the open set — decided or evicted — is marked `released`: no open lesson kept those logs, so
-they may be gone, and a lesson that comes back keeps them as history rather than offering
-them to the reviewer as something to read.
+records. A range is replaced only by a non-empty one. When a lesson that left the open set —
+decided or evicted — comes back, the evidence it carried then is marked `released`: no open
+lesson kept those logs while it was away, so they may be gone, and the lesson keeps them as
+history rather than offering them to the reviewer as something to read.
 
 **Recurrence.** The number of *independent* sessions the problem appeared in. Reading one
 session twice is one session: evidence is keyed by session, and a second read updates the

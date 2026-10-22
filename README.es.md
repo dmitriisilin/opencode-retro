@@ -1,4 +1,4 @@
-<!-- translated-from: README.en.md@1a3a6c6d30fe -->
+<!-- translated-from: README.en.md@a40342d16aa6 -->
 # opencode-retro
 
 [Русский](README.md) | [English](README.en.md) | [简体中文](README.zh-CN.md) | **Español** | [日本語](README.ja.md)
@@ -36,7 +36,7 @@ Cada llamada a herramienta y cada prompt se añaden a un log paralelo en `.retro
 
 Cuando una sesión termina, su log se conserva y, por omisión, no ocurre nada más hasta que se pide. El análisis cuesta una llamada al modelo, y por omisión nada en este plugin la gasta sin que se lo pidan.
 
-`/retro` es el momento en que ocurre. Un solo comando comprime los logs acumulados, los convierte en lecciones y solo entonces busca algo que entregar. Un solo comando analiza todos los logs pendientes; `options.extractLimit` limita cuántos, y lo que queda se informa para que otro `/retro` tome el siguiente lote.
+`/retro` es el momento en que ocurre. Un solo comando comprime los logs acumulados, los convierte en lecciones y solo entonces busca algo que entregar. Un solo comando analiza todos los logs pendientes; `options.extractLimit` limita cuántos, y lo que queda se informa para que otro `/retro` tome el siguiente lote. Un log demasiado largo para una sola llamada se lee por partes, una parte por comando, cada una desde donde se detuvo la anterior; hasta que se termina, `selfcheck.md` lo señala como leído en parte.
 
 Cada log se analiza en una sesión propia, creada para esa única llamada y eliminada después: entra el log, no intervienen agente, historial ni herramientas, y sale texto. El agente que hizo el trabajo queda excluido a propósito, porque defendería sus propias decisiones.
 
