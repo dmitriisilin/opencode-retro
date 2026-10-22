@@ -34,8 +34,15 @@ const HISTORY = process.env.RETRO_MODEL_HISTORY ? JSON.parse(process.env.RETRO_M
 const DEBUG = Boolean(process.env.RETRO_MODEL_DEBUG)
 const debug = (...args) => DEBUG && console.error("  ·", ...args)
 const POOL = ["ses_a", "ses_b", "ses_c"]
-const LESSON_IDS = ["lesson-one", "lesson-two", "lesson-three"]
+const LESSON_IDS = Array.from({ length: 40 }, (_, i) => `lesson-${i}`)
 const MODEL = { providerID: "fake", id: "fake-model" }
+
+/**
+ * Which branches the walk actually reached, across all runs. A clean walk proves nothing
+ * about a branch no history got to, so the deep run says which ones it did.
+ */
+const COVERAGE = new Map()
+const reached = (what) => COVERAGE.set(what, (COVERAGE.get(what) ?? 0) + 1)
 
 /* ------------------------------------------------------------- determinism */
 
@@ -61,13 +68,27 @@ const hash = (text) => {
  * how a crash is simulated — a model call that never settles leaves its `/retro` suspended
  * for good, exactly as a process that died would.
  */
+const timers = new Set()
+/** Fire every pending timer: the model call they guard has been waiting longer than allowed. */
+const advanceTimers = () => {
+  for (const t of [...timers]) {
+    timers.delete(t)
+    t.fn()
+  }
+}
 function freezeTime() {
   const real = { now: Date.now, setTimeout: globalThis.setTimeout, clearTimeout: globalThis.clearTimeout }
   let clock = 1_800_000_000_000
   Date.now = () => (clock += 7)
-  globalThis.setTimeout = () => ({ unref() {}, ref() {} })
-  globalThis.clearTimeout = () => {}
+  timers.clear()
+  globalThis.setTimeout = (fn) => {
+    const t = { fn, unref() {}, ref() {} }
+    timers.add(t)
+    return t
+  }
+  globalThis.clearTimeout = (t) => void timers.delete(t)
   return () => {
+    timers.clear()
     Date.now = real.now
     globalThis.setTimeout = real.setTimeout
     globalThis.clearTimeout = real.clearTimeout
@@ -90,7 +111,11 @@ function generate(seed, steps) {
   // walks that case on purpose.
   const writers = forced ?? 1
   const w = () => (writers === 2 && r() < 0.5 ? 1 : 0)
-  const actions = [{ op: "options", maxInput: r() < 0.5 ? 4000 : 32000, writers }]
+  // A prolific history has a model that finds four to eight lessons a time and a human who
+  // mostly defers: that is what fills the open set past its cap, a branch the ordinary
+  // histories almost never reached.
+  const prolific = r() < 0.2
+  const actions = [{ op: "options", maxInput: r() < 0.5 ? 4000 : 32000, writers, autoExtract: r() < 0.25, prolific }]
   const delegations = []
   let next = 0
   for (let i = 0; i < steps; i++) {
@@ -111,10 +136,14 @@ function generate(seed, steps) {
       const d = delegations.splice(Math.floor(r() * delegations.length), 1)[0]
       actions.push({ op: "linked", s: d.s, child: d.child })
     } else if (roll < 0.64) actions.push({ op: "retro", invoker: r() < 0.6 ? "ses_review" : s, all: r() < 0.3, w: w() })
-    else if (roll < 0.71) actions.push({ op: "decide", pick: r(), status: pick(["accepted", "rejected", "later"]), w: w() })
+    else if (roll < 0.71) {
+      const status = prolific ? pick(["later", "later", "later", "accepted", "rejected"]) : pick(["accepted", "rejected", "later"])
+      actions.push({ op: "decide", pick: r(), status, archived: r() < 0.15, w: w() })
+    }
     else if (roll < 0.78) actions.push({ op: "model", mode: pick(["ok", "ok", "ok", "empty", "prose"]) })
     else if (roll < 0.84) actions.push({ op: "restart", w: w() })
-    else if (roll < 0.88) actions.push({ op: "crash", invoker: "ses_review", w: w() })
+    else if (roll < 0.86) actions.push({ op: "crash", invoker: "ses_review", w: w() })
+    else if (roll < 0.88) actions.push({ op: "slow", invoker: r() < 0.6 ? "ses_review" : s, w: w() })
     else if (roll < 0.91) actions.push({ op: "replace", s })
     else actions.push({ op: "tool", s, w: w(), exit: 2, size: 1200 })
   }
@@ -159,6 +188,9 @@ function createWorld() {
     /** child -> { parent, root, linked }: delegations, and whether the plugin was told. */
     children: new Map(),
     generated: 0,
+    /** Branches this history reached, folded into COVERAGE when it ends. */
+    saw: new Set(),
+    inPrompt: false,
   }
 
   world.reply = async (input) => {
@@ -168,6 +200,10 @@ function createWorld() {
     const logSection = prompt.split("## Log")[1]?.split("\n## ")[0] ?? ""
     const steps = [...logSection.matchAll(/^\[(\d+)\]/gm)].map((m) => Number(m[1]))
     debug(`model (${world.mode}) asked about ${session}: steps ${steps.join(",")}`)
+    world.saw.add(`model call (${world.mode})`)
+    if (/elided to fit the budget/.test(prompt)) world.saw.add("an excerpt was sent")
+    if (/Steps up to \d+ of this session were analysed before/.test(prompt)) world.saw.add("a re-read from the mark")
+    if (world.inPrompt) world.saw.add("autoExtract analysed from a prompt hook")
     if (world.mode === "hang") return new Promise(() => {})
     if (world.mode === "empty") return ""
     if (world.mode === "prose") return "I think the session went fine overall."
@@ -177,18 +213,28 @@ function createWorld() {
       world.analysed.set(session, set)
     }
     const h = hash(prompt)
-    if (!steps.length || h % 3 === 0) return '```json\n{ "lessons": [] }\n```'
-    const a = steps[h % steps.length]
-    const b = steps[(h >>> 8) % steps.length]
-    const lesson = {
-      id: LESSON_IDS[(h >>> 4) % LESSON_IDS.length],
-      statement: "the session kept running a linter this project does not have",
-      steps: [Math.min(a, b), Math.max(a, b)],
-      cost: 1 + (h % 5),
-      confidence: 0.6,
-      why: "seen in the log",
+    if (!steps.length || h % 4 === 0) return '```json\n{ "lessons": [] }\n```'
+    // Ids the prompt names as already recorded, concluded or rejected: a real model refers
+    // back to them, by `matches` or by reusing the id, and sometimes ignores the rejection.
+    const known = [...prompt.matchAll(/^- `([a-z0-9-]+)`/gm)].map((m) => m[1])
+    const lessons = []
+    const count = world.prolific ? 4 + ((h >>> 3) % 5) : 1 + ((h >>> 3) % 4)
+    for (let i = 0; i < count; i++) {
+      const g = hash(`${h}:${i}`)
+      const a = steps[g % steps.length]
+      const b = steps[(g >>> 8) % steps.length]
+      const reuse = known.length && g % 5 === 0 ? known[(g >>> 4) % known.length] : null
+      lessons.push({
+        id: reuse && g % 2 ? reuse : LESSON_IDS[(g >>> 4) % LESSON_IDS.length],
+        ...(reuse && !(g % 2) ? { matches: reuse } : {}),
+        statement: `the session kept running a linter this project does not have (${g % 7})`,
+        steps: [Math.min(a, b), Math.max(a, b)],
+        cost: 1 + (g % 5),
+        confidence: 0.6,
+        why: "seen in the log",
+      })
     }
-    return "```json\n" + JSON.stringify({ lessons: [lesson] }) + "\n```"
+    return "```json\n" + JSON.stringify({ lessons }) + "\n```"
   }
 
   world.start = async (w) => {
@@ -232,7 +278,10 @@ function createWorld() {
 
 async function apply(world, action) {
   const prompt = async (s, inst, text) => {
+    world.inPrompt = true
     await inst.fake.hooks.get("session.prompt")({ sessionID: s, messageID: `m${++world.calls}`, prompt: { text } })
+    await flush()
+    world.inPrompt = false
   }
   const tool = async (s, inst, { exit = 2, size = 100, name = "shell", input, result } = {}) => {
     const id = `c${++world.calls}`
@@ -263,8 +312,26 @@ async function apply(world, action) {
   switch (action.op) {
     case "options":
       world.options.maxInput = action.maxInput
+      world.options.autoExtract = Boolean(action.autoExtract)
+      world.prolific = Boolean(action.prolific)
       world.writers = action.writers ?? 1
       return
+    case "slow": {
+      // The model is still thinking when the plugin's own bound runs out: the analysis fails
+      // with a timeout, the process lives on, and the next attempt is a fresh call.
+      const inst = world.homeOf(action.invoker, action.w)
+      const before = world.mode
+      world.mode = "hang"
+      const done = inst.fake.commands.get("retro").execute({ sessionID: action.invoker, prompt: { text: "" } })
+      await flush(6)
+      world.mode = before
+      for (let i = 0; i < 8 && timers.size; i++) {
+        advanceTimers()
+        await flush(4)
+      }
+      await done
+      return flush()
+    }
     case "prompt":
       if (world.inTurn.has(action.s)) return
       return ensureTurn(action.s, action.w)
@@ -357,9 +424,13 @@ async function apply(world, action) {
       return flush()
     }
     case "decide": {
-      const open = world.lessons("lessons").filter((l) => ["new", "later", undefined, null].includes(l.status))
-      if (!open.length) return
-      const lesson = open[Math.floor(action.pick * open.length)]
+      // Usually an open lesson; sometimes one from the archive — an id the agent remembers
+      // from an earlier hand-over, decided or evicted since.
+      const pool = action.archived
+        ? world.lessons("archive")
+        : world.lessons("lessons").filter((l) => ["new", "later", undefined, null].includes(l.status))
+      if (!pool.length) return
+      const lesson = pool[Math.floor(action.pick * pool.length)]
       await world.on(action.w).fake.tools.get("retro_decide").execute(
         { id: lesson.id, status: action.status, note: "decided in the model test" },
         { sessionID: "ses_review" },
@@ -388,6 +459,9 @@ async function apply(world, action) {
         .execute({ sessionID: action.invoker, prompt: { text: "" } })
       await flush(8)
       world.mode = before
+      // A dead process's timers never fire. Left in the set, the next slow model advanced them
+      // and the crashed instance woke up and wrote with its stale counter.
+      timers.clear()
       const dead = world.home.get(action.invoker)
       for (const s of [...world.inTurn]) if ((world.home.get(s) ?? 0) === dead) world.inTurn.delete(s)
       return world.start(dead)
@@ -489,6 +563,19 @@ function check(world) {
 
   const lessons = world.lessons("lessons")
   const archived = world.lessons("archive")
+  if (archived.some((l) => l.status === "new")) world.saw.add("the cap evicted a lesson")
+  if (archived.some((l) => l.status === "accepted")) world.saw.add("a lesson was accepted")
+  if (archived.some((l) => l.status === "rejected")) world.saw.add("a lesson was rejected")
+  if (lessons.some((l) => l.reopenedFrom)) world.saw.add("a lesson was reopened")
+  if (lessons.some((l) => (Array.isArray(l.evidence) ? l.evidence : []).some((e) => e?.released))) world.saw.add("earlier evidence was released")
+  if (lessons.some((l) => (l.recurrence ?? 1) > 1)) world.saw.add("a lesson recurred")
+  if (lessons.length > 30) world.saw.add("the open set went past thirty with `later`")
+  for (const m of Object.values(state.looked ?? {})) {
+    if (m?.open) world.saw.add("a mark was left open")
+    if (m?.failed) world.saw.add("a mark recorded a failed read")
+  }
+  if (Object.values(state.extracted ?? {}).some((x) => x?.ok === false)) world.saw.add("a log was given up on")
+  if ([...world.children.values()].some((c) => c?.linked)) world.saw.add("a delegation was folded into its root")
 
   // lesson.md — evidence of an open lesson resolves to real records (decision 18), except
   // evidence released while the lesson was closed, which is history.
@@ -519,6 +606,21 @@ function check(world) {
     }
   }
 
+  // lesson.md — a lesson is open or archived, never both, and never twice in one place.
+  const openIds = lessons.map((l) => l.id)
+  const archivedIds = archived.map((l) => l.id)
+  if (new Set(openIds).size !== openIds.length) fail("lesson", "a lesson is one file", `lessons/: ${openIds.join(",")}`)
+  if (new Set(archivedIds).size !== archivedIds.length) fail("lesson", "a lesson is one file", `archive/: ${archivedIds.join(",")}`)
+  const both = openIds.filter((id) => archivedIds.includes(id))
+  if (both.length) fail("lesson", "a lesson is open or archived, never both", both.join(","))
+  for (const l of archived) {
+    if (!["accepted", "rejected", "new"].includes(l.status)) fail("lesson", "an archived lesson was decided or evicted", `${l.id}: ${l.status}`)
+  }
+
+  // lesson.md — the cap holds for everything but `later`, which is never evicted.
+  const capped = lessons.filter((l) => l.status !== "later").length
+  if (capped > 30) fail("lesson", "the open set is capped at thirty, `later` aside", `${capped} open lessons`)
+
   // lesson.md — a rejected lesson never returns.
   const rejected = new Set((state.rejected ?? []).map((r) => r.id))
   for (const lesson of lessons) {
@@ -532,6 +634,8 @@ function check(world) {
 
   // Nothing throws into the user's session or into the plugin log.
   const pluginLog = existsSync(join(retro, "plugin.log")) ? readFileSync(join(retro, "plugin.log"), "utf8") : ""
+  if (/no reply after/.test(pluginLog)) world.saw.add("a model call timed out")
+  if (/the model returned nothing at all/.test(pluginLog)) world.saw.add("an empty reply survived the retries")
   const thrown = pluginLog.split("\n").find((l) => /TypeError|ReferenceError|RangeError|SyntaxError|is not a function|Cannot read/.test(l))
   if (thrown) fail("selfcheck", "a hook or command never throws", thrown.trim())
   for (const inst of world.instances) {
@@ -614,6 +718,8 @@ async function run(actions) {
       }
     }
     await quiesce(world)
+    for (const what of world.saw) reached(what)
+    reached("histories")
     return null
   } catch (err) {
     return err
@@ -650,13 +756,22 @@ async function shrink(actions, invariant) {
   return current
 }
 
-test(`random histories never break an invariant in docs/concepts (${ONLY_SEED ?? `${RUNS} runs`} × ${STEPS} steps)`, async () => {
+test(`random histories never break an invariant in docs/concepts (${ONLY_SEED ?? `${RUNS} runs`} × ${STEPS} steps)`, async (t) => {
   if (HISTORY) {
     const err = await run(HISTORY)
     if (err) assert.fail(`the given history broke an invariant at step ${err.step ?? "quiesce"}:\n${err.message}`)
     return
   }
   const seeds = ONLY_SEED != null ? [ONLY_SEED] : Array.from({ length: RUNS }, (_, i) => 1000 + i)
+  t.after(() => {
+    const total = COVERAGE.get("histories") ?? 0
+    const lines = [...COVERAGE.entries()]
+      .filter(([k]) => k !== "histories")
+      .sort((a, b) => b[1] - a[1])
+      .map(([k, n]) => `${String(n).padStart(6)}  ${k}`)
+    t.diagnostic(`branches reached, out of ${total} histories:`)
+    for (const line of lines) t.diagnostic(line)
+  })
   for (const seed of seeds) {
     const actions = generate(seed, STEPS)
     const err = await run(actions)
