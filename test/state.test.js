@@ -407,3 +407,51 @@ test("an open mark survives a save and is cleared by a read that reaches the end
   state.look("ses_a", { n: 9, size: 200, open: false })
   assert.deepEqual(state.looked("ses_a"), { n: 9, size: 200 }, "a complete read closes it")
 })
+
+test("a mark about a replaced log cannot be resurrected by a writer that never saw the replacement", () => {
+  // Two writers hold the same mark. One sees the log replaced and writes a mark about the
+  // new file; the other, still holding the old one in memory, saves something unrelated.
+  // Without an identity on the mark the merge maxed the numbers and the old 50 came back;
+  // without an order on the marks it could not tell which writer had seen the file.
+  const path = join(mkdtempSync(join(tmpdir(), "retro-identity-")), "state.json")
+  let tick = 1000
+  const clock = () => tick++
+
+  const stale = createState({ path, now: clock })
+  stale.look("ses_x", { n: 50, size: 5000, id: "old-file" })
+
+  const fresh = createState({ path, now: clock })
+  fresh.look("ses_x", { n: 3, size: 300, id: "new-file" })
+  assert.deepEqual(fresh.looked("ses_x"), { n: 3, size: 300, id: "new-file" }, "a different file starts over")
+
+  stale.countSession("ses_other") // any save at all
+
+  const saved = JSON.parse(readFileSync(path, "utf8")).looked.ses_x
+  assert.equal(saved.id, "new-file", "the writer that saw the file wins")
+  assert.equal(saved.n, 3, "and the old number does not come back through the maximum")
+})
+
+test("bookkeeping about a session is dropped once nothing can refer to it", () => {
+  const path = join(mkdtempSync(join(tmpdir(), "retro-compact-")), "state.json")
+  const state = createState({ path })
+
+  state.queue("ses_gone", 10)
+  state.unqueue("ses_gone")
+  state.countSession("ses_gone")
+  state.uncountSession("ses_gone")
+  state.look("ses_gone", { n: 1, size: 10, id: "f" })
+  state.markExtracted("ses_gone", { ok: true, detail: "x" })
+
+  state.look("ses_kept", { n: 1, size: 10, id: "g" })
+  state.queue("ses_owed", 5)
+
+  state.compact((id) => id === "ses_kept" || id === "ses_owed")
+
+  const saved = JSON.parse(readFileSync(path, "utf8"))
+  assert.equal(saved.unqueued.includes("ses_gone"), false, "the tombstone is gone with the session")
+  assert.equal(saved.uncounted.includes("ses_gone"), false)
+  assert.equal(saved.looked.ses_gone, undefined)
+  assert.equal(saved.extracted.ses_gone, undefined)
+  assert.ok(saved.looked.ses_kept, "what can still be referred to stays")
+  assert.deepEqual(saved.pending.map((p) => p.session), ["ses_owed"], "and so does a debt")
+})

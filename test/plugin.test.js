@@ -6,6 +6,7 @@ import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import plugin from "../index.js"
 import { parseShadowLog } from "../src/shadowlog.js"
+import { parseFrontmatter } from "../src/frontmatter.js"
 
 /**
  * Drives the real plugin against a fake OpenCode.
@@ -1851,4 +1852,155 @@ test("a failed read of a live session is owed, not forgotten", async () => {
   assert.equal(savedState(directory).extracted[session]?.ok, true, "and settled")
 
   await cleanup2?.()
+})
+
+test("a mark belongs to one log: a replaced file is read from its own start, whatever its size or numbering", async () => {
+  // Size caught a shorter replacement and `lastN < mark.n` caught a renumbered one. A
+  // replacement that is longer *and* numbers past the old mark passed both, and its first
+  // steps were silently skipped. The mark now names the file it is about.
+  const directory = sandbox()
+  const session = "ses_replaced"
+  mkdirSync(join(directory, ".retro", "sessions"), { recursive: true })
+  const logPath = join(directory, ".retro", "sessions", `${session}.jsonl`)
+  const write = (lines) => writeFileSync(logPath, lines.map((l) => JSON.stringify(l)).join("\n") + "\n")
+  const tool = (n, id) => ({ v: 1, n, t: n, k: "tool", id, tool: "shell", input: { command: id }, status: "completed", exit: 2 })
+
+  write([
+    { v: 1, n: 1, t: 1, k: "prompt", text: "old instruction" },
+    tool(2, "old-1"),
+    tool(3, "old-2"),
+    { v: 1, n: 4, t: 4, k: "session", event: "end", outcome: "succeeded" },
+  ])
+  const fake = fakeOpenCode({ directory, options: { model: MODEL } })
+  const cleanup = await plugin.setup(fake.ctx)
+  await fake.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
+  assert.equal(savedState(directory).looked[session].n, 4)
+
+  // Longer in bytes, numbered past the old mark, and a different log.
+  write([
+    { v: 1, n: 1, t: 9, k: "prompt", text: "the replacement instruction, which is not the old one" },
+    tool(2, "new-1"),
+    tool(3, "new-2"),
+    tool(4, "new-3"),
+    tool(5, "new-4"),
+    tool(6, "new-5"),
+    { v: 1, n: 7, t: 16, k: "session", event: "end", outcome: "succeeded" },
+  ])
+  await fake.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
+
+  assert.equal(fake.generated.length, 2, "the replacement is read")
+  const sent = fake.generated.at(-1).prompt
+  assert.match(sent, /new-1/, "from its own start")
+  assert.doesNotMatch(sent, /Steps up to/, "with no claim that any of it was analysed before")
+
+  await cleanup?.()
+})
+
+test("lessons extracted from an orphan child keep their evidence when the child is folded into its parent", async () => {
+  // `/retro` can run between a delegation's end and the moment its parent is learned. The
+  // lesson it extracts cites the child's log, which is then folded into the root's with new
+  // step numbers and removed — a dead reference, the one thing evidence must never be.
+  const directory = sandbox()
+  const reply =
+    "```json\n" +
+    JSON.stringify({ lessons: [{ id: "child-lesson", statement: "the child kept retrying", steps: [1, 3], cost: 3, confidence: 0.8, why: "x" }] }) +
+    "\n```"
+  const fake = fakeOpenCode({ directory, options: { model: MODEL }, reply })
+  const cleanup = await plugin.setup(fake.ctx)
+  const parent = "ses_root"
+  const child = "ses_child"
+
+  // The parent has a record of its own first, so the child's steps really do move.
+  await fake.hooks.get("session.prompt")({ sessionID: parent, messageID: "p1", prompt: { text: "delegate this" } })
+  await fake.hooks.get("session.prompt")({ sessionID: child, messageID: "c1", prompt: { text: "you are a subagent" } })
+  for (const id of ["c-1", "c-2"]) {
+    await fake.hooks.get("tool.execute.before")({ sessionID: child, id, tool: "shell", input: { command: id } })
+    await fake.hooks.get("tool.execute.after")({
+      sessionID: child, id, tool: "shell", input: { command: id },
+      status: "completed", result: { output: { exit: 2, output: "no" }, metadata: { exit: 2 } },
+    })
+  }
+  fake.emit({ type: "session.execution.succeeded", durable: { seq: 9 }, data: { sessionID: child } })
+  await tick()
+
+  await fake.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
+  const before = parseFrontmatter(readFileSync(join(directory, ".retro", "lessons", "child-lesson.md"), "utf8")).data
+  assert.deepEqual(before.evidence, [{ session: child, steps: [1, 3] }], "extracted while the child looked like a session")
+
+  // The parent's own tool result reveals the link.
+  await fake.hooks.get("tool.execute.after")({
+    sessionID: parent, id: "d1", tool: "subagent",
+    input: { agent: "explore", description: "look", prompt: "go" },
+    status: "completed", result: { output: "done", metadata: { sessionID: child } },
+  })
+
+  const after = parseFrontmatter(readFileSync(join(directory, ".retro", "lessons", "child-lesson.md"), "utf8")).data
+  assert.deepEqual(after.evidence, [{ session: parent, steps: [2, 4] }], "same records, now in the root's log, renumbered")
+  assert.equal(existsSync(join(directory, ".retro", "sessions", `${child}.jsonl`)), false, "the child's log is gone")
+  assert.equal(existsSync(join(directory, ".retro", "sessions", `${parent}.jsonl`)), true, "and the root's holds its steps")
+
+  await cleanup?.()
+})
+
+test("a hook that arrives after a session's end does not report the session as broken", async () => {
+  const directory = sandbox()
+  const fake = fakeOpenCode({ directory, options: { model: MODEL } })
+  const cleanup = await plugin.setup(fake.ctx)
+  const session = "ses_late"
+
+  fake.emit({ type: "session.execution.started", durable: { seq: 1 }, data: { sessionID: session } })
+  await tick()
+  await workSession(fake, session)
+  fake.emit({ type: "session.execution.succeeded", durable: { seq: 9 }, data: { sessionID: session } })
+  await tick()
+  const ended = readFileSync(join(directory, ".retro", "selfcheck.md"), "utf8")
+  assert.match(ended, /ok\s+prompt hook/)
+
+  // A tool result that finished after the turn was declared over.
+  await fake.hooks.get("tool.execute.after")({
+    sessionID: session, id: "late", tool: "shell", input: { command: "x" },
+    status: "completed", result: { output: { exit: 0, output: "ok" }, metadata: { exit: 0 } },
+  })
+
+  const report = readFileSync(join(directory, ".retro", "selfcheck.md"), "utf8")
+  assert.doesNotMatch(report, /BROKEN/, "a late hook is not news about liveness")
+  assert.match(report, /which ended at/, "the end-of-session report stands")
+
+  await cleanup?.()
+})
+
+test("an entry that used its three attempts is retired and reported, not skipped for ever", async () => {
+  // A crash between attempt() and markExtracted() left an entry at three attempts with no
+  // outcome. nextPending skipped it, every command, and nothing ever said so.
+  const directory = sandbox()
+  mkdirSync(join(directory, ".retro", "sessions"), { recursive: true })
+  // The log is still there — it was owed, and the crash came before anything settled it.
+  // Its size was recorded by the attempts that did run, so nothing about it has grown.
+  const line = JSON.stringify({ v: 1, n: 1, t: 1, k: "prompt", text: "do the thing" }) + "\n"
+  writeFileSync(join(directory, ".retro", "sessions", "ses_crashed.jsonl"), line)
+  writeFileSync(
+    join(directory, ".retro", "state.json"),
+    JSON.stringify({
+      version: 1,
+      rejected: [],
+      extracted: {},
+      sessions: 1,
+      pending: [{ session: "ses_crashed", queuedAt: "now", attempts: 3, size: line.length }],
+      looked: { ses_crashed: { n: 0, size: line.length } },
+    }),
+  )
+  const fake = fakeOpenCode({ directory, options: { model: MODEL } })
+  const cleanup = await plugin.setup(fake.ctx)
+
+  await fake.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
+
+  const state = savedState(directory)
+  assert.deepEqual(state.pending, [], "out of the queue")
+  assert.equal(state.extracted.ses_crashed?.ok, false, "with its failure recorded")
+  assert.match(fake.synthetic[0].text, /ses_crashed.*given up after three failed analyses/, "and said out loud")
+  assert.equal(fake.generated.length, 0, "without spending anything on it")
+  const report = readFileSync(join(directory, ".retro", "selfcheck.md"), "utf8")
+  assert.match(report, /1 log given up on after three failed analyses/, "and the stock section names it")
+
+  await cleanup?.()
 })

@@ -90,7 +90,15 @@ export function createIngest({
       const parent = session(target)
       parent.owned = true
       const child = sessions.get(sessionID)
-      for (const { n, t, ...rest } of records) append(sessionID, rest)
+      // Old step number -> new one. A lesson extracted from the orphan log before the link
+      // was known cites the old numbers; this is what lets its evidence follow the records
+      // into the root's log instead of pointing at a file that no longer exists.
+      const renumbered = new Map()
+      for (const { n, t, ...rest } of records) {
+        append(sessionID, rest)
+        if (Number.isFinite(n)) renumbered.set(n, parent.n)
+      }
+      parent.renumbered = renumbered
       if (child && target !== sessionID) {
         // The counters recorded before the link are part of the parent's evidence now. If the
         // prompt is not moved with it, the self-check reports the parent's prompt hook dead

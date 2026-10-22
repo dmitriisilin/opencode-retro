@@ -131,6 +131,11 @@ export default {
      */
     function observe(sessionID, { force = false } = {}) {
       if (!sessionID) return
+      // A hook that arrives after the session's end belongs to that session, and its record is
+      // written — but it is not news about liveness. Re-measuring here would recreate the
+      // forgotten ingest counts and report `BROKEN prompt hook` about a session that was fine
+      // and is over.
+      if (ended.has(sessionID) && !started.has(sessionID)) return
       const now = Date.now()
       const first = !observedSessions.has(sessionID)
       if (!first && !force && now - lastBeat < config.heartbeatMs) return
@@ -499,7 +504,14 @@ export default {
      * file was replaced, and it is checked here rather than trusted.
      */
     function markOf(id) {
-      if (log.stat(id).size < state.looked(id).size) state.rebase(id)
+      const mark = state.looked(id)
+      // Two files under one session id are two logs. A mark that names a different file than
+      // the one on disk is void, whatever the sizes and step numbers say — this is what makes
+      // "a replaced log is read from its own start" true for a longer replacement too, which
+      // the size check cannot see.
+      const now = log.identity(id)
+      if (mark.id && now && mark.id !== now) state.rebase(id)
+      else if (log.stat(id).size < mark.size) state.rebase(id)
       return state.looked(id)
     }
 
@@ -567,7 +579,11 @@ export default {
       ended.delete(child)
       observedSessions.delete(child)
       const stray = log.read(child)
-      ingest.absorb(child, stray)
+      const absorbed = ingest.absorb(child, stray)
+      // A lesson may already cite the child: `/retro` can run between the child's end and the
+      // moment the link is learned. Its evidence names a log that is about to be removed, so it
+      // moves with the records — same root, renumbered steps.
+      if (stray.length) store.remapEvidence(child, rootOf(parent), absorbed?.renumbered)
       // Unconditionally: this log belongs to a delegation now, whether or not its records
       // could be parsed. Leaving an unreadable orphan behind lets `processQueue` treat the
       // child as a session of its own — the one thing a delegation must never become.
@@ -640,6 +656,19 @@ export default {
       // first failure meant one unreadable reply hid every log behind it, and the message
       // said to run `/retro` again — which would fail on the same log.
       const skip = new Set()
+
+      // An entry that spent its three attempts without an outcome recorded — a crash between
+      // `attempt()` and `markExtracted()` — used to sit in the queue for ever, skipped by every
+      // command and reported by none. Retired here, so it reaches the stock section and the
+      // message instead.
+      for (const entry of state.pending) {
+        if ((entry.attempts ?? 0) >= 3 && !state.wasExtracted(entry.session)) {
+          const detail = "given up after three failed analyses"
+          state.markExtracted(entry.session, { ok: false, detail })
+          failures.push({ session: entry.session, detail })
+        }
+      }
+
       // The cap counts attempts, not successes: an attempt is what costs a model call, so a
       // queue of failing logs could otherwise spend without limit under a limit that only
       // ever counted the ones that worked.
@@ -712,6 +741,11 @@ export default {
         if (!result?.ok) failures.push({ session: id, detail: result?.detail ?? "unknown failure" })
         else if (!result.skipped) reread.push(id)
       }
+
+      // Bookkeeping about a session is dropped once nothing can refer to it: no log on disk,
+      // not queued, not live. Once per command is often enough, and cheap.
+      const present = new Set(log.list())
+      state.compact((id) => present.has(id) || state.isPending(id) || isLive(id, sessionID))
 
       const left = state.pending.filter((p) => p.session !== sessionID).length
       return { analysed: done.length, live: reread.length, left, failures }
@@ -863,7 +897,8 @@ export default {
       // pay for the same material twice. The step mark below still moves only on success.
       // `open` is cleared first so a failed retry falls back to the queue's attempt budget
       // instead of re-reading the same excerpt on every command for ever.
-      if (readSize > 0) state.look(sessionID, { size: readSize, open: false, failed: false })
+      const identity = log.identity(sessionID)
+      if (readSize > 0) state.look(sessionID, { size: readSize, open: false, failed: false, id: identity })
 
       // A log we could not read is a failure like any other, and it reaches the same retry
       // policy below. It used to be marked extracted here and returned early, which did two
@@ -931,12 +966,12 @@ export default {
       // only recorded when the read made progress, so a projection that cannot get past its
       // own first gap fails once and stops rather than billing for the same excerpt again.
       const open = Boolean(result.ok && through < lastN && through > mark.n)
-      if (result.ok && through > 0) state.look(sessionID, { n: through, open })
+      if (result.ok && through > 0) state.look(sessionID, { n: through, open, id: identity })
       // A failed read of a session nobody has queued — a live one — is owed, and the size
       // mark alone would hide that: the next command sees "nothing new" and a restart before
       // the session's end event means the log is never looked at again. Recorded here, and
       // the queue takes it over the moment the session stops being live.
-      if (!result.ok && !settle) state.look(sessionID, { failed: true })
+      if (!result.ok && !settle) state.look(sessionID, { failed: true, id: identity })
 
       // An excerpt leaves the debt open: the gap has not been turned into lessons, so the
       // entry stays and the next command reads from the mark. Only a complete read (or a

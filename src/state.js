@@ -7,14 +7,16 @@ import { dirname } from "node:path"
  * sessions have already been extracted (so a restart does not pay twice).
  */
 /** The on-disk shape of a mark, in one place: flags only when true. */
-const mark = (n, size, open, failed) => ({
+const mark = (n, size, open, failed, id = null, at = null) => ({
   n,
   size,
   ...(open ? { open: true } : {}),
   ...(failed ? { failed: true } : {}),
+  ...(id ? { id } : {}),
+  ...(at ? { at } : {}),
 })
 
-export function createState({ path, onError }) {
+export function createState({ path, onError, now = () => Date.now() }) {
   let data = {
     version: 1,
     rejected: [],
@@ -57,6 +59,8 @@ export function createState({ path, onError }) {
    * described the old file, so a rebase has to be stated explicitly for one save.
    */
   let rebased = new Set()
+  /** A predicate for one save: keep only the sessions it says can still be referred to. */
+  let compactWith = null
 
   /**
    * Written by merging with whatever is on disk, not by overwriting it.
@@ -134,6 +138,8 @@ export function createState({ path, onError }) {
           size: typeof v === "number" ? v : (v?.size ?? 0),
           open: typeof v === "number" ? false : Boolean(v?.open),
           failed: typeof v === "number" ? false : Boolean(v?.failed),
+          id: typeof v === "number" ? null : (v?.id ?? null),
+          at: typeof v === "number" ? 0 : (v?.at ?? 0),
         })
         const ownLooked = data.looked ?? {}
         const looked = {}
@@ -143,18 +149,29 @@ export function createState({ path, onError }) {
             // after the rebase may be used; the old number must not come back.
             if (!(id in ownLooked)) continue
             const own = asMark(ownLooked[id])
-            looked[id] = mark(own.n, own.size, own.open, own.failed)
+            looked[id] = mark(own.n, own.size, own.open, own.failed, own.id, own.at)
             continue
           }
           const a = asMark(disk.looked?.[id])
           const b = asMark(ownLooked[id])
+          // Two marks with different identities describe two different files, and numbers
+          // about one say nothing about the other. The writer who has seen the file wins;
+          // this is what stops a writer that never saw a replacement resurrecting the old
+          // mark by maxing against it.
+          if (a.id && b.id && a.id !== b.id) {
+            // Neither side can see the file from here, so the later mark wins: a stale
+            // writer's memory is older than what the writer that saw the replacement wrote.
+            const later = b.at >= a.at ? b : a
+            looked[id] = mark(later.n, later.size, later.open, later.failed, later.id, later.at)
+            continue
+          }
           const n = Math.max(a.n, b.n)
           const size = Math.max(a.size, b.size)
           // Both flags follow the writer whose mark is at least as far along, and they are
           // rebuilt here rather than carried: a flag assembled in `look()` and forgotten in
           // this merge is invisible until something downstream quietly stops happening.
           const newer = b.present && b.n >= a.n ? b : a
-          looked[id] = mark(n, size, newer.open, newer.failed)
+          looked[id] = mark(n, size, newer.open, newer.failed, b.id ?? a.id, Math.max(a.at, b.at) || null)
         }
         // The extraction describes the file that was replaced, so its byte size no longer
         // covers anything: a new log may be smaller than the old one and still be new work.
@@ -211,6 +228,14 @@ export function createState({ path, onError }) {
       const excluded = new Set(Array.isArray(data.unqueued) ? data.unqueued : [])
       if (excluded.size) data.pending = data.pending.filter((p) => !excluded.has(p.session))
 
+      if (compactWith) {
+        data.unqueued = (data.unqueued ?? []).filter(compactWith)
+        data.uncounted = (data.uncounted ?? []).filter(compactWith)
+        for (const key of ["looked", "extracted"]) {
+          for (const id of Object.keys(data[key] ?? {})) if (!compactWith(id)) delete data[key][id]
+        }
+      }
+
       mkdirSync(dirname(path), { recursive: true })
       writeFileSync(path, JSON.stringify(data, null, 2) + "\n")
       rebased = new Set()
@@ -265,6 +290,7 @@ export function createState({ path, onError }) {
         size: mark?.size ?? 0,
         ...(mark?.open ? { open: true } : {}),
         ...(mark?.failed ? { failed: true } : {}),
+        ...(mark?.id ? { id: mark.id } : {}),
       }
     },
     /**
@@ -277,8 +303,15 @@ export function createState({ path, onError }) {
      * recorded and the plugin restarted before the session's end event — was skipped for
      * good.
      */
-    look(session, { n, size, open, failed }) {
+    look(session, { n, size, open, failed, id }) {
       const before = this.looked(session)
+      // A mark is about one file. Told which file this is and finding it is not the one the
+      // mark described, the old numbers are void: start over rather than max against them.
+      if (id && before.id && before.id !== id) {
+        data.looked[session] = mark(n ?? 0, size ?? 0, Boolean(open), Boolean(failed), id, now())
+        save()
+        return
+      }
       // A rebase is deliberately *not* deleted here. Until a save has carried the rebase to
       // the file, the old mark is still on disk; letting this fresh (necessarily smaller)
       // mark be maxed against it would resurrect the number that described the replaced log.
@@ -289,6 +322,8 @@ export function createState({ path, onError }) {
         Math.max(size ?? 0, before.size),
         nextOpen,
         nextFailed,
+        id ?? before.id ?? null,
+        now(),
       )
       save()
     },
@@ -380,6 +415,23 @@ export function createState({ path, onError }) {
      * lazily, leaving the parent's `subagent` result as the only route — and a delegation is
      * a step, not a session to analyse.
      */
+    /**
+     * Drop bookkeeping about sessions nothing can refer to any more — no log, not queued,
+     * not live. The tombstones and the per-session marks would otherwise grow for the life of
+     * the project. It is applied *after* the merge, on the merged result, so a writer that
+     * loaded earlier cannot bring a dropped entry back and an entry another writer added for
+     * a session that still exists is not lost. `counted` is left alone on purpose: a session
+     * left open can be prompted again months later, and folding its identity away would
+     * count it twice.
+     */
+    compact(referable) {
+      compactWith = referable
+      try {
+        save()
+      } finally {
+        compactWith = null
+      }
+    },
     unqueue(session) {
       let changed = false
       if (!data.unqueued.includes(session)) {

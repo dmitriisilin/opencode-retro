@@ -128,6 +128,41 @@ export function createStore({ dir, archive, cap = DEFAULT_CAP, halfLife = DEFAUL
      * doing it. It only exists because the review happened, so it is recorded here or
      * nowhere.
      */
+    /**
+     * Evidence follows the records. A delegation's log is folded into its root's with new step
+     * numbers, and a lesson extracted from that log before the link was known still cites the
+     * old session and the old numbers — a dead reference, which is the one thing evidence must
+     * never be (decision 18). Rewritten here, in `lessons/` and `archive/` alike: a range maps
+     * end to end, and an entry already citing the root is widened rather than duplicated.
+     */
+    remapEvidence(from, to, renumbered) {
+      const at = (n) => renumbered?.get?.(n) ?? n
+      let moved = 0
+      for (const [where, lessons] of [[dir, list()], [archive, listArchive()]]) {
+        for (const lesson of lessons) {
+          const evidence = asArray(lesson.evidence) ?? []
+          if (!evidence.some((e) => e?.session === from)) continue
+          const kept = evidence.filter((e) => e?.session !== from && e?.session !== to)
+          const ranges = evidence
+            .filter((e) => e?.session === from || e?.session === to)
+            .map((e) => (e.session === from && Array.isArray(e.steps) && e.steps.length ? e.steps.map(at) : e.steps))
+            .filter((r) => Array.isArray(r) && r.length)
+          const steps = ranges.length ? [Math.min(...ranges.flat()), Math.max(...ranges.flat())] : []
+          const { file, body, ...data } = {
+            ...lesson,
+            evidence: [...kept, { session: to, ...(steps.length ? { steps } : {}) }],
+          }
+          try {
+            writeFileSync(join(where, file ?? `${data.id}.md`), stringifyFrontmatter(data, body ?? ""))
+            moved++
+          } catch (err) {
+            onError?.(`lessons.remap ${lesson.id}`, err)
+          }
+        }
+      }
+      return moved
+    },
+
     close(id, status, outcome = {}) {
       const lesson = list().find((l) => l.id === id)
       if (!lesson) return null

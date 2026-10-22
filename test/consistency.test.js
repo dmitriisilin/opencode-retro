@@ -178,3 +178,27 @@ test("nothing after setup returns is a binding, because a binding there is never
 
   assert.deepEqual(offenders, [], "declare it as `function name() {}` or move it above the return")
 })
+
+test("every invariant in docs/concepts cites a test that exists", () => {
+  // The concept documents are the place to change first, and they stay honest the same way
+  // the READMEs do: mechanically. Each invariant names the test that pins it by its exact
+  // title, so a renamed or deleted test breaks the document that leaned on it, and an
+  // invariant nobody tested is visible as a missing citation rather than as a sentence that
+  // reads as settled.
+  const titles = new Set()
+  for (const file of readdirSync(join(root, "test")).filter((f) => f.endsWith(".test.js"))) {
+    for (const [, title] of read(`test/${file}`).matchAll(/^test\("((?:[^"\\]|\\.)*)"/gm)) {
+      titles.add(title.replace(/\\"/g, '"'))
+    }
+  }
+
+  const missing = []
+  for (const file of readdirSync(join(root, "docs", "concepts")).filter((f) => f.endsWith(".md") && f !== "README.md")) {
+    const text = read(`docs/concepts/${file}`)
+    // A citation is a backticked line standing on its own under an invariant.
+    for (const [, cited] of text.matchAll(/^\s*`([^`]+)`\s*$/gm)) {
+      if (!titles.has(cited)) missing.push(`${file}: ${cited}`)
+    }
+  }
+  assert.deepEqual(missing, [], `cited tests that do not exist:\n  ${missing.join("\n  ")}`)
+})

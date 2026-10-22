@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto"
 import { appendFileSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs"
 import { join } from "node:path"
 
@@ -92,6 +93,23 @@ export function createShadowLog({ dir, onError }) {
         /* no log yet, which is the normal case */
       }
       return 0
+    },
+
+    /**
+     * Which log this is. Two files under one session id are two logs — a pruned log written
+     * again, a file replaced by hand — and a mark is about exactly one of them. The first
+     * record is written once and never changes, so its hash is the file's identity; `null`
+     * when there is no file or no whole first line yet.
+     */
+    identity(sessionID) {
+      try {
+        const first = readFileSync(join(dir, `${sessionID}.jsonl`), "utf8").split("\n").find((l) => l.trim())
+        if (!first) return null
+        JSON.parse(first) // a half-written first line is not an identity yet
+        return createHash("sha256").update(first).digest("hex").slice(0, 12)
+      } catch {
+        return null
+      }
     },
 
     /** Used by the self-check: the log must exist and be non-empty. */

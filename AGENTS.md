@@ -2,6 +2,14 @@
 
 Context for any coding agent (OpenCode, Claude Code, …) working on this repo. Read this first; README.md is the public-facing pitch, this file is the working brief.
 
+**What things *are* is in [`docs/concepts/`](docs/concepts/README.md), and that is the place
+to change first.** This file records how things came to be — decisions, measured API facts,
+gotchas, the plan. The concepts record definitions and invariants, each invariant naming the
+test that pins it, and the suite checks that every cited test exists. The pattern that cost
+the most time here was fixing code where no concept had been written down: "live",
+"settled", "the mark", "owed" were each rewritten three times by three different hands, each
+deriving the meaning again from the code and landing somewhere slightly different.
+
 ## What we are building
 
 An OpenCode **v2** plugin that turns friction in agent sessions into proposed changes to the project's harness (skills, AGENTS.md, tools, code), reviewed by a human via `/retro`.
@@ -879,6 +887,11 @@ Shipping with these known, listed so nobody discovers them as surprises:
   18 saw the suite find nothing. The quotes are gone, so a POSIX shell expands it. A directory
   argument is not an option: Node treats every file under a directory named `test` as a test
   file, which picks up `test/replay.js` and fails.
+- **Change the concept first, then the code, then the test — and cite the test in the
+  concept.** `docs/concepts/` is where a word's meaning lives. If a change to the code does
+  not fit the concept, stop and decide which is wrong, out loud, rather than make the code
+  work and leave the concept behind. An invariant without a test is visible as such; a test
+  that is renamed or deleted breaks the document that leaned on it.
 - **One vocabulary, three verbs: extract → propose → decide.** The three artifacts are a raw
   log, a lesson and a decision, and each step is named the same way everywhere: `src/extract.js`,
   `src/propose.js`, `src/decide.js`, with `test/<verb>.test.js` beside each, and `prompts/extract.md`
@@ -905,4 +918,37 @@ Shipping with these known, listed so nobody discovers them as surprises:
 - Package `opencode-retro` on npm, owner `dmitriisilin`. Published placeholders: 0.0.1, 0.0.2 (no functionality). `main` is already at 0.0.3 — the next real release.
 - Publishing is via npm Trusted Publishing (status: Valid) from `.github/workflows/publish.yml` on tags `v*`. Tag must match `package.json` version, and the workflow runs `npm test` before publishing, so a tarball, translation stamp or version mismatch stops the release.
 - The workflow upgrades npm before publishing: Trusted Publishing needs npm ≥ 11.5.1, Node 22 ships npm 10, and old npm fails with a misleading `E404 Not Found - PUT`. Don't remove that step.
-- Release: `npm version <x.y.z> && git push --follow-tags`. No tokens anywhere. Nothing else needs bumping: the self-check reads its version from `package.json`.
+- Release: `npm version <x.y.z> && git push --follow-tags`. No tokens anywhere.
+
+### Before a tag
+
+The rule is the owner's: **while audit cycles still find defects, there is no release.** A
+cycle's yield tracks the amount of code written since the previous cycle, not the age of the
+project, and fixes spawn fixes — three of cycle 3's seven defects were in fixes made a day
+earlier. So the signal to look for is a cycle over *unchanged* code finding nothing of
+consequence, and the list below is what has to be true of the commit that gets tagged, in
+the order it is cheapest to check:
+
+1. `npm test` is green, and the tagged commit is the audited one — nothing landed after the
+   last cycle except the cycle's own fixes. CI runs the suite on the tag, so a failure there
+   stops the publish, but it should never be news.
+2. The mechanical guards all pass, because they are the ones that caught the most: text
+   names only commands that exist, every option is documented in every language with its
+   real default, every record kind is projected, every concept citation resolves, every
+   translation is stamped, nothing after `setup`'s `return` is a binding, and the surface
+   check names exactly what the plugin calls.
+3. The last audit cycle ran against code that did not change afterwards, and reported no
+   defect above "documented limit". Its "wrong, but not touched" list is either empty or
+   stated in the concepts as a limit.
+4. A stranger's first hour was run on this exact build: the tarball packed and installed
+   into a fresh project under `/tmp`, no `options.model`, no git; worked in, `/retro` run
+   through the API (Gotcha 16), a prompt edited and seen to take effect, a decision recorded,
+   `/retro` run again. Nothing confusing, silent or maintainer-only.
+5. The README's install instruction is true **for the version being tagged**: what npm's
+   `latest` will be after the publish, and what a reader of HEAD gets before it.
+6. `npm pack --dry-run` carries `index.js`, `src/`, `prompts/`, `package.json`, `LICENSE`
+   and the READMEs, and nothing else; `opencode.json` is not tracked.
+7. `VERSION` is read from `package.json`, so the bump is the whole bump; the self-check on
+   an installed tarball reports the tagged version.
+8. The Trusted Publisher binding on npmjs still names this repository and
+   `publish.yml` — not checkable from the checkout, and the one step that fails last. Nothing else needs bumping: the self-check reads its version from `package.json`.
