@@ -93,7 +93,14 @@ export async function extract({
       section("Session", `id: ${session}`),
       section("Log", [continued, log].filter(Boolean).join("\n\n")),
       section("Already concluded from this session", renderConcluded(concluded)),
-      section("Lessons already recorded", renderExisting(existing)),
+      section(
+        "Lessons already recorded",
+        existing.length
+          ? "If this session ran into one of these again, list it again with `matches` set to its id: " +
+              "that is how a problem that keeps happening is told from one that happened once.\n\n" +
+              renderExisting(existing)
+          : renderExisting(existing),
+      ),
       section("Rejected — do not propose these again", renderRejected(state.rejected)),
       OUTPUT_CONTRACT,
     ]

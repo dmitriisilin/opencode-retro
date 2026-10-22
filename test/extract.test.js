@@ -614,3 +614,26 @@ test("a re-read with a reply is analysed even when it has no prompt or tool call
   assert.equal(r.calls.length, 1, "and it reaches the model")
   assert.match(r.calls[0].prompt, /the command does not exist here/)
 })
+
+test("a problem already recorded is asked for again, with matches, when it recurs", async () => {
+  // Measured on the friction bench: a second session hit the same three planted traps and the
+  // extractor answered "nothing to learn" — it read "already recorded" as "already handled".
+  // Recurrence is the strongest signal in the score, and it is only counted through `matches`.
+  const r = rig({ reply: REPLY() })
+  await extract({ records: live(), session: "ses_one", ...r })
+  await extract({ records: live(), session: "ses_two", ...r })
+  const prompt = r.calls.at(-1).prompt
+  assert.match(prompt, /ran into one of these again, list it again with `matches`/)
+  assert.match(prompt, /report it again with `matches` set — that is\s+how recurrence is counted/)
+})
+
+test("the review of a handed-over lesson is not counted as the problem recurring", async () => {
+  // Measured on the friction bench: the agent in a review session checked the lint lesson it
+  // had been handed — read the skill, ran eslint — and the next analysis reported that check
+  // as the problem recurring, adding a session and 19 steps of cost to the lesson.
+  const r = rig({ reply: REPLY() })
+  await extract({ records: live(), session: "ses_one", ...r })
+  const prompt = r.calls.at(-1).prompt
+  assert.match(prompt, /opencode-retro handed a lesson over"\)\s+and\s+checks or applies the lesson/)
+  assert.match(prompt, /do not report it\s+as a recurrence, and do not count its steps as cost/)
+})

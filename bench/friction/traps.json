@@ -1,0 +1,16 @@
+{
+  "traps": [
+    { "id": "lint-skill-without-linter", "planted": "the lint skill runs eslint in a project with no eslint and no config", "match": ["lint", "eslint"] },
+    { "id": "build-script-missing", "planted": "AGENTS.md says to run `npm run build`; there is no build script", "match": ["npm run build", "build script", "\"build\""] },
+    { "id": "test-unit-script-missing", "planted": "AGENTS.md says `npm run test:unit`; the script is `npm test`", "match": ["test:unit"] },
+    { "id": "config-path-wrong", "planted": "AGENTS.md says configuration lives in config/settings.json; it is src/config.js", "match": ["settings.json", "config/", "src/config.js"] }
+  ],
+  "controls": [
+    { "id": "named-exports-true", "true": "exports are named, never default — this is true; a lesson against it is a false finding", "match": ["named export", "default export"] }
+  ],
+  "tasks": [
+    "Add a function median(numbers) to src/stats.js and a test for it in spec/. Follow AGENTS.md exactly.",
+    "Change the default greeting from \"Hello\" to \"Hi\". Follow AGENTS.md exactly.",
+    "Add a function mode(numbers) to src/stats.js and a test for it in spec/. Follow AGENTS.md exactly."
+  ]
+}

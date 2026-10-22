@@ -41,7 +41,15 @@ Rules:
 - \`cost\` is how many steps this problem consumed. Count them; do not estimate.
 - \`confidence\` is 0 to 1. Use below 0.5 when one more session would settle it.
 - \`matches\` is the \`id\` of an existing lesson when this is the same problem recurring,
-  otherwise \`null\`. Prefer matching over creating a near-duplicate.
+  otherwise \`null\`. Prefer matching over creating a near-duplicate. When this session ran
+  into a problem that is already recorded, report it again with \`matches\` set — that is
+  how recurrence is counted, and leaving it out makes a problem that happens in every session
+  look as if it happened once. Already recorded is not the same as already answered.
+- Work that follows a hand-over (a step reading "opencode-retro handed a lesson over") and
+  checks or applies the lesson it
+  handed over is the review of that lesson, not the problem happening again: do not report it
+  as a recurrence, and do not count its steps as cost. Counting it would make every lesson
+  that gets reviewed look more important for having been reviewed.
 - \`proposal\` is optional. Omit it, or use \`null\`, when you can name the problem but not
   the fix — that is a normal and useful answer.
 - \`ask\` is optional and is for when the fix depends on something only the human knows.

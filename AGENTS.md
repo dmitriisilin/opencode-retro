@@ -945,6 +945,11 @@ the order it is cheapest to check:
    into a fresh project under `/tmp`, no `options.model`, no git; worked in, `/retro` run
    through the API (Gotcha 16), a prompt edited and seen to take effect, a decision recorded,
    `/retro` run again. Nothing confusing, silent or maintainer-only.
+4a. The planted-friction bench (`bench/friction/`) finds every trap, counts each recurring one
+   in more than one session, does not count the review of a lesson as its recurrence, and
+   reports no lesson against the control. A recall number, not an impression: it is the one
+   check that measures what the plugin is *for*, and its first run found two defects in the
+   analysis that every other check had passed.
 5. The README's install instruction is true **for the version being tagged**: what npm's
    `latest` will be after the publish, and what a reader of HEAD gets before it.
 6. `npm pack --dry-run` carries `index.js`, `src/`, `prompts/`, `package.json`, `LICENSE`

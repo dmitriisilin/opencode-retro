@@ -50,6 +50,14 @@ told to the extractor and filters its answer, and the store refuses to reopen an
 - A second session hitting the same problem adds evidence and increments recurrence; it
   does not create a second file.
   `the same lesson in a second session increments recurrence instead of duplicating`
+- The extractor is told that a recorded problem met again is reported again, with `matches`:
+  already recorded is not already answered, and recurrence is counted only that way.
+  `a problem already recorded is asked for again, with matches, when it recurs`
+- Checking or applying a lesson after it was handed over is its review, not a recurrence:
+  the extractor is told not to count it, or every reviewed lesson would climb for having been
+  looked at. Found on the friction bench, where one review added a recurrence and 19 steps of
+  cost to the lesson it was checking.
+  `the review of a handed-over lesson is not counted as the problem recurring`
 - Reading the same session again moves nothing but the step range.
   `reading the same session again is not a second session`
   `a re-read without steps does not erase the range the lesson already cites`
