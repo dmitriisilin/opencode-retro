@@ -3,7 +3,7 @@ import assert from "node:assert/strict"
 import { appendFileSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { createShadowLog, identityOf, parseShadowLog } from "../src/shadowlog.js"
+import { createShadowLog, identityOf, isReplacedLog, parseShadowLog } from "../src/shadowlog.js"
 import { createIngest } from "../src/ingest.js"
 
 const sandbox = () => {
@@ -143,4 +143,27 @@ test("identity is the first whole record of the text that was read", () => {
   assert.equal(identityOf(""), null, "no record, no identity")
   assert.equal(identityOf('{"v":1,"n":1'), null, "a half-written first line is not one yet")
   assert.equal(identityOf("not json\n" + a), null, "so a file with no whole first record has no identity")
+})
+
+test("a mark about a different file is void even when the read sees a different file than the check did", () => {
+  // `markOf` asks the file which log it is, and then the read opens it. A prune and a write
+  // under the same session id between those two moments replaces the log, and the mark from
+  // the first look must not be applied to the bytes the second one got: its step numbers
+  // describe a file that is no longer there.
+  const old = '{"v":1,"n":1,"k":"prompt","text":"old"}\n'
+  const fresh = '{"v":1,"n":1,"k":"prompt","text":"new"}\n'
+
+  assert.equal(isReplacedLog({ n: 40, size: 9000, id: identityOf(old) }, identityOf(fresh)), true, "a different first record")
+  assert.equal(isReplacedLog({ n: 40, size: 9000, id: identityOf(old) }, identityOf(old)), false, "an append is the same log")
+  assert.equal(isReplacedLog({ n: 40, size: 9000 }, identityOf(fresh)), false, "a mark from before identities existed is not voided by identity")
+  assert.equal(
+    isReplacedLog({ n: 40, size: 9000, id: identityOf(old) }, null, { exists: true }),
+    true,
+    "a file with no whole first record cannot be the log the mark described",
+  )
+  assert.equal(
+    isReplacedLog({ n: 40, size: 9000, id: identityOf(old) }, null, { exists: false }),
+    false,
+    "and a missing file is the size check's business, not this one's",
+  )
 })

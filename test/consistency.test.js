@@ -202,3 +202,37 @@ test("every invariant in docs/concepts cites a test that exists", () => {
   }
   assert.deepEqual(missing, [], `cited tests that do not exist:\n  ${missing.join("\n  ")}`)
 })
+
+test("an invariant that names no test says so, rather than looking settled", () => {
+  // docs/concepts/README.md promises this: an invariant with no test reads `(untested)`.
+  // Without a check the promise is only a habit, and the habit is exactly what fails first.
+  const naked = []
+  for (const file of readdirSync(join(root, "docs", "concepts")).filter((f) => f.endsWith(".md") && f !== "README.md")) {
+    let inInvariants = false
+    let bullet = null
+    const flush = () => {
+      if (bullet && !bullet.cited && !/\(untested\)/.test(bullet.text)) {
+        naked.push(`${file}: ${bullet.text.trim().slice(0, 72)}`)
+      }
+    }
+    for (const line of read(`docs/concepts/${file}`).split("\n")) {
+      if (/^## Invariants/.test(line)) {
+        inInvariants = true
+        continue
+      }
+      if (inInvariants && /^## /.test(line)) {
+        flush()
+        inInvariants = false
+        bullet = null
+        continue
+      }
+      if (!inInvariants) continue
+      if (/^- /.test(line)) {
+        flush()
+        bullet = { text: line, cited: false }
+      } else if (bullet && /^\s*`[^`]+`\s*$/.test(line)) bullet.cited = true
+    }
+    flush()
+  }
+  assert.deepEqual(naked, [], `invariants with no test and no marker:\n  ${naked.join("\n  ")}`)
+})

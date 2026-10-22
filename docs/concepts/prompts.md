@@ -37,16 +37,17 @@ hand-over degrades to a terse built-in text rather than to silence.
 ## Invariants
 
 - A missing prompt is seeded from the packaged default, and a present one is never
-  overwritten.
+  overwritten. A seed that fails part-way takes its own half-written file with it.
   `the default is seeded into the project so there is something to edit`
   `seeding never overwrites what is already there`
   `a prompt that cannot be seeded reports it and leaves nothing behind`
+  `a seed that fails half-way leaves no partial prompt behind`
 - Resolution is project, then global, then packaged.
   `resolution is project, then global, then packaged`
 - Only the user's prose reaches the model.
   `the frontmatter is stripped, so only the user's prose reaches the model`
 - A newer default is news, never a change: a news file beside the prompts, the live file
-  untouched, the news written once and reported until read.
+  untouched, the news written once and reported until the user deletes it.
   `an older base gets a news file, and the live file is left alone`
   `a current base produces no news`
   `the news file is written once, and keeps being reported`

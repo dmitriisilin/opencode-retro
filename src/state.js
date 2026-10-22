@@ -200,8 +200,9 @@ export function createState({ path, onError, now = () => Date.now() }) {
         // there, and nothing is owed for it. Entries leave through an extraction, which the
         // coverage filter expresses, or through a deliberate removal, which the persisted
         // `unqueued` list expresses. For a session both writers hold, the higher attempt count
-        // wins — otherwise a retry budget resets — and the smaller queued size, so the
-        // coverage comparison stays conservative.
+        // wins — otherwise a retry budget resets — and the larger queued size, because the two
+        // entries describe the same debt seen twice: an extraction that covered the smaller
+        // one has not answered the material the other was queued for.
         const ownUnqueued = Array.isArray(data.unqueued) ? data.unqueued : []
         const unqueued = [
           ...new Set([...(Array.isArray(disk.unqueued) ? disk.unqueued : []), ...ownUnqueued]),
@@ -218,7 +219,7 @@ export function createState({ path, onError, now = () => Date.now() }) {
               ? {
                   ...held,
                   attempts: Math.max(held.attempts ?? 0, entry.attempts ?? 0),
-                  size: Math.min(held.size ?? 0, entry.size ?? 0),
+                  size: Math.max(held.size ?? 0, entry.size ?? 0),
                 }
               : { ...entry },
           )
@@ -461,7 +462,17 @@ export function createState({ path, onError, now = () => Date.now() }) {
         data.unqueued.splice(at, 1) // queued again on purpose, so the tombstone no longer applies
         changed = true
       }
-      if (!data.pending.some((p) => p.session === session)) {
+      const held = data.pending.find((p) => p.session === session)
+      if (held) {
+        // Already queued, but for a smaller log than the one being queued now. The entry's
+        // size is what the coverage filter compares an extraction against, so leaving the
+        // older number here makes later material look answered by an extraction that stopped
+        // before it.
+        if ((size ?? 0) > (held.size ?? 0)) {
+          held.size = size
+          changed = true
+        }
+      } else {
         data.pending.push({ session, queuedAt: new Date().toISOString(), attempts: 0, size })
         changed = true
       }

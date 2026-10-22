@@ -54,6 +54,7 @@ test("every settable option is carried through, and omitted ones take the defaul
   const plain = resolveConfig({ location, options: {} })
   assert.equal(plain.model, null, "no model is a legitimate state; extraction says how to fix it")
   assert.equal(plain.maxOutput, DEFAULTS.maxOutput)
+  assert.equal(plain.maxInput, DEFAULTS.maxInput)
   assert.equal(plain.heartbeatMs, DEFAULTS.heartbeatMs)
   assert.equal(plain.halfLife, DEFAULTS.halfLife)
   assert.equal(plain.extractTimeoutMs, DEFAULTS.extractTimeoutMs)

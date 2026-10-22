@@ -1,6 +1,11 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
+import { readFileSync, readdirSync } from "node:fs"
+import { dirname, join } from "node:path"
+import { fileURLToPath } from "node:url"
 import { OUTPUT_CONTRACT, parseLessons, slug } from "../src/contract.js"
+
+const root = join(dirname(fileURLToPath(import.meta.url)), "..")
 
 const good = {
   id: "lint-skill-no-config",
@@ -17,6 +22,16 @@ const good = {
 test("the contract is never written to disk, only wrapped at call time", () => {
   assert.match(OUTPUT_CONTRACT, /fenced `json` block/)
   assert.match(OUTPUT_CONTRACT, /"lessons": \[\]/, "the empty answer must be spelled out")
+
+  // The rule is not "the constant exists" but "it is not in any file the user can edit":
+  // a copy in a prompt would drift from this one, and editing it would break the parser
+  // while looking like a normal prompt change.
+  const prompts = join(root, "prompts")
+  for (const file of readdirSync(prompts).filter((f) => f.endsWith(".md"))) {
+    const text = readFileSync(join(prompts, file), "utf8")
+    assert.doesNotMatch(text, /## How to answer/, `${file} carries a copy of the output contract`)
+    assert.doesNotMatch(text, /"lessons": \[\]/, `${file} carries a copy of the output contract`)
+  }
 })
 
 test("a clean reply parses", () => {

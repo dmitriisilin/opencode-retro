@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { homedir } from "node:os"
@@ -15,7 +15,13 @@ const packaged = resolve(dirname(fileURLToPath(import.meta.url)), "..", "prompts
  * `updates/`, headed by a note saying it is not in use. Nothing is applied on the user's
  * behalf, ever.
  */
-export function createPrompts({ dir, updates, global = join(homedir(), ".config", "opencode", "retro", "prompts"), onError }) {
+export function createPrompts({
+  dir,
+  updates,
+  global = join(homedir(), ".config", "opencode", "retro", "prompts"),
+  onError,
+  write = writeFileSync,
+}) {
   function defaultFor(name) {
     try {
       return readFileSync(join(packaged, `${name}.md`), "utf8")
@@ -34,9 +40,20 @@ export function createPrompts({ dir, updates, global = join(homedir(), ".config"
       if (!text) return { seeded: false, path: target, error: "no packaged default" }
       try {
         mkdirSync(dir, { recursive: true })
-        writeFileSync(target, text)
+        // `wx` rather than a plain write: a second instance seeding the same first run must
+        // not replace a file the user has already started editing. And a write that fails
+        // part-way takes its own file with it — a half-written prompt is worse than none,
+        // because the next run takes it for the user's own and never seeds again.
+        write(target, text, { flag: "wx" })
         return { seeded: true, path: target }
       } catch (err) {
+        if (err?.code !== "EEXIST") {
+          try {
+            rmSync(target, { force: true })
+          } catch {
+            /* nothing to remove, or nowhere to report it */
+          }
+        }
         onError?.(`prompts.seed ${name}`, err)
         return { seeded: false, path: target, error: String(err?.message ?? err) }
       }

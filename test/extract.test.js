@@ -632,3 +632,26 @@ test("a second empty reply is answered once more, at a quarter of the budget", a
   assert.ok(sent[1].length < sent[0].length && sent[2].length < sent[1].length, "each one smaller")
   assert.ok(result.ok, "the third answer is the one recorded")
 })
+
+test("a re-read with a reply is analysed even when it has no prompt or tool call of its own", async () => {
+  // The skip rule is about material that cannot hold evidence. A re-read's slice carries the
+  // session's old prompts and drops the tool calls already turned into lessons, so counting
+  // prompts and tools alone called a new assistant reply "one quiet exchange". A reply is
+  // exactly where a wrong answer and a dropped task live, with nothing executed.
+  const r = rig({ reply: REPLY() })
+  const result = await extract({
+    records: [
+      { k: "prompt", n: 1, text: "do a thing" },
+      { k: "text", n: 3, text: "I could not do that, the command does not exist here." },
+      { k: "session", n: 4, event: "end", outcome: "succeeded" },
+    ],
+    session: "ses_followup",
+    analysedUpTo: 2,
+    ...r,
+  })
+
+  assert.ok(result.ok)
+  assert.ok(!result.skipped, "the new reply is material, so the session is read")
+  assert.equal(r.calls.length, 1, "and it reaches the model")
+  assert.match(r.calls[0].prompt, /the command does not exist here/)
+})

@@ -53,6 +53,7 @@ told to the extractor and filters its answer, and the store refuses to reopen an
   `a re-read restores a cap-evicted lesson when there is room, without counting the session twice`
 - Colliding ids are two problems, not one merged; an explicit `matches` is one.
   `two different lessons with the same slug do not overwrite each other`
+  `an explicit match to an open lesson merges into it, instead of creating its own id`
   `an explicit match to an archived lesson beats an unrelated open lesson with the same id`
 - An accepted lesson that returns from another session is reopened as a failed fix.
   `a lesson that was accepted and comes back is reopened, because the fix did not hold`

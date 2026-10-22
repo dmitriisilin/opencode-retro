@@ -38,7 +38,8 @@ rendered as one.
 - `open` — a successful analysis covered a prefix and left a gap. Owed **now**.
 - `failed` — the last read of this log failed and nothing settled it. Owed **later**.
 - `id` — the identity of the file the mark describes (see state.md). A mark about a
-  different file is void.
+  different file is void. A mark written before identities existed is voided by the one
+  other safe signal: a byte count larger than the file on disk.
 
 **Owed.** A log the plugin still has to read: its size grew past the mark, or the mark is
 `open`, or the mark is `failed`. Owed is the only reason an analysis happens.
@@ -73,10 +74,20 @@ lesson cites it, nothing is owed for it, and its session is not live.
 - A failed read of a live session is owed later: not re-read until the log grows, and
   queued the moment the session is over.
   `a failed read of a live session is owed, not forgotten`
+- Nothing is marked as read until the read completes. A read that never returns leaves the
+  debt that started it in place, so the log is owed again rather than looking sent.
+  `a read that never returns leaves the log owed, not marked as read`
+- A success clears the failure on the mark; retirement clears both flags. A flag that
+  outlives either re-queues a log nobody owes.
+  `a successful read clears the failure the mark was carrying`
+  `a log given up on after three attempts is not retried in the same command`
 - Settling keeps the step mark, because the session may be picked up again.
   `settling keeps the step mark, because the session may be picked up again`
 - A log is kept while an open lesson cites it, and goes once that lesson is decided.
   `a log survives while a lesson cites it, and goes once that lesson is decided`
+- A log with an unread gap, a failed read, or growth since its mark is still owed, and no
+  decision may prune it.
+  `a log that is still owed is not pruned by a decision`
 - A log that nothing cites is still kept when `keepSessions` says so.
   `keepSessions keeps a log that nothing cites, because losing it is not recoverable`
 - A log whose session is over but whose end was never seen is finished, and joins the
@@ -85,6 +96,7 @@ lesson cites it, nothing is owed for it, and its session is not live.
 - A replaced file is a different log: read from its own start, whatever its size or
   numbering, and no mark about the old file survives.
   `a mark belongs to one log: a replaced file is read from its own start, whatever its size or numbering`
+  `a mark about a different file is void even when the read sees a different file than the check did`
 - An unreadable log is a failure, retried, and never reported as a clean analysis. A file
   that exists but yields no record is unreadable, not an empty session.
   `a log that cannot be read is reported as a failure, not as a clean analysis`

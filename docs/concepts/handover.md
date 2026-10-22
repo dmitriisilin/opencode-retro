@@ -16,7 +16,8 @@ what changes when several lessons arrive at once.
 lesson was recorded, and whether its target file's content hash has changed since — and
 puts the question to the agent, which has the repository. A changed target is a reason
 to look, never a verdict. The hash is the baseline taken when the lesson was first recorded;
-recurrence and merging never move it, or "changed since" would compare the file with itself.
+recurrence, reopening and restoring never move it, or "changed since" would compare the file
+with itself.
 
 **Decision.** The third artifact, written by the `retro_decide` tool: `status`
 (`accepted` / `rejected` / `later`), `note`, `decidedIn` (the session it was taken in),
@@ -28,6 +29,7 @@ closed. Accepting or rejecting moves the file to `archive/`; `later` keeps it op
 
 - One invocation delivers one lesson, the top of the open set by score.
   `the top open lesson is picked by score`
+  `one invocation delivers exactly one lesson, the top of the open set`
   `decided lessons are not shown again; later ones are`
 - The hand-over text comes from the prompt file, and a missing file degrades to a terse
   hand-over rather than a silent one.
@@ -42,6 +44,8 @@ closed. Accepting or rejecting moves the file to `archive/`; `later` keeps it op
 - The currency baseline is recorded once and not moved by recurrence.
   `record keeps a fingerprint of the target so currency can be checked later`
   `a merge keeps the fingerprint taken when the lesson was first recorded`
+  `a reopened lesson keeps the fingerprint from when the problem was first recorded`
+  `a lesson whose target had no fingerprint at record time stays unknown, rather than faking a baseline`
 - A decision records what was done, not what was proposed, and where it was taken.
   `the decision records what was actually done, not what was proposed`
   `the archive records which session decided it`

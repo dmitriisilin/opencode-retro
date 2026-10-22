@@ -264,6 +264,22 @@ test("an entry queued before an extraction is done; one queued for later work is
   )
 })
 
+test("re-queueing a session for later material records the size it is owed at", () => {
+  // `size` is what the merge compares an extraction against. Keeping the first, smaller
+  // number meant a later end could be queued at 240 bytes and still be recorded as 100 — and
+  // an extraction covering 150 would then be thought to have answered it.
+  const s = sandbox()
+  const state = createState({ path: s.path })
+
+  state.queue("ses_a", 100)
+  state.queue("ses_a", 240)
+  assert.equal(state.pending[0].size, 240, "the entry says how much log is owed")
+  assert.equal(createState({ path: s.path }).pending[0].size, 240, "and the file agrees")
+
+  state.queue("ses_a", 120)
+  assert.equal(state.pending[0].size, 240, "a smaller re-queue does not shrink a debt")
+})
+
 test("a rebase also clears what the old extraction covered", () => {
   // The extraction's byte size describes the file that was replaced. A shorter new log would
   // otherwise look already covered and be dropped from the queue on the next save.
@@ -511,4 +527,26 @@ test("a stale writer cannot clear a mark flag at the same step", () => {
 
   assert.equal(saved.ses_failed.failed, true, "the failed read is still owed")
   assert.equal(saved.ses_open.open, true, "and the excerpt is still owed now")
+})
+
+test("a queue entry queued again after an extraction is not lost by the merge", () => {
+  // The union took the *smaller* queued size for a session both writers held, on the theory
+  // that it was the conservative one. It is the opposite: if one writer queued a session at
+  // 100 bytes and another queued the same session again at 200 after an extraction covered
+  // 150, the minimum makes the entry look covered by that extraction and the union drops it.
+  // The debt those two entries describe is the larger one — the log has material past 150.
+  const path = join(mkdtempSync(join(tmpdir(), "retro-queue-remerge-")), "state.json")
+
+  const stale = createState({ path })
+  stale.queue("ses_s", 100)
+
+  const fresh = createState({ path })
+  fresh.markExtracted("ses_s", { ok: true, detail: "read to 150", size: 150 })
+  fresh.queue("ses_s", 200)
+
+  stale.countSession("ses_other") // any save at all, from the writer that loaded before
+
+  const saved = JSON.parse(readFileSync(path, "utf8"))
+  assert.deepEqual(saved.pending.map((p) => p.session), ["ses_s"], "the retry for the later material survives")
+  assert.ok(saved.pending[0].size > 150, "queued at a size the extraction did not cover")
 })

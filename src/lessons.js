@@ -291,7 +291,10 @@ export function createStore({ dir, archive, cap = DEFAULT_CAP, halfLife = DEFAUL
             reopenedFrom: evicted ? buried.reopenedFrom : (buried.status ?? "closed"),
             closedAt: undefined,
             lastSeen: already ? (buried.lastSeen ?? seen) : seen,
-            targetFingerprint: fingerprint?.(buried.proposal?.target) ?? buried.targetFingerprint,
+            // The baseline is the one taken when the problem was first recorded. A recurrence
+            // that moves it makes "changed since" compare the file with itself, and the review
+            // after a reopen is exactly when the human needs to know the target moved.
+            targetFingerprint: buried.targetFingerprint ?? fingerprint?.(buried.proposal?.target),
           }
           if (write(back)) {
             result[evicted ? "restored" : "reopened"].push(back.id)
@@ -333,8 +336,10 @@ export function createStore({ dir, archive, cap = DEFAULT_CAP, halfLife = DEFAUL
             status: target.status ?? "new",
             proposal: target.proposal ?? lesson.proposal ?? undefined,
             lastSeen: already ? (target.lastSeen ?? seen) : seen,
-            targetFingerprint:
-              target.targetFingerprint ?? fingerprint?.(target.proposal?.target ?? lesson.proposal?.target) ?? undefined,
+            // Only the baseline taken at creation, never a fresh one: a lesson whose target did
+            // not exist then has no baseline, and filling it in later would present a check of
+            // "changed since the recurrence" as "changed since the lesson was recorded".
+            targetFingerprint: target.targetFingerprint ?? undefined,
           }
           if (write(updated)) result.merged.push(updated.id)
           byId.set(updated.id, updated)

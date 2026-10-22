@@ -6,6 +6,8 @@
 no agent, no tools, no history — asking: *if this session ran again, what should change
 so it goes shorter and straighter?* The criteria are the user's, in
 `.retro/prompts/extract.md`; the output format is the plugin's, appended at call time.
+The session is created for the call and removed after it, and it runs through
+`session.generate` rather than `generate.text`, which refuses OpenCode's free-tier models.
 
 **Projection.** The log rendered as text for the model. Prompts, hand-overs and assistant
 text in full up to a few thousand characters each; tool output trimmed; tool calls and
@@ -41,20 +43,28 @@ not an excerpt.
 
 **Attempt.** One analysis of one queued log. A log gets three; a successful excerpt is
 progress, not an attempt. After three failures the log is retired: its outcome recorded
-as failed, the log kept on disk, and the self-check names it.
+as failed, the log kept on disk, and the self-check names it. Retirement is decided before
+the queue is scanned, so a log that has grown since the third failure is new work and is
+read in the same command rather than waiting for the next one.
 
-**Limit (`extractLimit`).** The most attempts one command makes. Unlimited by default.
-It counts attempts rather than successes, because an attempt is what costs a model call;
-whatever is left stays queued and is named in the command's message.
+**Limit (`extractLimit`).** The most analyses one command attempts. Unlimited by default.
+It counts attempts rather than successes, because a failed attempt is what costs a model
+call; a log skipped as one exchange never reaches the model, so it does not spend one.
+Whatever is left stays queued and is named in the command's message.
 
 **Auto-extraction (`autoExtract`).** Off by default. Nothing is analysed without a command.
-When on, the queue is drained at the first prompt of the next session instead.
+When on, the next queued log is analysed at the next prompt instead — one per prompt, so a
+backlog of four costs four prompts and never an unbounded spend in a hook. Only one of
+these runs at a time: a prompt that arrives while an analysis is in flight does not start a
+second.
 
 **Empty reply.** This model's way of declining an input, more often the larger it is. It
 is answered by halving the budget and asking again, and once more at a quarter if the
 second reply is empty too — at most three calls, each changing the one thing that
 correlates with the failure. A log that cannot be answered at a quarter of the budget is
 reported as a failure with the model's own silence as the reason, and the attempt counts.
+A caller with no finite budget has nothing to halve, so there an empty reply is reported
+rather than retried.
 
 **Skipped.** A session of one prompt and no tool calls is not analysed: it cannot hold
 evidence of anything. Everything else is, including a conversation that ran no tools —
@@ -95,18 +105,26 @@ that is where a wrong instruction file shows up.
   `/retro all reports a log it could not analyse, as well as the plan`
 - An entry that used its three attempts is retired and reported, never silently skipped.
   `an entry that used its three attempts is retired and reported, not skipped for ever`
+  `a log given up on after three attempts is not retried in the same command`
 - One command makes at most `extractLimit` attempts; the rest stay queued and are named.
+  A skipped log makes no attempt, because there is no model call to bound.
   `extractLimit caps what one command analyses and leaves the rest queued`
   `the per-command log limit is unlimited by default and can be capped`
-- With `autoExtract` the queue is drained at the first prompt of the next session;
-  without it, only a command analyses anything.
+  `a log skipped as one exchange does not spend the command's limit`
+- With `autoExtract` the next queued log is analysed at the next prompt; without it, only
+  a command analyses anything.
   `autoExtract analyses at the start of the next session, and is off by default`
 - The model is `options.model` when set, otherwise the one the user's own session is
-  running on, otherwise the workspace default; with none of them the analysis refuses and
-  names the remedy.
+  running on (learned from primary model requests — a subagent's or the analysis session's
+  do not set it), otherwise the workspace default; with none of them the analysis refuses
+  and names the remedy.
   `the model the user is actually working with is the one used for analysis`
   `with no model configured, the workspace default is used`
   `a workspace default that cannot be read refuses with the remedy, not a hang`
-- A session of one prompt and nothing done is skipped; anything more is read.
+- A session of one prompt and nothing done is skipped; anything more is read. On a re-read
+  the question is what is *new*: a new reply is material even with no prompt or tool call,
+  while a slice that is only the prompts it carries proves nothing.
   `a conversation with no tool calls is still analysed`
   `a single exchange that did nothing costs no model call`
+  `a re-read with a reply is analysed even when it has no prompt or tool call of its own`
+  `a re-read of a session that did work is analysed even when the new material is a reply alone`

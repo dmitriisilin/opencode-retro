@@ -3,7 +3,7 @@ import { resolve as resolvePath } from "node:path"
 import { createIngest } from "./src/ingest.js"
 import { createPrompts } from "./src/prompts.js"
 import { createSelfCheck } from "./src/selfcheck.js"
-import { createShadowLog, identityOf, parseShadowLog } from "./src/shadowlog.js"
+import { createShadowLog, identityOf, isReplacedLog, parseShadowLog } from "./src/shadowlog.js"
 import { createState } from "./src/state.js"
 import { concludedIn, createStore, score } from "./src/lessons.js"
 import { assessCurrency, fingerprintOf } from "./src/currency.js"
@@ -111,13 +111,28 @@ export default {
       let queued = 0
       let failing = 0
       let reading = 0
+      const seen = new Set()
       for (const entry of state.pending) {
+        seen.add(entry.session)
         const mark = state.looked(entry.session)
         const size = log.stat(entry.session).size
         const owed = size > mark.size || mark.open || mark.failed
-        if ((entry.attempts ?? 0) > 0 || mark.failed) failing++
-        else if (owed) queued++
-        else reading++
+        // `failed` is the last read's own verdict, not a count of attempts. Counting history
+        // made a session that failed once and was then read successfully report a failure for
+        // as long as its entry stayed queued — next to an extraction line saying `ok`.
+        if (mark.failed) failing++
+        else if (isLive(entry.session) && !owed) reading++
+        else queued++
+      }
+      // A working session that was never queued is still a log the plugin has read: the very
+      // common case of `/retro` in the session it is running in. The queue alone cannot see it.
+      for (const id of log.list()) {
+        if (seen.has(id) || !isLive(id)) continue
+        const mark = state.looked(id)
+        if (!mark.size) continue
+        if (mark.failed) failing++
+        else if (log.stat(id).size <= mark.size && !mark.open) reading++
+        else queued++
       }
       return { queued, failing, reading }
     }
@@ -132,8 +147,13 @@ export default {
           ...queueFacts(),
           cited: log.list().filter((id) => citedSessions().has(id)).length,
           decided: store.listArchive().length,
-          // Logs that failed three analyses: still on disk, and nothing will read them.
-          setAside: log.list().filter((id) => state.wasExtracted(id) && !state.extractionOf(id)?.ok).length,
+          // Logs that failed three analyses: still on disk, and nothing will read them — but
+          // only while nothing owes them. A session left open can be prompted again, and that
+          // queues its log afresh; announcing it as beyond reading next to the line saying it
+          // will be tried again is two contradictory claims in one report.
+          setAside: log
+            .list()
+            .filter((id) => !state.isPending(id) && !isLive(id) && state.wasExtracted(id) && !state.extractionOf(id)?.ok).length,
         })
         mkdirSync(config.dir, { recursive: true })
         writeFileSync(config.selfcheck, check.render())
@@ -553,7 +573,7 @@ export default {
       // the first record was whole when the mark was made and an append never rewrites it, so
       // this one was replaced or truncated. Treating the missing identity as "same file" let a
       // longer replacement keep the old step mark and its early steps were filtered away.
-      if (mark.id && (now ? mark.id !== now : stat.exists)) state.rebase(id)
+      if (isReplacedLog(mark, now, { exists: stat.exists })) state.rebase(id)
       else if (stat.size < mark.size) state.rebase(id)
       return state.looked(id)
     }
@@ -595,10 +615,13 @@ export default {
         // start event was never seen: deleting the log under the session that asked is the
         // worst possible answer.
         if (isLive(id, invoking)) continue
-        // Nor one that was only partly read: an excerpt covers a prefix and leaves a gap,
-        // and deleting the file would make the gap unanswerable for ever. The next `/retro`
-        // finishes it and only then may the log go.
-        if (markOf(id).open) continue
+        // Nor one the marks say is still owed. Pruning is "nothing can ask about it: no open
+        // lesson cites it, nothing is owed for it, and it is not live" — so an unread excerpt,
+        // a failed read and a log that has grown since it was read all stay. Only checking the
+        // excerpt and the queue here deleted the material a failure existed to protect.
+        const mark = markOf(id)
+        if (mark.open || mark.failed) continue
+        if (log.stat(id).size > mark.size) continue
         if (!cited.has(id) && !owed.has(id) && log.remove(id)) {
           // The mark described a file that no longer exists. Leaving it would make the next
           // log written under this id look already read, because size only moves forward.
@@ -712,6 +735,10 @@ export default {
         if ((entry.attempts ?? 0) >= 3 && !state.wasExtracted(entry.session)) {
           const detail = "given up after three failed analyses"
           state.markExtracted(entry.session, { ok: false, detail })
+          // Nothing is owed for it any more. Without this the `failed` flag the last read left
+          // behind re-queues the session in the scan below, and the same command spends a
+          // fourth call on a log it has just declared given up on.
+          state.look(entry.session, { open: false, failed: false })
           failures.push({ session: entry.session, detail })
         }
       }
@@ -756,6 +783,9 @@ export default {
           continue
         }
         done.push(owed.session)
+        // A skipped log — one exchange, nothing done — never reached the model, so it is not
+        // an attempt against a limit whose reason to exist is the model call it costs.
+        if (result.skipped) attempted--
         // An excerpted read is progress, not completion. It stays owed (so the log is not
         // pruned and the stock line tells the truth) but is not picked again in this same
         // command, which would just send the same excerpt back to the model.
@@ -787,6 +817,7 @@ export default {
         const result = await runExtraction(id, { settle: false })
         if (!result?.ok) failures.push({ session: id, detail: result?.detail ?? "unknown failure" })
         else if (!result.skipped) reread.push(id)
+        else attempted-- // skipped: no model call, so not an attempt against the limit
       }
 
       // Bookkeeping about a session is dropped once nothing can refer to it: no log on disk,
@@ -923,6 +954,17 @@ export default {
       const records = text == null ? null : parseShadowLog(text)
       const lastN = records?.length ? Math.max(...records.map((r) => r.n ?? 0)) : 0
 
+      // Which log this is, from the bytes that were actually read. `markOf` asked a moment
+      // earlier, and a log can be replaced in between — a pruned file written again under the
+      // same id, which starts at its own step 1. The old mark must not filter the new log's
+      // first steps away as already analysed; that is the same rule as `markOf`, applied to
+      // the bytes in hand instead of a second look at the file.
+      const identity = identityOf(text)
+      if (raw != null && isReplacedLog(mark, identity, { exists: true })) {
+        state.rebase(sessionID)
+        mark = { n: 0, size: 0 }
+      }
+
       // A log whose numbering ends before the mark does is not the log the mark described,
       // even if it is longer: the file was replaced rather than appended to. Starting over
       // is the only reading that makes the step references resolve.
@@ -940,14 +982,12 @@ export default {
        */
       const readSize = raw == null ? log.stat(sessionID).size : raw.length
 
-      // These bytes have been read, or were there to be read: either way a failure must not
-      // pay for the same material twice. The step mark below still moves only on success.
-      // `open` is cleared first so a failed retry falls back to the queue's attempt budget
-      // instead of re-reading the same excerpt on every command for ever.
-      // From the bytes read, not from a second read of the file: between the two the log can
-      // be replaced, and the old records must not be marked as belonging to the new file.
-      const identity = identityOf(text)
-      if (readSize > 0) state.look(sessionID, { size: readSize, open: false, failed: false, id: identity })
+      // Nothing is written to the mark until the answer is in. Marking the bytes before the
+      // call looked tidy — "already sent, do not pay twice" — but a process that died during
+      // the call left a log that was neither read nor owed: `size` said sent, no failure had
+      // been recorded, and nothing would ever look at it again. The debt that started the read
+      // (growth, an unread excerpt, a previous failure) is still in the mark, so leaving it
+      // alone is what makes the crash recoverable.
 
       // A log we could not read is a failure like any other, and it reaches the same retry
       // policy below. It used to be marked extracted here and returned early, which did two
@@ -1029,18 +1069,27 @@ export default {
       // charging it against the budget of three would retire the rest of the log.
       if (!result.ok) {
         state.attempt(sessionID)
+        // The last read of this log did not succeed — whether the model failed, the reply
+        // could not be parsed, or the excerpt could not reach past the mark. The bytes were
+        // read, so they are not paid for twice; `open` is cleared so a failed retry falls back
+        // to the queue's attempt budget instead of re-reading the same excerpt on every
+        // command for ever. A success below clears the failure.
+        state.look(sessionID, { size: readSize, open: false, failed: true, id: identity })
         onError(`extract.${sessionID}`, result.reply ? `${result.detail}\n--- reply ---\n${result.reply}` : result.detail)
       }
       // `open` is the other half of that rule. Stopping the mark at the gap is only useful if
       // the next command actually reads from there; the size gate would otherwise call a log
       // whose bytes were all sent "already read" and the gap would never be visited.
       const open = Boolean(result.ok && through < lastN && through > mark.n)
-      if (result.ok && through > 0) state.look(sessionID, { n: through, open, id: identity })
-      // A failed read of a session nobody has queued — a live one — is owed, and the size
-      // mark alone would hide that: the next command sees "nothing new" and a restart before
-      // the session's end event means the log is never looked at again. Recorded here, and
-      // the queue takes it over the moment the session stops being live.
-      if (!result.ok && !settle) state.look(sessionID, { failed: true, id: identity })
+      if (result.ok) {
+        state.look(sessionID, {
+          size: readSize,
+          ...(through > 0 ? { n: through } : {}),
+          open,
+          failed: false,
+          id: identity,
+        })
+      }
 
       // An excerpt leaves the debt open: the gap has not been turned into lessons, so the
       // entry stays and the next command reads from the mark. Only a complete read (or a
@@ -1050,8 +1099,14 @@ export default {
         // `size` is what this settle actually covered, so a queue entry for later material
         // is not mistaken for one this extraction already answered.
         state.markExtracted(sessionID, { ok: result.ok, detail: result.detail, size: readSize })
-        // Only a complete success releases the log; a failure keeps it, as decision 18 says.
-        if (result.ok) pruneLogs(invoking)
+        if (result.ok) {
+          // Only a complete success releases the log; a failure keeps it, as decision 18 says.
+          pruneLogs(invoking)
+        } else {
+          // Retirement is a settlement: nothing is owed any more, so neither flag may outlive
+          // it and re-queue the log the same report calls given up on.
+          state.look(sessionID, { open: false, failed: false })
+        }
       }
 
       lastExtraction.set(sessionID, result)

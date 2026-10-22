@@ -196,3 +196,27 @@ test("one rule covers a batch, instead of a second file repeating it", () => {
   assert.match(text, /one plan/)
   assert.match(text, /group anything touching the same file/, "what a batch actually adds is the shape")
 })
+
+test("a seed that fails half-way leaves no partial prompt behind", () => {
+  // The concept says a seed leaves nothing half-written. `seed` wrote straight to the live
+  // path, so a disk that filled up or an I/O error after the first bytes left a prompt file
+  // that the next run would treat as the user's own — and a prompt that is half a sentence is
+  // worse than one that is missing, because nothing reports it.
+  const s = sandbox()
+  const errors = []
+  const half = (path, text) => {
+    // Enough of the file to look real, then the failure a full disk gives.
+    writeFileSync(path, text.slice(0, 80))
+    const err = new Error("ENOSPC: no space left on device")
+    err.code = "ENOSPC"
+    throw err
+  }
+  const prompts = createPrompts({ dir: s.dir, updates: s.updates, global: s.global, onError: (w) => errors.push(w), write: half })
+
+  const result = prompts.seed("extract")
+  assert.equal(result.seeded, false)
+  assert.match(result.error, /ENOSPC/)
+  assert.deepEqual(errors, ["prompts.seed extract"])
+  assert.equal(readdirSync(s.dir).filter((f) => f === "extract.md").length, 0, "there is no live prompt to mistake for the user's")
+  assert.equal(prompts.resolve("extract").layer, "packaged", "and the packaged default still runs")
+})

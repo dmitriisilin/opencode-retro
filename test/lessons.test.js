@@ -300,6 +300,19 @@ test("a merge keeps the fingerprint taken when the lesson was first recorded", (
   assert.equal(store.list()[0].targetFingerprint, "first-hash")
 })
 
+test("a lesson whose target had no fingerprint at record time stays unknown, rather than faking a baseline", () => {
+  // The target may not exist yet when the lesson is written. A later recurrence must not
+  // quietly take the fingerprint *then* and call it "when the lesson was recorded": the file
+  // may have been created and edited since, and the one review that needs to see that would
+  // be told it is unchanged.
+  const root = mkdtempSync(join(tmpdir(), "retro-fp-missing-"))
+  const store = createStore({ dir: join(root, "lessons"), archive: join(root, "archive") })
+  store.record([lesson()], { session: "ses_a", fingerprint: () => undefined })
+  store.record([lesson()], { session: "ses_b", fingerprint: () => "would-have-been-second" })
+
+  assert.equal(store.list()[0].targetFingerprint, undefined, "no baseline is honest; a late one is not")
+})
+
 test("the documented cap and half-life are the defaults, not just exported numbers", () => {
   assert.equal(DEFAULT_CAP, 30)
   assert.equal(DEFAULT_HALF_LIFE, 10)
@@ -523,4 +536,54 @@ test("restore keeps a hand-renamed lesson's filename, so it is not copied twice"
   store.write({ ...back, status: "later" })
 
   assert.deepEqual(readdirSync(s.lessons), ["renamed.md"], "one file, not two")
+})
+
+test("an explicit match to an open lesson merges into it, instead of creating its own id", () => {
+  // `matches` is the extractor saying "this is that problem". The archived case was pinned;
+  // the open case — where a new id would otherwise create a near-duplicate next to the
+  // lesson it means — was only exercised by the merge path happening to run first.
+  const s = sandbox()
+  const store = s.store()
+  store.record([lesson({ id: "foo", statement: "the original problem" })], { session: "ses_a" })
+  const result = store.record(
+    [lesson({ id: "bar", statement: "the same problem, restated", matches: "foo" })],
+    { session: "ses_b" },
+  )
+
+  assert.deepEqual(result.merged, ["foo"])
+  assert.deepEqual(store.list().map((l) => l.id), ["foo"], "one lesson, under the id the match named")
+  assert.equal(store.list()[0].recurrence, 2, "and it counts as a second session")
+})
+
+test("a reopened lesson keeps the fingerprint from when the problem was first recorded", () => {
+  // Currency compares the target's current content with the baseline taken at extraction.
+  // Reopening preferred a *fresh* fingerprint, so the re-read that brought the lesson back
+  // also reset what "changed since" means — and the one review that most needs to know the
+  // file moved could not see that it had.
+  const root = mkdtempSync(join(tmpdir(), "retro-fp-reopen-"))
+  const store = createStore({ dir: join(root, "lessons"), archive: join(root, "archive") })
+
+  store.record([lesson()], { session: "ses_a", fingerprint: () => "first-hash" })
+  store.close("lint-skill-no-config", "accepted", { note: "fixed once" })
+  const again = store.record([lesson()], { session: "ses_b", fingerprint: () => "would-have-been-second" })
+
+  assert.deepEqual(again.reopened, ["lint-skill-no-config"])
+  assert.equal(store.list()[0].targetFingerprint, "first-hash", "the baseline is the first recording, not the recurrence")
+
+  // The same rule when the cap, not a decision, was what archived it.
+  const other = createStore({ dir: join(root, "lessons2"), archive: join(root, "archive2"), cap: 2 })
+  other.record(
+    [
+      lesson({ id: "big", statement: "big", cost: 100 }),
+      lesson({ id: "mid", statement: "mid", cost: 50 }),
+      lesson(),
+    ],
+    { session: "ses_a", fingerprint: () => "evicted-first" },
+  )
+  assert.deepEqual(other.listArchive().map((l) => l.id), ["lint-skill-no-config"])
+  other.close("mid", "accepted", { note: "room" })
+  const restored = other.record([lesson()], { session: "ses_b", fingerprint: () => "would-have-been-third" })
+  assert.deepEqual(restored.restored, ["lint-skill-no-config"])
+  const back2 = other.list().find((l) => l.id === "lint-skill-no-config")
+  assert.equal(back2.targetFingerprint, "evicted-first", "restoring an open question moves no baseline either")
 })

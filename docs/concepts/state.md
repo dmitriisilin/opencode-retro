@@ -12,7 +12,9 @@ unions. The session count is derived from the counted identities, not kept as a 
 `extracted` is a map keyed by session, so two writers' outcomes for one session cannot both
 be kept: the saving writer's own outcome replaces the file's. The queue keeps a retry when
 the file's extraction covered less than the entry was queued at, so that replacement cannot
-silently drop new work.
+silently drop new work. Two entries for one session merge to the **larger** queued size, for
+the same reason: an extraction that covered the earlier entry has not answered the material
+the later one was queued for.
 
 **Monotonic parts.** Each mark's `n` and `size`. Merged as maxima, except across a change
 of log identity.
@@ -45,6 +47,8 @@ per session either way — not with the age of the project.
 - A save merges with the file instead of overwriting another writer.
   `a save merges with the file instead of overwriting another writer`
   `two writers' queues are merged, so neither loses what the other owed`
+  `a queue entry queued again after an extraction is not lost by the merge`
+  `re-queueing a session for later material records the size it is owed at`
   `two writers counting different sessions count two, not one`
 - A deliberate removal survives a merge, including one that happens after compaction.
   `a session removed from the queue stays removed even if another writer queued it`

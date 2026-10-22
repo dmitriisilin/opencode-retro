@@ -1,6 +1,6 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs"
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -424,6 +424,32 @@ test("autoExtract analyses at the start of the next session, and is off by defau
   await stop?.()
   await stop2?.()
   await stop3?.()
+})
+
+test("one invocation delivers exactly one lesson, the top of the open set", async () => {
+  // One invocation, one lesson. The picker is unit-tested for order; what was never checked
+  // is that the command actually hands over one message with one lesson in it when several
+  // are waiting — the deliverable a user gets, not the function that chose it.
+  const directory = sandbox()
+  mkdirSync(join(directory, ".retro", "lessons"), { recursive: true })
+  for (const [id, cost] of [["a", 20], ["b", 5]]) {
+    writeFileSync(
+      join(directory, ".retro", "lessons", `${id}.md`),
+      `---\nid: ${id}\nstatement: problem ${id}\ncost: ${cost}\nrecurrence: 1\nconfidence: 1\nstatus: new\n---\n\nbody\n`,
+    )
+  }
+
+  const fake = fakeOpenCode({ directory, options: { model: MODEL } })
+  const cleanup = await plugin.setup(fake.ctx)
+  await fake.commands.get("retro").execute({ sessionID: "ses_x", prompt: { text: "" } })
+
+  assert.equal(fake.synthetic.length, 1, "one message")
+  const [delivered] = fake.synthetic
+  assert.match(delivered.text, /# retro — `a`/, "and it carries the top of the open set")
+  assert.doesNotMatch(delivered.text, /# retro — `b`/, "not the one underneath it")
+  assert.match(delivered.text, /1 more lesson waiting/, "which is named as still waiting")
+
+  await cleanup?.()
 })
 
 test("/retro all delivers every waiting lesson as one plan", async () => {
@@ -1043,6 +1069,33 @@ test("proposeLimit caps one plan and says what it left out", async () => {
   assert.match(delivered.text, /## 2\. `b`/)
   assert.doesNotMatch(delivered.text, /## 3\./, "the cap holds")
   assert.match(delivered.text, /1 more below the cut/, "and the remainder is named")
+  await cleanup?.()
+})
+
+test("a log skipped as one exchange does not spend the command's limit", async () => {
+  // The limit exists to bound model calls, and a skip makes none. It was incremented before
+  // the answer was known, so a quiet log at the head of the queue used up a limit of one and
+  // the session behind it — the one with something to read — was never looked at.
+  const directory = sandbox()
+  const writer = fakeOpenCode({ directory, options: { model: MODEL } })
+  const stopWriter = await plugin.setup(writer.ctx)
+  await writer.hooks.get("session.prompt")({ sessionID: "ses_quiet", messageID: "m1", prompt: { text: "hello" } })
+  await workSession(writer, "ses_busy")
+  await stopWriter?.()
+  queue(directory, ["ses_quiet", "ses_busy"])
+
+  const fake = fakeOpenCode({ directory, options: { model: MODEL, extractLimit: 1 } })
+  const cleanup = await plugin.setup(fake.ctx)
+  await fake.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
+
+  assert.equal(fake.generated.length, 1, "one model call, as the limit says")
+  assert.deepEqual(analysed(fake), ["ses_busy"], "and it was spent on the session with something in it")
+  assert.equal(
+    existsSync(join(directory, ".retro", "sessions", "ses_quiet.jsonl")),
+    false,
+    "the quiet one was settled without a call, and released",
+  )
+
   await cleanup?.()
 })
 
@@ -2283,5 +2336,285 @@ test("a log whose analysis failed is named as failed, not as not analysed yet", 
   assert.doesNotMatch(report, /not analysed yet/, "it was analysed; it failed")
 
   await cleanup2?.()
+  await cleanup?.()
+})
+
+test("a successful read clears the failure the mark was carrying", async () => {
+  // `failed` means "the last read of this log did not succeed and nothing settled it". A
+  // settled failure, a live failure and a successful read after either used three different
+  // views of that: only the live one set it, and a success never cleared it. The result was
+  // one report saying `extraction: ok` and `1 log whose analysis failed` about the same log,
+  // and the stock section crediting a failure that had already been recovered from.
+  const directory = sandbox()
+  const session = "ses_recovered"
+  let calls = 0
+  const fake = fakeOpenCode({
+    directory,
+    options: { model: MODEL },
+    reply: () => (++calls === 1 ? "not json at all" : REPLY),
+  })
+  const cleanup = await plugin.setup(fake.ctx)
+
+  await turn(fake, session, 1, "first-command")
+  await fake.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
+
+  assert.equal(fake.generated.length, 1, "the ended turn was read")
+  assert.equal(savedState(directory).looked[session].failed, true, "and the failure is on the mark, not only in the counter")
+  assert.match(readFileSync(join(directory, ".retro", "selfcheck.md"), "utf8"), /analysis failed/)
+
+  // The session is picked up again; the next read succeeds while it works.
+  fake.emit({ type: "session.execution.started", durable: { seq: 40 }, data: { sessionID: session } })
+  await tick()
+  await fake.hooks.get("session.prompt")({ sessionID: session, messageID: "m40", prompt: { text: "carry on" } })
+  await fake.hooks.get("tool.execute.before")({ sessionID: session, id: "c40", tool: "shell", input: { command: "again" } })
+  await fake.hooks.get("tool.execute.after")({
+    sessionID: session,
+    id: "c40",
+    tool: "shell",
+    input: { command: "again" },
+    status: "completed",
+    result: { output: { exit: 2, output: "no" }, metadata: { exit: 2 } },
+  })
+
+  await fake.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
+  assert.equal(fake.generated.length, 2, "the new material was read")
+
+  const mark = savedState(directory).looked[session]
+  assert.equal(mark.failed, undefined, "a successful read is not still a failure")
+  const report = readFileSync(join(directory, ".retro", "selfcheck.md"), "utf8")
+  assert.doesNotMatch(report, /whose analysis failed/, "the report describes the last read, not the first")
+  assert.match(report, /still working, read as far as they go/, "and the working session reads as read")
+
+  await cleanup?.()
+})
+
+test("a log given up on after three attempts is not retried in the same command", async () => {
+  // A live read increments the attempt count when the session already has a queue entry.
+  // The third failure can therefore land on a live session, which sets `failed` and is never
+  // retired by the settle branch (that branch only runs for an ended session). The next
+  // command retires the entry — and then the queue scan saw the `failed` flag it had just
+  // left behind, queued the session again, and spent a fourth model call on a log the same
+  // report called "given up on".
+  const directory = sandbox()
+  const session = "ses_retired_twice"
+  const writer = fakeOpenCode({ directory, options: { model: MODEL } })
+  const stopWriter = await plugin.setup(writer.ctx)
+  await workSession(writer, session)
+  await stopWriter?.()
+  const line = readFileSync(join(directory, ".retro", "sessions", `${session}.jsonl`), "utf8")
+  writeFileSync(
+    join(directory, ".retro", "state.json"),
+    JSON.stringify({
+      version: 1,
+      rejected: [],
+      extracted: {},
+      sessions: 1,
+      pending: [{ session, queuedAt: "now", attempts: 3, size: line.length }],
+      looked: { [session]: { n: 0, size: line.length, failed: true } },
+    }),
+  )
+
+  const fake = fakeOpenCode({ directory, options: { model: MODEL } })
+  const cleanup = await plugin.setup(fake.ctx)
+  await fake.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
+
+  assert.equal(fake.generated.length, 0, "a retired entry costs nothing more")
+  const state = savedState(directory)
+  assert.deepEqual(state.pending, [], "it is out of the queue")
+  assert.equal(state.extracted[session]?.ok, false, "with the failure recorded")
+  assert.equal(state.looked[session]?.failed, undefined, "and no outstanding failure left to re-queue it")
+  assert.match(fake.synthetic[0].text, /given up after three failed analyses/)
+
+  await cleanup?.()
+})
+
+test("a read that never returns leaves the log owed, not marked as read", async () => {
+  // Nothing is written to the mark until the answer is in. The bytes used to be recorded as
+  // sent when the read started, so a process that died while the model was thinking left a
+  // log that was neither read nor owed: `size` said sent, nothing had failed, and every later
+  // command skipped it. The debt that started the read is still in the mark; leaving it alone
+  // is what makes the crash recoverable.
+  const directory = sandbox()
+  const session = "ses_crash_read"
+  const fake = fakeOpenCode({ directory, options: { model: MODEL } })
+  const cleanup = await plugin.setup(fake.ctx)
+  const statePath = join(directory, ".retro", "state.json")
+
+  fake.emit({ type: "session.execution.started", durable: { seq: 1 }, data: { sessionID: session } })
+  await tick()
+  await workSession(fake, session)
+
+  const original = fake.ctx.session.generate
+  let midway = null
+  fake.ctx.session.generate = async (input) => {
+    // What the process would leave behind if it stopped here.
+    midway = existsSync(statePath) ? readFileSync(statePath, "utf8") : null
+    return original(input)
+  }
+
+  await fake.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
+  assert.equal(fake.generated.length, 1)
+  assert.equal(
+    midway === null ? 0 : (JSON.parse(midway).looked?.[session]?.size ?? 0),
+    0,
+    "the bytes are not marked as read until the answer arrives",
+  )
+
+  // The process died before the answer arrived.
+  if (midway === null) rmSync(statePath, { force: true })
+  else writeFileSync(statePath, midway)
+  await cleanup?.()
+
+  const after = fakeOpenCode({ directory, options: { model: MODEL } })
+  const cleanup2 = await plugin.setup(after.ctx)
+  await after.commands.get("retro").execute({ sessionID: "ses_review2", prompt: { text: "" } })
+
+  assert.equal(after.generated.length, 1, "the log the crash lost is read again, without it growing")
+  await cleanup2?.()
+})
+
+test("a log that is still owed is not pruned by a decision", async () => {
+  // Pruning is defined by three facts: nothing cites the log, nothing is owed for it, and the
+  // session is not live. It consulted only citations and the queue — so a log whose mark said
+  // "failed", or which had simply grown since it was last read, was deleted as though it had
+  // been analysed. The next `/retro` would have read it; a `retro_decide` in another session
+  // removed it first.
+  const directory = sandbox()
+  mkdirSync(join(directory, ".retro", "sessions"), { recursive: true })
+  mkdirSync(join(directory, ".retro", "lessons"), { recursive: true })
+  writeFileSync(
+    join(directory, ".retro", "lessons", "a.md"),
+    "---\nid: a\nstatement: problem a\ncost: 5\nrecurrence: 1\nconfidence: 1\nstatus: new\n---\n\nbody\n",
+  )
+  const record = (n) => JSON.stringify({ v: 1, n, t: n, k: "tool", id: `c${n}`, tool: "shell", input: { command: `c${n}` }, status: "completed" }) + "\n"
+  const failed = join(directory, ".retro", "sessions", "ses_failed.jsonl")
+  const grown = join(directory, ".retro", "sessions", "ses_grown.jsonl")
+  const unread = join(directory, ".retro", "sessions", "ses_unread.jsonl")
+  writeFileSync(failed, record(1))
+  writeFileSync(grown, record(1) + record(2))
+  writeFileSync(unread, record(1) + record(2) + record(3))
+  const failedSize = statSync(failed).size
+  writeFileSync(
+    join(directory, ".retro", "state.json"),
+    JSON.stringify({
+      version: 1,
+      rejected: [],
+      extracted: {},
+      sessions: 0,
+      pending: [],
+      looked: {
+        ses_failed: { n: 0, size: failedSize, failed: true },
+        ses_grown: { n: 0, size: 1 },
+      },
+    }),
+  )
+
+  const fake = fakeOpenCode({ directory, options: { model: MODEL } })
+  const cleanup = await plugin.setup(fake.ctx)
+  await fake.tools.get("retro_decide").execute({ id: "a", status: "accepted" }, { sessionID: "ses_review" })
+
+  for (const [path, why] of [
+    [failed, "its last read failed"],
+    [grown, "it has grown since it was read"],
+    [unread, "nothing has ever read it"],
+  ]) {
+    assert.ok(existsSync(path), `${path.split("/").pop()} is still owed: ${why}`)
+  }
+  await cleanup?.()
+})
+
+test("a working session read by /retro is reported as read even when it was never queued", async () => {
+  // The stock section only looked at the queue, so the most common live read — `/retro` in
+  // the session it is running in, which has never ended and is therefore never queued — was
+  // missing from the one line that is supposed to account for logs of working sessions.
+  const directory = sandbox()
+  const session = "ses_review_here"
+  const fake = fakeOpenCode({ directory, options: { model: MODEL } })
+  const cleanup = await plugin.setup(fake.ctx)
+
+  fake.emit({ type: "session.execution.started", durable: { seq: 1 }, data: { sessionID: session } })
+  await tick()
+  await workSession(fake, session)
+
+  await fake.commands.get("retro").execute({ sessionID: session, prompt: { text: "" } })
+  assert.equal(fake.generated.length, 1, "the invoking session's own log was read")
+  assert.deepEqual(savedState(directory).pending, [], "and it was never queued, because it never ended")
+
+  const report = readFileSync(join(directory, ".retro", "selfcheck.md"), "utf8")
+  assert.match(report, /still working, read as far as they go/, "the report accounts for it")
+  assert.doesNotMatch(report, /not analysed yet/, "it was read")
+
+  await cleanup?.()
+})
+
+test("a log given up on and then queued again is not reported as beyond reading", async () => {
+  // A session kept open can be prompted again after its log was given up on, and its end
+  // queues it again. The stock section looked only at the old outcome and announced that
+  // "nothing will read" a log the queue was holding, next to the line saying it would be
+  // tried again.
+  const directory = sandbox()
+  const session = "ses_revived"
+  const writer = fakeOpenCode({ directory, options: { model: MODEL } })
+  const stopWriter = await plugin.setup(writer.ctx)
+  await workSession(writer, session)
+  await stopWriter?.()
+  const logSize = statSync(join(directory, ".retro", "sessions", `${session}.jsonl`)).size
+  writeFileSync(
+    join(directory, ".retro", "state.json"),
+    JSON.stringify({
+      version: 1,
+      rejected: [],
+      extracted: { [session]: { ok: false, detail: "given up after three failed analyses", size: logSize - 1 } },
+      sessions: 1,
+      pending: [{ session, queuedAt: "now", attempts: 0, size: logSize }],
+      looked: {},
+    }),
+  )
+
+  const fake = fakeOpenCode({ directory, options: { model: MODEL }, reply: "not json at all" })
+  const cleanup = await plugin.setup(fake.ctx)
+  await fake.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
+
+  const report = readFileSync(join(directory, ".retro", "selfcheck.md"), "utf8")
+  assert.doesNotMatch(report, /given up on after three failed analyses/, "it is queued, not given up on")
+  assert.match(report, /whose analysis failed/, "what is true is that the latest attempt failed")
+  await cleanup?.()
+})
+
+test("a re-read of a session that did work is analysed even when the new material is a reply alone", async () => {
+  // A resumed turn, or a hand-over the user never typed, can produce an assistant reply with
+  // no prompt of its own. The re-read slice keeps the session's old prompt and drops its old
+  // tool calls, so it looked like one quiet exchange: the reply was settled as read without
+  // being read. Whether the session ever did anything is a fact about the whole log.
+  const directory = sandbox()
+  const session = "ses_reply_only"
+  const fake = fakeOpenCode({
+    directory,
+    options: { model: MODEL },
+    reply: () => JSON.stringify({ lessons: [] }),
+  })
+  const cleanup = await plugin.setup(fake.ctx)
+
+  fake.emit({ type: "session.execution.started", durable: { seq: 1 }, data: { sessionID: session } })
+  await tick()
+  await workSession(fake, session)
+  await fake.commands.get("retro").execute({ sessionID: session, prompt: { text: "" } })
+  assert.equal(fake.generated.length, 1, "the whole session, the first time")
+
+  fake.emit({
+    type: "session.text.ended",
+    durable: { seq: 30 },
+    data: {
+      sessionID: session,
+      assistantMessageID: "m30",
+      text: "I could not do that: the command does not exist in this repository.",
+    },
+  })
+  await tick()
+
+  await fake.commands.get("retro").execute({ sessionID: session, prompt: { text: "" } })
+  assert.equal(fake.generated.length, 2, "the new reply is read, not skipped as one quiet exchange")
+  assert.match(fake.generated.at(-1).prompt, /the command does not exist in this repository/)
+
   await cleanup?.()
 })

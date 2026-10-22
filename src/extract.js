@@ -38,9 +38,17 @@ export async function extract({
   // away the clearest lessons of all. An instruction file that is wrong produces a wrong
   // answer with no tool call at all; a correction is a second prompt and nothing more. Both
   // live in the text, which is why the projection keeps prompts and replies whole.
+  //
+  // A re-read is a different case. Its slice carries the session's prompts and drops the tool
+  // calls already turned into lessons, so a session that had done plenty could present as one
+  // quiet exchange and its new material was settled as read without being read. On a re-read
+  // the rule is therefore about what is *new*: a new reply is material even when it came with
+  // no prompt and no tool call, while a re-read that is nothing but the prompts it carries
+  // (the hand-over the plugin itself wrote, or an end marker) still proves nothing.
   const asked = records.filter((r) => r.k === "prompt").length
   const toolCalls = records.filter((r) => r.k === "tool").length
-  if (asked <= 1 && toolCalls === 0) {
+  const newReply = analysedUpTo > 0 && records.some((r) => r.k === "text")
+  if (asked <= 1 && toolCalls === 0 && !newReply) {
     return {
       ok: true,
       skipped: true,

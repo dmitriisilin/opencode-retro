@@ -156,6 +156,21 @@ export function identityOf(text) {
   }
 }
 
+/**
+ * Whether a mark describes a different file than the one just read.
+ *
+ * Identity is the first whole record, and an append never rewrites it — so a file whose first
+ * record is gone cannot be the log the mark described, and a missing identity counts as
+ * different whenever a file is there. Exported because the read has to make the same judgement
+ * as the check before it: the log can be replaced in the window between the two, and a mark
+ * that outlived its file would filter the new log's first steps away as already analysed.
+ */
+export function isReplacedLog(mark, identity, { exists = true } = {}) {
+  if (!mark?.id) return false
+  if (identity) return mark.id !== identity
+  return Boolean(exists)
+}
+
 /** Parses a shadow log back into records. Bad lines are skipped, not fatal. */
 export function parseShadowLog(text) {
   const records = []

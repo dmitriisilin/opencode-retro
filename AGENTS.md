@@ -656,7 +656,7 @@ Evaluated from the first prompt of a session and again when it ends, written int
 | Check | Assertion | What a failure means |
 |---|---|---|
 | prompt hook | a session that ran at all produced ≥1 `session.prompt` — a session whose only input was a `/retro` hand-over proves nothing, because `session.synthetic` does not fire this hook | the prompt hook is dead |
-| tool hook | once the session has ended, `session.tool.called` events seen ⇒ equally many `tool.execute.after` with matching `id`; while it runs, a shortfall is just calls still in flight | the tool hook is dead, or the payload shape moved |
+| tool hook | once the session has ended, `session.tool.called` events seen ⇒ at least as many `tool.execute.after` hook calls (counts, not ids: an interrupted call has an event and no after-hook, and that is not a dead hook); while it runs, a shortfall is just calls still in flight | the tool hook is dead, or the payload shape moved |
 | shadow log | the session's `.jsonl` exists and is non-empty | writing is broken (permissions, path) |
 | trigger | the end-of-session event arrived | our extraction trigger is gone |
 | extraction | ran, and produced either lessons or an explicit "nothing to learn" | the model call or the output contract broke |

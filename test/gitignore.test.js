@@ -20,8 +20,11 @@ test("machine state is ignored and the product is not", () => {
   for (const ignored of ["sessions/", "state.json", "selfcheck.md", "plugin.log", "prompts/updates/"]) {
     assert.ok(GITIGNORE.includes(`\n${ignored}\n`), `${ignored} should be ignored`)
   }
-  for (const kept of ["lessons/", "archive/"]) {
-    assert.ok(!GITIGNORE.includes(`\n${kept}\n`), `${kept} is the product and must stay in git`)
+  const rules = new Set(GITIGNORE.split("\n").map((line) => line.trim()))
+  // The live prompts are configuration and the lessons are the product: both travel with the
+  // repository. Only the update notices, which are news about those prompts, do not.
+  for (const kept of ["lessons/", "archive/", "prompts/extract.md", "prompts/propose.md"]) {
+    assert.ok(!rules.has(kept), `${kept} is the product or the configuration and must stay in git`)
   }
   assert.match(GITIGNORE, /deliberately NOT ignored/, "and the file says why, since nobody reads docs for this")
 })

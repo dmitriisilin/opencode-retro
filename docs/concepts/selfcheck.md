@@ -43,9 +43,13 @@ last analysis of the session whichever path ran it.
   `events the hooks never received are reported as a dead hook, with numbers`
   `a running session with calls still in flight is not reported as a broken tool hook`
 - The report describes the last analysis and the queue as the marks say they are: read,
-  owed, or failed.
+  owed, or failed. A failure that a later read recovered from is not still a failure, and a
+  log that was given up on and has since been queued again is not beyond reading.
   `a working session read by /retro is reported as read, not as unanalysed`
   `a log whose analysis failed is named as failed, not as not analysed yet`
+  `a successful read clears the failure the mark was carrying`
+  `a working session read by /retro is reported as read even when it was never queued`
+  `a log given up on and then queued again is not reported as beyond reading`
 - A turn whose input is a hand-over does not report a dead prompt hook.
   `a review session driven by a hand-over is not reported as a dead prompt hook`
 - The surface check names exactly the `ctx` members the plugin calls.
