@@ -170,7 +170,11 @@ export function createState({ path, onError, now = () => Date.now() }) {
           // Both flags follow the writer whose mark is at least as far along, and they are
           // rebuilt here rather than carried: a flag assembled in `look()` and forgotten in
           // this merge is invisible until something downstream quietly stops happening.
-          const newer = b.present && b.n >= a.n ? b : a
+          // At the same step the later mark decides. `b.n >= a.n` alone meant a writer that
+          // loaded before a failed read could clear its `failed` flag with an equally advanced
+          // mark, and the debt then vanished on restart — the log looked read and was skipped.
+          const newer =
+            b.present && (b.n > a.n || (b.n === a.n && b.at >= a.at)) ? b : a
           looked[id] = mark(n, size, newer.open, newer.failed, b.id ?? a.id, Math.max(a.at, b.at) || null)
         }
         // The extraction describes the file that was replaced, so its byte size no longer
@@ -229,8 +233,13 @@ export function createState({ path, onError, now = () => Date.now() }) {
       if (excluded.size) data.pending = data.pending.filter((p) => !excluded.has(p.session))
 
       if (compactWith) {
-        data.unqueued = (data.unqueued ?? []).filter(compactWith)
-        data.uncounted = (data.uncounted ?? []).filter(compactWith)
+        // The tombstones are deliberately not compacted. They are the only defence against a
+        // writer that loaded before the removal and saves afterwards: the queue union and the
+        // counted union would otherwise bring the child straight back, and freshness would
+        // count a delegation as a session. They grow with the number of delegations, which is
+        // the same order as `counted` — one identity per session either way — rather than for
+        // the life of the project in any unbounded sense. Marks and extraction outcomes are
+        // bookkeeping, and are dropped here.
         for (const key of ["looked", "extracted"]) {
           for (const id of Object.keys(data[key] ?? {})) if (!compactWith(id)) delete data[key][id]
         }

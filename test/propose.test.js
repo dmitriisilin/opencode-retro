@@ -53,6 +53,13 @@ test("decided lessons are not shown again; later ones are", () => {
   assert.equal(pickLesson([lesson({ id: "l", status: "later" })]).id, "l")
 })
 
+test("a hand-written lesson with no status is open, not invisible", () => {
+  // Users edit these files, and a lesson typed by hand may simply omit `status`. Treating
+  // only the literal `new` as open would make it disappear from every review without a word.
+  assert.equal(pickLesson([lesson({ status: undefined })]).id, "lint-skill-no-config")
+  assert.equal(pickLesson([lesson({ status: null })]).id, "lint-skill-no-config")
+})
+
 test("the proposal says what it is, what it would change, and that nothing was changed", () => {
   const text = renderProposal(lesson(), { total: 3, remaining: 2 })
 

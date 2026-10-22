@@ -444,14 +444,71 @@ test("bookkeeping about a session is dropped once nothing can refer to it", () =
 
   state.look("ses_kept", { n: 1, size: 10, id: "g" })
   state.queue("ses_owed", 5)
+  // A session counted long ago, whose log is gone and which nothing owes. Its identity is
+  // not bookkeeping: a session left open can be prompted again months later, and folding it
+  // away would count it a second time and make everything look fresher than it is.
+  state.countSession("ses_counted_only")
 
   state.compact((id) => id === "ses_kept" || id === "ses_owed")
 
   const saved = JSON.parse(readFileSync(path, "utf8"))
-  assert.equal(saved.unqueued.includes("ses_gone"), false, "the tombstone is gone with the session")
-  assert.equal(saved.uncounted.includes("ses_gone"), false)
-  assert.equal(saved.looked.ses_gone, undefined)
-  assert.equal(saved.extracted.ses_gone, undefined)
+  assert.equal(saved.unqueued.includes("ses_gone"), true, "the tombstones are the defence against a stale writer")
+  assert.equal(saved.uncounted.includes("ses_gone"), true)
+  assert.equal(saved.looked.ses_gone, undefined, "the mark is bookkeeping and goes")
+  assert.equal(saved.extracted.ses_gone, undefined, "so does the extraction outcome")
   assert.ok(saved.looked.ses_kept, "what can still be referred to stays")
   assert.deepEqual(saved.pending.map((p) => p.session), ["ses_owed"], "and so does a debt")
+  assert.equal(saved.counted.ses_counted_only, true, "but a counted session keeps its identity")
+  assert.equal(saved.sessions, 1, "so the session count still means what it says")
+})
+
+test("a deliberate removal survives a merge that happens after compaction", async () => {
+  // The tombstones used to be compacted away with the marks. A writer that loaded before the
+  // removal then saved its older copy: the queue union brought the child back and the counted
+  // union made it a session again, so a delegation both cost an analysis that could only fail
+  // (its log is gone) and aged every lesson in the workspace. Compaction is now about marks
+  // and extraction outcomes, which nothing can refer to; a tombstone is a decision.
+  const path = join(mkdtempSync(join(tmpdir(), "retro-tombstone-compact-")), "state.json")
+  const mine = createState({ path })
+  const stale = createState({ path })
+  stale.queue("ses_child", 100)
+  stale.countSession("ses_child")
+
+  mine.unqueue("ses_child")
+  mine.uncountSession("ses_child")
+  mine.countSession("ses_other")
+  mine.compact((id) => id === "ses_other")
+
+  stale.countSession("ses_other") // any save at all, from the writer that never learned
+  const saved = JSON.parse(readFileSync(path, "utf8"))
+
+  assert.deepEqual(saved.pending, [], "the child is not owed an analysis")
+  assert.equal(saved.counted.ses_child, undefined, "and it is not a session again")
+  assert.equal(saved.sessions, 1, "freshness counts the real session only")
+})
+
+test("a stale writer cannot clear a mark flag at the same step", () => {
+  // Both flags mean "still owed", and a writer that loaded before the read that set one can
+  // save an equally advanced mark without it. The merge used to prefer its own copy whenever
+  // the step was not smaller, so a failed read — or an excerpt still owed — vanished on the
+  // next save, and after a restart the log looked read for ever. At the same step the later
+  // mark is the one that knows.
+  const path = join(mkdtempSync(join(tmpdir(), "retro-flags-merge-")), "state.json")
+  let tick = 1000
+  const clock = () => tick++
+
+  const base = createState({ path, now: clock })
+  base.look("ses_failed", { n: 5, size: 100, id: "f" })
+  base.look("ses_open", { n: 7, size: 200, id: "o" })
+
+  const stale = createState({ path, now: clock })
+  const fresh = createState({ path, now: clock })
+  fresh.look("ses_failed", { n: 5, size: 100, failed: true, id: "f" })
+  fresh.look("ses_open", { n: 7, size: 200, open: true, id: "o" })
+
+  stale.countSession("ses_other") // any save at all, from the older copy
+  const saved = JSON.parse(readFileSync(path, "utf8")).looked
+
+  assert.equal(saved.ses_failed.failed, true, "the failed read is still owed")
+  assert.equal(saved.ses_open.open, true, "and the excerpt is still owed now")
 })

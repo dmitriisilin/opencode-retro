@@ -3,7 +3,7 @@ import { resolve as resolvePath } from "node:path"
 import { createIngest } from "./src/ingest.js"
 import { createPrompts } from "./src/prompts.js"
 import { createSelfCheck } from "./src/selfcheck.js"
-import { createShadowLog, parseShadowLog } from "./src/shadowlog.js"
+import { createShadowLog, identityOf, parseShadowLog } from "./src/shadowlog.js"
 import { createState } from "./src/state.js"
 import { concludedIn, createStore, score } from "./src/lessons.js"
 import { assessCurrency, fingerprintOf } from "./src/currency.js"
@@ -510,8 +510,13 @@ export default {
       // "a replaced log is read from its own start" true for a longer replacement too, which
       // the size check cannot see.
       const now = log.identity(id)
-      if (mark.id && now && mark.id !== now) state.rebase(id)
-      else if (log.stat(id).size < mark.size) state.rebase(id)
+      const stat = log.stat(id)
+      // A file that exists but has no whole first record is not the log the mark described:
+      // the first record was whole when the mark was made and an append never rewrites it, so
+      // this one was replaced or truncated. Treating the missing identity as "same file" let a
+      // longer replacement keep the old step mark and its early steps were filtered away.
+      if (mark.id && (now ? mark.id !== now : stat.exists)) state.rebase(id)
+      else if (stat.size < mark.size) state.rebase(id)
       return state.looked(id)
     }
 
@@ -630,16 +635,20 @@ export default {
       const currencies = new Map()
       for (const lesson of shown) currencies.set(lesson.id, currencyOf(lesson))
 
+      // A failed analysis is news in a batch exactly as it is in a single hand-over. The
+      // batch path used to drop it, so `/retro all` showed a plan and said nothing about the
+      // log it could not read — the one kind of silence this plugin exists to prevent.
       return say(
         sessionID,
-        renderBatch(open, {
-          sessions: state.sessions,
-          halfLife: config.halfLife,
-          currencies,
-          limit: config.proposeLimit,
-          leadIn: prompts.resolve("propose")?.text,
-          queued: extracted.left,
-        }),
+        renderFailures(extracted) +
+          renderBatch(open, {
+            sessions: state.sessions,
+            halfLife: config.halfLife,
+            currencies,
+            limit: config.proposeLimit,
+            leadIn: prompts.resolve("propose")?.text,
+            queued: extracted.left,
+          }),
       )
     }
 
@@ -897,7 +906,9 @@ export default {
       // pay for the same material twice. The step mark below still moves only on success.
       // `open` is cleared first so a failed retry falls back to the queue's attempt budget
       // instead of re-reading the same excerpt on every command for ever.
-      const identity = log.identity(sessionID)
+      // From the bytes read, not from a second read of the file: between the two the log can
+      // be replaced, and the old records must not be marked as belonging to the new file.
+      const identity = identityOf(text)
       if (readSize > 0) state.look(sessionID, { size: readSize, open: false, failed: false, id: identity })
 
       // A log we could not read is a failure like any other, and it reaches the same retry
@@ -918,7 +929,14 @@ export default {
       const fresh = mark.n > 0 && records ? records.filter((r) => r.n > mark.n || r.k === "prompt") : records
 
       let result = { ok: false, detail: "shadow log could not be read" }
-      if (records) {
+      // A file that exists but yields no record is not an empty session: the log is only
+      // created by writing a record to it, so a present file with nothing parseable in it was
+      // corrupted, truncated or written by something else. Feeding the extractor an empty
+      // record list made it answer "one exchange, nothing done" and settle the log as read —
+      // a clean report about material nobody could read.
+      if (raw != null && records.length === 0) {
+        result = { ok: false, detail: "shadow log could not be parsed: no line is a record" }
+      } else if (records) {
         try {
           result = await extract({
             records: fresh,
@@ -940,6 +958,31 @@ export default {
         }
       }
 
+      // Nothing is settled for a session that is still working: not marked extracted, so the
+      // rest of it is still analysed when it ends, and not pruned, because it is being
+      // written to as we read it.
+      // The step mark moves only on success: a failed analysis must not skip the material it
+      // failed on. The size was already recorded above, so nothing is paid twice.
+      // Only as far as the analysis actually went. An excerpt covers up to its first gap, so
+      // marking the last step *seen* would jump over the elided middle and nothing would ever
+      // read it — the silent kind of loss this plugin exists to avoid.
+      const through = Math.min(result.through ?? lastN, lastN)
+      // An excerpt covers only its unbroken prefix, and on a re-read that prefix can end
+      // before the mark: the prompts are re-sent from step 1, so a tight budget may leave
+      // them as the only thing that fits before the first gap. Then no new step was covered
+      // at all, and settling it would record the whole file as read while the elided new
+      // material was never analysed — the next command would see "nothing new" for ever.
+      // That is a failure, and it spends one of the three attempts, rather than a success.
+      if (result.ok && lastN > mark.n && through <= mark.n) {
+        result = {
+          ...result,
+          ok: false,
+          detail:
+            `${result.detail}; the excerpt could not reach past step ${mark.n} of the log within ` +
+            "maxInput, so nothing new was analysed — raise maxInput or shorten the prompts",
+        }
+      }
+
       // A transient model failure is worth one more go on the next prompt; a third
       // attempt would just keep charging for the same answer.
       // The whole reply goes to plugin.log on a failure: the message carries an excerpt, and
@@ -950,21 +993,9 @@ export default {
         state.attempt(sessionID)
         onError(`extract.${sessionID}`, result.reply ? `${result.detail}\n--- reply ---\n${result.reply}` : result.detail)
       }
-
-      // Nothing is settled for a session that is still working: not marked extracted, so the
-      // rest of it is still analysed when it ends, and not pruned, because it is being
-      // written to as we read it.
-      // The step mark moves only on success: a failed analysis must not skip the material it
-      // failed on. The size was already recorded above, so nothing is paid twice.
-      // Only as far as the analysis actually went. An excerpt covers up to its first gap, so
-      // marking the last step *seen* would jump over the elided middle and nothing would ever
-      // read it — the silent kind of loss this plugin exists to avoid.
-      const through = Math.min(result.through ?? lastN, lastN)
       // `open` is the other half of that rule. Stopping the mark at the gap is only useful if
       // the next command actually reads from there; the size gate would otherwise call a log
-      // whose bytes were all sent "already read" and the gap would never be visited. It is
-      // only recorded when the read made progress, so a projection that cannot get past its
-      // own first gap fails once and stops rather than billing for the same excerpt again.
+      // whose bytes were all sent "already read" and the gap would never be visited.
       const open = Boolean(result.ok && through < lastN && through > mark.n)
       if (result.ok && through > 0) state.look(sessionID, { n: through, open, id: identity })
       // A failed read of a session nobody has queued — a live one — is owed, and the size

@@ -3,7 +3,7 @@ import assert from "node:assert/strict"
 import { appendFileSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { createShadowLog, parseShadowLog } from "../src/shadowlog.js"
+import { createShadowLog, identityOf, parseShadowLog } from "../src/shadowlog.js"
 import { createIngest } from "../src/ingest.js"
 
 const sandbox = () => {
@@ -116,4 +116,17 @@ test("a half-written last line does not reset the numbering", () => {
   appendFileSync(join(dir, "ses_b.jsonl"), '{"v":1,"n":8,"k":"to')
 
   assert.equal(log.lastN("ses_b"), 7, "the last whole record is what counts")
+})
+
+test("identity is the first whole record of the text that was read", () => {
+  // Taken from the snapshot, not by reading the file again: a log replaced between the read
+  // and the identity would otherwise mark the old records as the new file's.
+  const a = '{"v":1,"n":1,"k":"prompt","text":"one"}\n{"v":1,"n":2}\n'
+  const b = '{"v":1,"n":1,"k":"prompt","text":"two"}\n{"v":1,"n":2}\n'
+
+  assert.equal(identityOf(a), identityOf(a), "deterministic")
+  assert.notEqual(identityOf(a), identityOf(b), "a different first record is a different log")
+  assert.equal(identityOf(""), null, "no record, no identity")
+  assert.equal(identityOf('{"v":1,"n":1'), null, "a half-written first line is not one yet")
+  assert.equal(identityOf("not json\n" + a), null, "so a file with no whole first record has no identity")
 })

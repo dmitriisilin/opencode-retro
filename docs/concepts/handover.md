@@ -15,7 +15,8 @@ what changes when several lessons arrive at once.
 **Currency.** Whether a lesson is still true. The plugin offers two facts — when the
 lesson was recorded, and whether its target file's content hash has changed since — and
 puts the question to the agent, which has the repository. A changed target is a reason
-to look, never a verdict.
+to look, never a verdict. The hash is the baseline taken when the lesson was first recorded;
+recurrence and merging never move it, or "changed since" would compare the file with itself.
 
 **Decision.** The third artifact, written by the `retro_decide` tool: `status`
 (`accepted` / `rejected` / `later`), `note`, `decidedIn` (the session it was taken in),
@@ -38,6 +39,9 @@ the file to `archive/`; `later` keeps it open.
 - The proposal states its own facts about currency and never a conclusion.
   `a target that changed since the lesson was written is flagged, not dropped`
   `a target that cannot be read reads as unknown, never as unchanged`
+- The currency baseline is recorded once and not moved by recurrence.
+  `record keeps a fingerprint of the target so currency can be checked later`
+  `a merge keeps the fingerprint taken when the lesson was first recorded`
 - A decision records what was done, not what was proposed, and where it was taken.
   `the decision records what was actually done, not what was proposed`
   `the archive records which session decided it`
@@ -45,5 +49,7 @@ the file to `archive/`; `later` keeps it open.
   `deciding twice is safe and says so, instead of reading as a failure`
 - Every field the decision assembles reaches the archive.
   `the decision records what was actually done, not what was proposed`
+  `the archive records which session decided it`
+  `a decision made without a session still records cleanly`
 - A review costs nothing beyond the analysis.
   `a review costs nothing beyond the analysis itself`

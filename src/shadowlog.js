@@ -103,10 +103,7 @@ export function createShadowLog({ dir, onError }) {
      */
     identity(sessionID) {
       try {
-        const first = readFileSync(join(dir, `${sessionID}.jsonl`), "utf8").split("\n").find((l) => l.trim())
-        if (!first) return null
-        JSON.parse(first) // a half-written first line is not an identity yet
-        return createHash("sha256").update(first).digest("hex").slice(0, 12)
+        return identityOf(readFileSync(join(dir, `${sessionID}.jsonl`), "utf8"))
       } catch {
         return null
       }
@@ -121,6 +118,25 @@ export function createShadowLog({ dir, onError }) {
         return { exists: false, size: 0 }
       }
     },
+  }
+}
+
+/**
+ * The identity of the log in `text`: a hash of its first whole record.
+ *
+ * Separate from `identity(sessionID)` because the mark must describe the bytes that were
+ * actually read. Reading the file a second time to compute it opened a window in which the
+ * log could be replaced: the old records would then be recorded against the new file's
+ * identity, and the next read would filter the new log by the old step numbers.
+ */
+export function identityOf(text) {
+  try {
+    const first = String(text ?? "").split("\n").find((l) => l.trim())
+    if (!first) return null
+    JSON.parse(first) // a half-written first line is not an identity yet
+    return createHash("sha256").update(first).digest("hex").slice(0, 12)
+  } catch {
+    return null
   }
 }
 

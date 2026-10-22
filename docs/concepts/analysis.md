@@ -11,10 +11,18 @@ so it goes shorter and straighter?* The criteria are the user's, in
 text in full up to a few thousand characters each; tool output trimmed; tool calls and
 steps one line each. Deterministic: the same records always project the same way.
 
+**Capture clamp.** Tool output is already clamped head-and-tail to `maxOutput` (8,000
+characters by default) when the record is written, with the loss stated in the record. The
+log is therefore an excerpt of a very large result before the projection ever sees it; the
+projection may trim it again.
+
 **Budget.** The most characters one analysis may send, `maxInput`. Measured on the model
 this was built against, an input past roughly 40,000 characters comes back as an empty
 string with no error, so the budget is a guarantee, not an aim. The log gets what is left
-after the prompt, the contract and the lesson lists.
+after the prompt, the contract and the lesson lists. Those fixed parts are not negotiable: if
+they alone exceed `maxInput`, no request can honour it, so a small (2,000-character) log
+section is still sent rather than none, and the request goes over the budget by that floor.
+The guarantee therefore applies whenever the fixed part fits, which is every normal run.
 
 **Excerpt.** A projection that had to drop something to fit. It drops in the order that
 loses least — less tool output, then whole tool steps from the middle outward, then
@@ -25,10 +33,19 @@ does the human (`from an excerpt` in the outcome).
 **Coverage (`through`).** The last step of an excerpt's unbroken prefix. An excerpt keeps
 a head and a tail with a gap between; it *covers* only the head. The mark advances to the
 coverage, never to the last step seen, so the gap is read next time rather than skipped.
+A projection that covers no step past the mark has covered nothing new: it is a failed read,
+not an excerpt.
 
 **Attempt.** One analysis of one queued log. A log gets three; a successful excerpt is
 progress, not an attempt. After three failures the log is retired: its outcome recorded
 as failed, the log kept on disk, and the self-check names it.
+
+**Limit (`extractLimit`).** The most attempts one command makes. Unlimited by default.
+It counts attempts rather than successes, because an attempt is what costs a model call;
+whatever is left stays queued and is named in the command's message.
+
+**Auto-extraction (`autoExtract`).** Off by default. Nothing is analysed without a command.
+When on, the queue is drained at the first prompt of the next session instead.
 
 **Empty reply.** This model's way of declining an over-long input. It is answered once,
 by halving the budget and asking again — the one retry that changes the thing that
@@ -40,9 +57,14 @@ that is where a wrong instruction file shows up.
 
 ## Invariants
 
-- The composed input never exceeds `maxInput`, whatever the log contains.
+- Tool output is clamped head-and-tail when captured, and says how much went missing.
+  `output is clamped head-and-tail with the loss stated`
+- The composed input never exceeds `maxInput` when the fixed part fits; the log takes the
+  rest and is cut to fit. When the fixed part alone is over budget, no request can be
+  bounded, and the smallest useful log is sent rather than none.
   `the composed input stays inside maxInput, and says when it had to`
   `prompts are shortened before a projection is allowed over budget`
+  `a budget that leaves no room for the log still leaves room for the log`
 - An excerpt loses tool output before it loses steps, and steps from the middle before
   the ends; prompts and replies are never dropped.
   `a log over budget loses tool output before it loses steps`
@@ -52,17 +74,32 @@ that is where a wrong instruction file shows up.
 - An excerpt reports how far it covers, not how far it looked.
   `an excerpt reports how far it actually goes, not how far it looked`
   `a truncation reports only the steps that survived the cut`
+- A projection that covers no step past the mark is a failed read: it is reported, never
+  settled as done, and charged against the attempt budget when the log is queued.
+  `an excerpt that cannot reach past the mark is reported, not settled as done`
 - An empty reply is answered by asking again with less, exactly once.
   `an empty reply is answered by asking again with less, not by asking again`
   `an empty reply with nothing left to trim is reported, not retried for ever`
 - A failed log is tried again on the next command, and given up on after three.
   `a log that failed stays queued, and is tried again on the next command`
   `a session is given up on after three attempts, not billed forever`
-- One failing log does not hold up the ones behind it.
+- One failing log does not hold up the ones behind it, and both commands report it.
   `a log the model could not answer does not hold up the logs behind it`
+  `/retro all reports a log it could not analyse, as well as the plan`
 - An entry that used its three attempts is retired and reported, never silently skipped.
   `an entry that used its three attempts is retired and reported, not skipped for ever`
-- The model is the one the user works with, unless `options.model` says otherwise.
+- One command makes at most `extractLimit` attempts; the rest stay queued and are named.
+  `extractLimit caps what one command analyses and leaves the rest queued`
+  `the per-command log limit is unlimited by default and can be capped`
+- With `autoExtract` the queue is drained at the first prompt of the next session;
+  without it, only a command analyses anything.
+  `autoExtract analyses at the start of the next session, and is off by default`
+- The model is `options.model` when set, otherwise the one the user's own session is
+  running on, otherwise the workspace default; with none of them the analysis refuses and
+  names the remedy.
   `the model the user is actually working with is the one used for analysis`
+  `with no model configured, the workspace default is used`
+  `a workspace default that cannot be read refuses with the remedy, not a hang`
 - A session of one prompt and nothing done is skipped; anything more is read.
   `a conversation with no tool calls is still analysed`
+  `a single exchange that did nothing costs no model call`

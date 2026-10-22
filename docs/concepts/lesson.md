@@ -16,21 +16,27 @@ session twice is one session: evidence is keyed by session, and a second read up
 step range and nothing else.
 
 **Score.** `cost × recurrence × confidence × freshness`, where freshness halves every
-`halfLife` sessions since the problem was last seen — counted in sessions, not days.
+`halfLife` sessions since the problem was last seen — counted in sessions, not days. The
+session count advances when a session's turn ends, so a lesson drawn from a session still
+running is stamped with the count before that session, and is aged by it when it ends.
 
-**Open.** `status: new` or `later`, in `lessons/`. What `/retro` chooses from.
+**Open.** `status: new` or `later`, in `lessons/`. What `/retro` chooses from. A lesson with
+no `status` at all — a file typed by hand — is open too, rather than invisible.
 
 **Decided.** `accepted` or `rejected`, in `archive/`. A decision is a record, not a
 deletion.
 
 **Evicted.** Pushed out of `lessons/` by the cap (thirty), into `archive/`, still
 `status: new`. An eviction is not a decision: it is an open question that lost its seat.
+A lesson the user marked `later` is never evicted, so a workspace with many of them can
+stay over the cap rather than discard a question the user asked to come back to.
 
 **Reopen.** An accepted lesson whose problem returns in a *different* session comes back
 with `reopenedFrom: accepted` — the news that the fix did not hold.
 
 **Restore.** An evicted lesson whose problem returns comes back as the open question it
-was, with no `reopenedFrom`.
+was, with no `reopenedFrom` added by the eviction. If it already carried one from an earlier
+reopening, that history stays.
 
 **Never.** A rejected lesson does not come back, from either side: `state.rejected` is
 told to the extractor and filters its answer, and the store refuses to reopen an archived
@@ -44,6 +50,7 @@ told to the extractor and filters its answer, and the store refuses to reopen an
 - Reading the same session again moves nothing but the step range.
   `reading the same session again is not a second session`
   `a re-read without steps does not erase the range the lesson already cites`
+  `a re-read restores a cap-evicted lesson when there is room, without counting the session twice`
 - Colliding ids are two problems, not one merged; an explicit `matches` is one.
   `two different lessons with the same slug do not overwrite each other`
   `an explicit match to an archived lesson beats an unrelated open lesson with the same id`
@@ -56,13 +63,22 @@ told to the extractor and filters its answer, and the store refuses to reopen an
   `a lesson the cap evicted comes back as an open question, not as a failed fix`
   `a lesson the cap evicted can still be decided, and is not called already decided`
   `a cap-evicted lesson is not handed back as already concluded`
+- A lesson the user asked to come back to is never evicted, even if that leaves the open
+  set over the cap.
+  `a lesson marked later is never archived out from under the user`
+- A lesson with no status is open, so a hand-written file is not invisible.
+  `a hand-written lesson with no status is open, not invisible`
 - Two copies of one closed lesson in a single extraction reopen it once.
   `two copies of a closed lesson in one extraction reopen it once, not twice`
 - Freshness decays in sessions: a lesson unseen for `halfLife` sessions scores half.
   `a lesson that has gone unseen for a while says so, in sessions not days`
+  `freshness halves the score every half-life of sessions without a recurrence`
+  `freshness is measured in sessions, so a lesson seen this session is at full weight`
 - The lessons already decided from a session are told to the extractor, so they are not
   derived again from the same material.
   `a second look at a session reads only what is new since the first`
+  `lessons already concluded from this session are put in front of the extractor`
 - Lessons extracted from a delegation before its parent was known keep their evidence
-  when the delegation is folded into the root.
+  when the delegation is folded into the root, at any depth.
   `lessons extracted from an orphan child keep their evidence when the child is folded into its parent`
+  `evidence remapped into a middle delegation follows it into the root`

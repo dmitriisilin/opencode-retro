@@ -11,8 +11,10 @@ turn per prompt; a session left open and prompted again has another turn. **An e
 is a turn, not the life of a session** — measured, see `fixtures/sessions/two-turns.jsonl`.
 
 **Live.** A session whose current turn has started and not ended, as far as this process
-has seen; plus the session the command is running in, always. Live is a property of this
-process's memory, not of the file: a restart knows nothing is live.
+has seen; plus the session the command is running in, always. A hook firing for a session
+whose start event this process never saw also makes it live — after a restart the start event
+has already gone by, and the hook is the older fact. Live is a property of this process's
+memory, not of the file: a restart knows nothing is live until a hook arrives.
 
 **Over.** Not live. A session is over when its last turn ended, or when the process that
 would know restarted. "Over" never means "will not be prompted again": a session is over
@@ -22,19 +24,26 @@ between turns.
 live by definition, whatever the event stream said, because the command is running in it.
 
 **Foreign session.** A session in this project but another checkout (a git worktree). The
-event stream carries it here; the hooks do not. It is identified either by a
-`session.created` whose directory is not ours, or by the absence of any hook for it.
+event stream carries it here; the hooks do not. It is identified by a `session.created`
+whose directory is not ours. Without that event, a session with no hook of ours is simply
+not ours — silence is not evidence of another checkout (see the invariant below).
 
 **Delegation.** A subagent's session. It is a step in its parent's task, not a session of
 its own: its records go into the root session's log, its turns are not counted, its end is
-not queued. The **root** is the top of the parent chain, whatever its depth.
+not queued. The **root** is the top of the parent chain, whatever its depth. Learning the
+link also makes the root ours by association, even if the root's own prompt hook was missed:
+the delegation is evidence that something of ours ran.
 
 ## Invariants
 
 - One session given two prompts produces two turns in one log, numbered once through.
   `a two-turn session is one session with two executions`
+  `a session that runs again is owed a second analysis, from where the first stopped`
 - A turn starting makes the session live again, whatever a previous turn's end said.
   `a session still working is read, and nothing about it is settled`
+  `a session picked up again is read, never settled, while its second turn is running`
+- A session whose start event this process never saw is live from its first hook.
+  `a session whose start event this process never saw is live from its first hook`
 - A session is counted once for freshness, however many turns it runs.
   `a session is counted once, however many times it runs`
 - The invoking session is live, and its log is never pruned under it.

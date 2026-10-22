@@ -77,5 +77,7 @@ lesson cites it, nothing is owed for it, and its session is not live.
 - A replaced file is a different log: read from its own start, whatever its size or
   numbering, and no mark about the old file survives.
   `a mark belongs to one log: a replaced file is read from its own start, whatever its size or numbering`
-- An unreadable log is a failure, retried, and never reported as a clean analysis.
+- An unreadable log is a failure, retried, and never reported as a clean analysis. A file
+  that exists but yields no record is unreadable, not an empty session.
   `a log that cannot be read is reported as a failure, not as a clean analysis`
+  `a log with no parseable record is reported as a failure, not as a clean analysis`

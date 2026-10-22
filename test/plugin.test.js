@@ -794,6 +794,10 @@ test("a session from another checkout of this project is not ours", async () => 
   assert.deepEqual(state.pending, [], "nothing to analyse: the log is the other checkout's")
   assert.equal(state.sessions, 0, "and it is not counted, so freshness is not moved twice")
 
+  const report = readFileSync(join(directory, ".retro", "selfcheck.md"), "utf8")
+  assert.doesNotMatch(report, new RegExp(session), "and it is not cited as evidence in the report")
+  assert.doesNotMatch(report, /BROKEN/, "nor described as a dead hook of ours")
+
   await cleanup?.()
 })
 
@@ -2001,6 +2005,220 @@ test("an entry that used its three attempts is retired and reported, not skipped
   assert.equal(fake.generated.length, 0, "without spending anything on it")
   const report = readFileSync(join(directory, ".retro", "selfcheck.md"), "utf8")
   assert.match(report, /1 log given up on after three failed analyses/, "and the stock section names it")
+
+  await cleanup?.()
+})
+
+test("an excerpt that cannot reach past the mark is reported, not settled as done", async () => {
+  const directory = sandbox()
+  const session = "ses_stuck_excerpt"
+  mkdirSync(join(directory, ".retro", "sessions"), { recursive: true })
+  const logPath = join(directory, ".retro", "sessions", `${session}.jsonl`)
+  const write = (lines) => writeFileSync(logPath, lines.map((l) => JSON.stringify(l)).join("\n") + "\n")
+  write([
+    { v: 1, n: 1, t: 1, k: "prompt", text: "fix the lint trap" },
+    { v: 1, n: 2, t: 2, k: "tool", id: "c1", tool: "shell", input: { command: "npx eslint ." }, status: "completed", exit: 2 },
+    { v: 1, n: 3, t: 3, k: "tool", id: "c2", tool: "shell", input: { command: "npx eslint --fix ." }, status: "completed", exit: 2 },
+  ])
+
+  const first = fakeOpenCode({ directory, options: { model: MODEL }, reply: REPLY })
+  const cleanup = await plugin.setup(first.ctx)
+  await first.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
+  assert.equal(first.generated.length, 1, "first read")
+  assert.equal(savedState(directory).looked[session].n, 3)
+  assert.deepEqual(savedState(directory).pending, [])
+  assert.ok(existsSync(logPath), "a lesson cites it, so it is kept")
+
+  appendFileSync(logPath, JSON.stringify({ v: 1, n: 4, t: 4, k: "tool", id: "huge", tool: "shell", input: { command: "x".repeat(100_000) }, status: "completed", exit: 2 }) + "\n")
+  appendFileSync(logPath, JSON.stringify({ v: 1, n: 5, t: 5, k: "text", text: "THE NEW MATERIAL" }) + "\n")
+
+  const small = fakeOpenCode({ directory, options: { model: MODEL, maxInput: 8000 }, reply: REPLY })
+  const cleanup2 = await plugin.setup(small.ctx)
+  await small.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
+
+  const state = savedState(directory)
+  assert.equal(state.pending.length, 1, "the unread material stays owed")
+  assert.equal(state.pending[0].attempts, 1, "the attempt is counted, so it cannot loop for ever")
+  assert.match(small.synthetic[0].text, /could not reach past step 3/, "and the failure is said out loud")
+  assert.equal(state.looked[session].open, undefined, "it was not mistaken for an excerpt owed now")
+  assert.ok(existsSync(logPath), "and the log is kept for the retry")
+  await cleanup?.()
+  await cleanup2?.()
+})
+
+test("/retro all reports a log it could not analyse, as well as the plan", async () => {
+  // The single hand-over has always carried the failure; the batch path built its message
+  // from the open lessons alone, so a log that failed simply vanished from the one command
+  // most likely to be used on a backlog. Silence about a failure is the failure this plugin
+  // exists to prevent, so both commands say it.
+  const directory = sandbox()
+  const fake = fakeOpenCode({ directory, options: { model: MODEL } })
+  const cleanup = await plugin.setup(fake.ctx)
+
+  await workSession(fake, "ses_bad")
+  await workSession(fake, "ses_good")
+  queue(directory, ["ses_bad", "ses_good"])
+
+  const fresh = fakeOpenCode({
+    directory,
+    options: { model: MODEL },
+    reply: (input) => (input.prompt.includes("id: ses_bad") ? "I could not do this one." : REPLY),
+  })
+  const cleanup2 = await plugin.setup(fresh.ctx)
+  await fresh.commands.get("retro-all").execute({ sessionID: "ses_review", prompt: { text: "" } })
+
+  assert.deepEqual(analysed(fresh), ["ses_bad", "ses_good"], "the good log is analysed too")
+  const [delivered] = fresh.synthetic
+  assert.match(delivered.text, /could not analyse `ses_bad`/, "the failure is named")
+  assert.match(delivered.text, /the model answered/, "with what the model actually said")
+  assert.match(delivered.text, /lint-skill-no-config/, "and the plan still arrives")
+
+  await cleanup?.()
+  await cleanup2?.()
+})
+
+test("evidence remapped into a middle delegation follows it into the root", async () => {
+  // The two-level case the concepts call out: a lesson extracted from an orphan leaf is
+  // remapped to the middle session, and the middle is itself folded into the root later.
+  // A remap that only knows one level leaves the evidence citing a log that no longer
+  // exists — the dead reference decision 18 keeps the log to avoid.
+  const directory = sandbox()
+  const reply =
+    "```json\n" +
+    JSON.stringify({ lessons: [{ id: "leaf-lesson", statement: "the leaf kept retrying", steps: [1, 2], cost: 2, confidence: 0.8, why: "x" }] }) +
+    "\n```"
+  const fake = fakeOpenCode({ directory, options: { model: MODEL }, reply })
+  const cleanup = await plugin.setup(fake.ctx)
+  const root = "ses_root2"
+  const middle = "ses_middle2"
+  const leaf = "ses_leaf2"
+
+  await fake.hooks.get("session.prompt")({ sessionID: root, messageID: "r", prompt: { text: "root task" } })
+  await fake.hooks.get("session.prompt")({ sessionID: leaf, messageID: "l", prompt: { text: "leaf task" } })
+  for (const id of ["l-1", "l-2"]) {
+    await fake.hooks.get("tool.execute.before")({ sessionID: leaf, id, tool: "shell", input: { command: id } })
+    await fake.hooks.get("tool.execute.after")({
+      sessionID: leaf, id, tool: "shell", input: { command: id },
+      status: "completed", result: { output: { exit: 2, output: "no" }, metadata: { exit: 2 } },
+    })
+  }
+  fake.emit({ type: "session.execution.succeeded", durable: { seq: 9 }, data: { sessionID: leaf } })
+  await tick()
+
+  await fake.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
+  assert.deepEqual(
+    parseFrontmatter(readFileSync(join(directory, ".retro", "lessons", "leaf-lesson.md"), "utf8")).data.evidence,
+    [{ session: leaf, steps: [1, 2] }],
+  )
+
+  // Leaf -> middle first, then middle -> root.
+  await fake.hooks.get("tool.execute.after")({
+    sessionID: middle, id: "d-leaf", tool: "subagent",
+    input: { agent: "explore", description: "leaf", prompt: "go" },
+    status: "completed", result: { output: { output: "done" }, metadata: { sessionID: leaf } },
+  })
+  const between = parseFrontmatter(readFileSync(join(directory, ".retro", "lessons", "leaf-lesson.md"), "utf8")).data
+  assert.equal(between.evidence[0].session, middle, "first fold points at the middle")
+
+  await fake.hooks.get("tool.execute.after")({
+    sessionID: root, id: "d-middle", tool: "subagent",
+    input: { agent: "explore", description: "middle", prompt: "go" },
+    status: "completed", result: { output: { output: "done" }, metadata: { sessionID: middle } },
+  })
+  const after = parseFrontmatter(readFileSync(join(directory, ".retro", "lessons", "leaf-lesson.md"), "utf8")).data
+  assert.equal(after.evidence[0].session, root, "and the second fold follows it into the root")
+  assert.ok(existsSync(join(directory, ".retro", "sessions", `${root}.jsonl`)), "where the records now are")
+  for (const id of [leaf, middle]) {
+    assert.equal(existsSync(join(directory, ".retro", "sessions", `${id}.jsonl`)), false, `${id} has no log left`)
+  }
+
+  await cleanup?.()
+})
+
+test("a session whose start event this process never saw is live from its first hook", async () => {
+  // After a restart in the middle of a session, the execution.started event has already gone
+  // by. A hook firing is the older and more reliable fact: without it the session looks
+  // finished, gets queued, settled and possibly pruned while it is still writing.
+  const directory = sandbox()
+  const fake = fakeOpenCode({ directory, options: { model: MODEL } })
+  const cleanup = await plugin.setup(fake.ctx)
+  const session = "ses_started_before_us"
+
+  await workSession(fake, session)
+  await fake.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
+
+  assert.deepEqual(analysed(fake), [session], "it is read, like any live session")
+  const state = savedState(directory)
+  assert.equal(state.extracted[session], undefined, "nothing about it is settled")
+  assert.deepEqual(state.pending, [], "and it is not queued while it can still add to itself")
+  assert.ok(state.looked[session].n > 0, "what was read is still remembered")
+  assert.ok(existsSync(join(directory, ".retro", "sessions", `${session}.jsonl`)), "and its log is kept")
+
+  await cleanup?.()
+})
+
+test("a log with no parseable record is reported as a failure, not as a clean analysis", async () => {
+  // The log is only created by writing a record to it, so a present file with nothing
+  // parseable in it was corrupted, truncated or written by something else. It used to reach
+  // the extractor as an empty record list, which answered "one exchange, nothing done" and
+  // settled the log: a clean report about material nobody could read.
+  const directory = sandbox()
+  const session = "ses_garbled"
+  mkdirSync(join(directory, ".retro", "sessions"), { recursive: true })
+  writeFileSync(join(directory, ".retro", "sessions", `${session}.jsonl`), "this is not a shadow log\nnor is this\n")
+  queue(directory, [session])
+
+  const fake = fakeOpenCode({ directory, options: { model: MODEL } })
+  const cleanup = await plugin.setup(fake.ctx)
+  await fake.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
+
+  const [delivered] = fake.synthetic
+  assert.match(delivered.text, /Could not analyse `ses_garbled`/)
+  assert.match(delivered.text, /could not be parsed/, "with the reason")
+  assert.doesNotMatch(delivered.text, /nothing to learn/, "not a clean analysis of a file it could not read")
+  assert.equal(fake.generated.length, 0, "and no model call is spent on it")
+
+  const state = savedState(directory)
+  assert.equal(state.pending[0].attempts, 1, "it stays queued and counted")
+  assert.ok(existsSync(join(directory, ".retro", "sessions", `${session}.jsonl`)), "and the log is kept")
+
+  await cleanup?.()
+})
+
+test("a replaced log whose first record cannot be read is still a different log", async () => {
+  // The identity is a hash of the first whole record, and an append never rewrites it. So a
+  // file that exists but has no whole first record cannot be the log the mark described: it
+  // was replaced or truncated. Treating the missing identity as "same file" let a longer
+  // replacement keep the old step mark, and its early steps were filtered away as already
+  // analysed.
+  const directory = sandbox()
+  const session = "ses_replaced_unreadable"
+  mkdirSync(join(directory, ".retro", "sessions"), { recursive: true })
+  const logPath = join(directory, ".retro", "sessions", `${session}.jsonl`)
+  const write = (text) => writeFileSync(logPath, text)
+  const line = (r) => JSON.stringify(r) + "\n"
+
+  write(
+    line({ v: 1, n: 1, t: 1, k: "prompt", text: "old instruction" }) +
+      line({ v: 1, n: 2, t: 2, k: "tool", id: "old", tool: "shell", input: { command: "old-command" }, status: "completed", exit: 2 }) +
+      line({ v: 1, n: 3, t: 3, k: "session", event: "end", outcome: "succeeded" }),
+  )
+  const fake = fakeOpenCode({ directory, options: { model: MODEL }, reply: REPLY })
+  const cleanup = await plugin.setup(fake.ctx)
+  await fake.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
+  assert.equal(savedState(directory).looked[session].n, 3)
+
+  // A longer replacement whose first line is corrupt, numbered past the old mark.
+  let replacement = "this line is not a record\n"
+  for (let n = 2; n <= 10; n++) {
+    replacement += line({ v: 1, n, t: n, k: "tool", id: `new-${n}`, tool: "shell", input: { command: `new-command-${n}` }, status: "completed", exit: 2 })
+  }
+  write(replacement)
+
+  await fake.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
+  const sent = fake.generated.at(-1).prompt
+  assert.match(sent, /new-command-2/, "the replacement is read from its own start")
+  assert.doesNotMatch(sent, /Steps up to/, "with no claim that any of it was analysed before")
 
   await cleanup?.()
 })
