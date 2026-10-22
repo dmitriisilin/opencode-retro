@@ -1743,7 +1743,7 @@ test("a review session driven by a hand-over is not reported as a dead prompt ho
 
   const report = readFileSync(join(directory, ".retro", "selfcheck.md"), "utf8")
   assert.doesNotMatch(report, /BROKEN\s+prompt hook/, "a working hook must not be called dead")
-  assert.match(report, /not exercised\s+prompt hook\s+this session was started by a `\/retro` hand-over/)
+  assert.match(report, /not exercised\s+prompt hook\s+this turn began with a `\/retro` hand-over/)
 
   await cleanup?.()
 })

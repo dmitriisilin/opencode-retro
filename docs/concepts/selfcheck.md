@@ -18,10 +18,11 @@ evaluated — from the first prompt of a session onward, not only at its end).
 
 **The assertions.** Prompt hook, tool hook, shadow log, trigger, extraction. Each is
 `ok`, `DEGRADED`, `BROKEN` or `not exercised`. **The report may claim only what the
-traffic proved.** A session without tool calls proves nothing about the tool hook; a
-session started by a hand-over proves nothing about the prompt hook; a shortfall of hook
-calls against events is not evidence while calls are in flight; the trigger cannot be
-judged before the session ends.
+traffic proved.** A session without tool calls proves nothing about the tool hook; a turn
+whose input is a hand-over proves nothing about the prompt hook — the counters are per
+turn, so a session prompted earlier and handed a lesson later was not "started by a
+hand-over"; a shortfall of hook calls against events is not evidence while calls are in
+flight; the trigger cannot be judged before the session ends.
 
 **Stock.** What is waiting for the human: open lessons, queued logs, logs kept because a
 lesson cites them, logs given up on. Kept in its own section, because it is the one part
@@ -37,7 +38,7 @@ a person has to act on.
   of the session, not while calls are still in flight.
   `events the hooks never received are reported as a dead hook, with numbers`
   `a running session with calls still in flight is not reported as a broken tool hook`
-- A session started by a hand-over does not report a dead prompt hook.
+- A turn whose input is a hand-over does not report a dead prompt hook.
   `a review session driven by a hand-over is not reported as a dead prompt hook`
 - The surface check names exactly the `ctx` members the plugin calls.
   `the self-check requires exactly the ctx surface the plugin calls`

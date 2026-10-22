@@ -74,7 +74,8 @@ test("a hand-over with no prompt is not evidence that the prompt hook is dead", 
   const checks = assess({ ...healthy, counts: { ...healthy.counts, prompts: 0, handovers: 1 } })
   const prompt = checks.find((c) => c.name === "prompt hook")
   assert.equal(prompt.status, STATUS.SKIPPED)
-  assert.match(prompt.detail, /hand-over/)
+  assert.match(prompt.detail, /turn began with a `\/retro` hand-over/)
+  assert.doesNotMatch(prompt.detail, /session was started/, "the counters are per turn, not per session")
   assert.doesNotMatch(prompt.detail, /no session\.prompt arrived/)
 })
 

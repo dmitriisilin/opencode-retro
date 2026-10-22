@@ -82,10 +82,13 @@ export function assess(session) {
             // does not fire the prompt hook (AGENTS.md Gotcha 12). A session whose only
             // input arrived that way was reported BROKEN — about a hook that was working,
             // in the very session the plugin had just started. It proves nothing either way.
-            detail: "this session was started by a `/retro` hand-over, not a prompt",
+            // The counters are per turn, so this is about the turn being measured, not the
+            // whole session. A session prompted earlier and then handed a lesson is not
+            // "started by a hand-over"; saying so was false in a live run.
+            detail: "this turn began with a `/retro` hand-over, not a prompt",
             meaning:
               "a hand-over is delivered by the plugin itself and does not fire the prompt " +
-              "hook, so nothing is proved here; the next session you type in will.",
+              "hook, so nothing is proved here; the next turn you type in will.",
           }
         : {
             status: BROKEN,
