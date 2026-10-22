@@ -9,7 +9,7 @@ import { concludedIn, createStore, score } from "./src/lessons.js"
 import { assessCurrency, fingerprintOf } from "./src/currency.js"
 import { extract } from "./src/extract.js"
 import { pickLesson, pickOpen, renderBatch, renderFailures, renderNothing, renderProposal } from "./src/propose.js"
-import { DECIDE_INPUT, decide } from "./src/decide.js"
+import { DECIDE_INPUT, DECIDE_OUTPUT, decide } from "./src/decide.js"
 import { activeCheck } from "./src/selfcheck.js"
 import { resolveConfig } from "./src/config.js"
 import { seedGitignore } from "./src/gitignore.js"
@@ -145,7 +145,7 @@ export default {
         {
           id: sessionID,
           counts: ingest.counts(sessionID),
-          log: log.stat(sessionID),
+          log: logFacts(sessionID),
           triggered: null,
           ended: false,
           extraction: null,
@@ -265,6 +265,7 @@ export default {
             "it never edits the harness itself. Calling it twice for the same lesson is safe " +
             "and reports that the decision was already recorded.",
           input: DECIDE_INPUT,
+          output: DECIDE_OUTPUT,
           execute: async (input, context) => {
             const result = decide(input, { store, state, session: context?.sessionID ?? null })
             pruneLogs(context?.sessionID ?? null)
@@ -365,7 +366,7 @@ export default {
       const verified = {
         id: sessionID,
         counts: ingest.counts(sessionID),
-        log: log.stat(sessionID),
+        log: logFacts(sessionID),
         triggered: event.type,
         extraction: null,
       }
@@ -462,6 +463,15 @@ export default {
      */
     function isLive(id, invoking = null) {
       return id === invoking || (started.has(id) && !ended.has(id))
+    }
+
+    /**
+     * What the self-check is allowed to say about the log: it exists, how big it is, and how
+     * many records are really in it. The ingest counters reset at every turn end, so they
+     * cannot answer the last question for a session that was prompted again.
+     */
+    function logFacts(id) {
+      return { ...log.stat(id), entries: log.count(id) }
     }
 
     /**

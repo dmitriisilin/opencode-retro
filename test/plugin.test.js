@@ -327,9 +327,16 @@ test("deciding on a lesson that does not exist fails clearly through the registe
   const fake = fakeOpenCode({ directory, options: { model: MODEL } })
   const cleanup = await plugin.setup(fake.ctx)
 
-  const result = await fake.tools.get("retro_decide").execute({ id: "nope", status: "accepted" })
+  const tool = fake.tools.get("retro_decide")
+  // OpenCode warns a live agent with "Tool result declared output without an output schema"
+  // when a tool returns `output` and declares no shape for it. The agent then doubted the
+  // decision had registered, which is the one thing this tool must never cause.
+  assert.ok(tool.output, "the tool declares the shape of what it returns")
+
+  const result = await tool.execute({ id: "nope", status: "accepted" })
   assert.equal(result.output.ok, false)
   assert.match(result.content, /no lesson/)
+  assert.equal(typeof result.output.detail, "string")
   await cleanup?.()
 })
 

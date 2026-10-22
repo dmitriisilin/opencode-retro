@@ -135,7 +135,14 @@ export function assess(session) {
   const log = session.log ?? { exists: false, size: 0 }
   checks.push(
     log.exists && log.size > 0
-      ? { status: OK, name: "shadow log", detail: `sessions/${session.id}.jsonl, ${c.records ?? 0} entries` }
+      ? {
+          status: OK,
+          name: "shadow log",
+          // The file's own record count when the caller can supply it. The fallback keeps
+          // `assess` usable from the counters alone, but it is only exact for a single
+          // turn: ingest counters are cleared when an execution ends (see shadowlog.count).
+          detail: `sessions/${session.id}.jsonl, ${log.entries ?? c.records ?? 0} entries`,
+        }
       : {
           status: BROKEN,
           name: "shadow log",

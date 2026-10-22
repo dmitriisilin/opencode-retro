@@ -27,6 +27,17 @@ test("a healthy session reports ok, and a pending extraction says so", () => {
   assert.equal(status(checks, "extraction"), STATUS.SKIPPED)
 })
 
+test("the shadow log line counts the file, not just the turn being measured", () => {
+  // Found live: a session prompted again reported "3 entries" about a log with 79 lines,
+  // because the ingest counters are cleared when an execution ends. The file is the fact.
+  const checks = assess({
+    ...healthy,
+    counts: { ...healthy.counts, records: 3 },
+    log: { exists: true, size: 900, entries: 79 },
+  })
+  assert.match(checks.find((c) => c.name === "shadow log").detail, /79 entries/)
+})
+
 test("a queued log says what will analyse it, and that nothing happens unasked", () => {
   const checks = assess({ ...healthy, extraction: { queued: true } })
   const x = checks.find((c) => c.name === "extraction")

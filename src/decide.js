@@ -39,6 +39,24 @@ export const DECIDE_INPUT = {
   additionalProperties: false,
 }
 
+/**
+ * The shape the tool returns. Declared because OpenCode validates a tool result's `output`
+ * against the tool's own output schema: without one, a live agent was told "Tool result
+ * declared output without an output schema" and reported it did not know whether the
+ * decision had registered — the exact doubt the tool's idempotency note exists to prevent.
+ * The model reads `content`; this is the structured half of the same result.
+ */
+export const DECIDE_OUTPUT = {
+  type: "object",
+  properties: {
+    ok: { type: "boolean" },
+    already: { type: "boolean", description: "The decision was already recorded." },
+    detail: { type: "string" },
+  },
+  required: ["ok", "detail"],
+  additionalProperties: false,
+}
+
 export function decide({ id, status, note, changed, discovered }, { store, state, session = null }) {
   let lesson = store.list().find((l) => l.id === id)
 
