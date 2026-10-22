@@ -622,6 +622,11 @@ export default {
         const mark = markOf(id)
         if (mark.open || mark.failed) continue
         if (log.stat(id).size > mark.size) continue
+        // Nor one given up on. Retirement keeps the log on disk and the self-check names it
+        // (analysis.md); retiring clears the `failed` flag, so without this line the next
+        // success anywhere — even a skipped one-exchange log — deleted the material the three
+        // failures had left unread. Found by the model test, in seven actions.
+        if (state.extractionOf(id)?.ok === false) continue
         if (!cited.has(id) && !owed.has(id) && log.remove(id)) {
           // The mark described a file that no longer exists. Leaving it would make the next
           // log written under this id look already read, because size only moves forward.
@@ -732,9 +737,16 @@ export default {
       // command and reported by none. Retired here, so it reaches the stock section and the
       // message instead.
       for (const entry of state.pending) {
-        if ((entry.attempts ?? 0) >= 3 && !state.wasExtracted(entry.session)) {
+        // Three failures on *this* input — `queue()` resets the count when the log grows, so
+        // an exhausted entry means nothing new arrived since. Not `!wasExtracted`: settling is
+        // not permanent, and a session settled once, picked up again and then failing three
+        // times was never retired by that test — it sat in the queue, skipped by every command.
+        if ((entry.attempts ?? 0) >= 3) {
           const detail = "given up after three failed analyses"
-          state.markExtracted(entry.session, { ok: false, detail })
+          // The size it covers is the size it was queued at. Without it the save-time merge
+          // saw an entry for 2,780 bytes against an extraction covering nothing, and brought
+          // the retired entry straight back from disk, still at three attempts.
+          state.markExtracted(entry.session, { ok: false, detail, size: entry.size ?? 0 })
           // Nothing is owed for it any more. Without this the `failed` flag the last read left
           // behind re-queues the session in the scan below, and the same command spends a
           // fourth call on a log it has just declared given up on.
@@ -783,6 +795,12 @@ export default {
           continue
         }
         done.push(owed.session)
+        // One command handles each log at most once in this loop, whatever its outcome. Only
+        // failures and excerpts used to be set aside; a success was trusted to leave the queue,
+        // and when a merge brought it straight back the loop read the same log for ever —
+        // with skips not counting against the limit, without ever yielding. Termination should
+        // not depend on every rule elsewhere being right.
+        skip.add(owed.session)
         // A skipped log — one exchange, nothing done — never reached the model, so it is not
         // an attempt against a limit whose reason to exist is the model call it costs.
         if (result.skipped) attempted--
@@ -1084,7 +1102,13 @@ export default {
       if (result.ok) {
         state.look(sessionID, {
           size: readSize,
-          ...(through > 0 ? { n: through } : {}),
+          // A skip covers nothing. "One prompt, one answer, nothing done" means there is
+          // nothing to analyse *yet* — not that these steps were turned into lessons. Moving
+          // `n` on a skip claimed they were, so when the session later did real work the
+          // re-read started after the mark and the earlier reply never reached a model.
+          // Found by the model test in five actions. The size still moves: there is nothing
+          // to pay for until the log grows, and when it does it is read from the start.
+          ...(through > 0 && !result.skipped ? { n: through } : {}),
           open,
           failed: false,
           id: identity,

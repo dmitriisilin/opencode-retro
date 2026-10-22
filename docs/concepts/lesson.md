@@ -9,7 +9,10 @@ global is where a *fix* belongs, decided at hand-over.
 
 **Evidence.** `{ session, steps }` entries: which session, which step range in its log.
 The log is kept on disk while the lesson is open precisely so a range resolves to real
-records. A range is replaced only by a non-empty one.
+records. A range is replaced only by a non-empty one. Evidence a lesson carried when it left
+the open set — decided or evicted — is marked `released`: no open lesson kept those logs, so
+they may be gone, and a lesson that comes back keeps them as history rather than offering
+them to the reviewer as something to read.
 
 **Recurrence.** The number of *independent* sessions the problem appeared in. Reading one
 session twice is one session: evidence is keyed by session, and a second read updates the
@@ -55,6 +58,9 @@ told to the extractor and filters its answer, and the store refuses to reopen an
   `two different lessons with the same slug do not overwrite each other`
   `an explicit match to an open lesson merges into it, instead of creating its own id`
   `an explicit match to an archived lesson beats an unrelated open lesson with the same id`
+- A lesson that comes back marks its earlier evidence as released, and the hand-over offers
+  only evidence whose log is kept.
+  `a lesson that comes back marks its earlier evidence as released, and does not send the reviewer to it`
 - An accepted lesson that returns from another session is reopened as a failed fix.
   `a lesson that was accepted and comes back is reopened, because the fix did not hold`
 - A rejected lesson never returns.

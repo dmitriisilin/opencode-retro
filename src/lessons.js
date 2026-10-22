@@ -49,6 +49,16 @@ export function concludedIn(lessons, sessionID) {
     .map((l) => ({ id: l.id, status: l.status ?? "closed", statement: l.statement ?? "" }))
 }
 
+/**
+ * Evidence a lesson carried when it left the open set. While it was decided or evicted, no
+ * open lesson cited those logs, so decision 18 let them go — and a lesson that comes back
+ * would otherwise send the reviewer to read steps in a file that is not there, under a
+ * prompt that promises the log is on disk. Marked, not dropped: it is still the history of
+ * the problem, and the human may want to know where it was seen before.
+ */
+const released = (evidence, except = null) =>
+  evidence.map((e) => (e?.session === except || e?.released ? e : { ...e, released: true }))
+
 export function createStore({ dir, archive, cap = DEFAULT_CAP, halfLife = DEFAULT_HALF_LIFE, sessions = () => null, onError }) {
   const ranked = (lessons) => lessons.sort((a, b) => score(b, ctxFor()) - score(a, ctxFor()))
   const ctxFor = () => ({ sessions: sessions(), halfLife })
@@ -202,7 +212,12 @@ export function createStore({ dir, archive, cap = DEFAULT_CAP, halfLife = DEFAUL
       const lesson = listArchive().find((l) => l.id === id)
       if (!lesson) return null
       if (!ensure(dir)) return null
-      const { body, file, ...data } = { ...lesson, status: "new", closedAt: undefined }
+      const { body, file, ...data } = {
+        ...lesson,
+        evidence: released(asArray(lesson.evidence) ?? []),
+        status: "new",
+        closedAt: undefined,
+      }
       try {
         const name = file ?? `${data.id}.md`
         writeFileSync(join(dir, name), stringifyFrontmatter(data, body ?? ""))
@@ -271,12 +286,12 @@ export function createStore({ dir, archive, cap = DEFAULT_CAP, halfLife = DEFAUL
 
         if (buried) {
           const updatedEvidence = already
-            ? evidence.map((e) =>
+            ? released(evidence, session).map((e) =>
                 e?.session === session
                   ? { ...e, steps: lesson.steps?.length ? lesson.steps : e.steps }
                   : e,
               )
-            : [...evidence, { session, steps: lesson.steps }]
+            : [...released(evidence), { session, steps: lesson.steps }]
           const back = {
             ...buried,
             evidence: updatedEvidence,

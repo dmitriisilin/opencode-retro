@@ -5,6 +5,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { DEFAULT_CAP, DEFAULT_HALF_LIFE, concludedIn, createStore, freshness, score, staleSessions } from "../src/lessons.js"
 import { parseFrontmatter } from "../src/frontmatter.js"
+import { renderProposal } from "../src/propose.js"
 
 const sandbox = () => {
   const root = mkdtempSync(join(tmpdir(), "retro-lessons-"))
@@ -496,10 +497,35 @@ test("two copies of a closed lesson in one extraction reopen it once, not twice"
   const [back] = store.list()
   assert.equal(back.recurrence, 2, "one independent session")
   assert.deepEqual(back.evidence, [
-    { session: "ses_a", steps: [9, 18] },
+    // Carried while the lesson was closed, when nothing kept its log: history, not a promise.
+    { session: "ses_a", steps: [9, 18], released: true },
     { session: "ses_b", steps: [9, 18] },
   ])
 })
+
+test("a lesson that comes back marks its earlier evidence as released, and does not send the reviewer to it", () => {
+  // While a lesson is decided or evicted no open lesson cites its logs, so decision 18 lets
+  // them go. Found by the model test: an accepted lesson reopened from a new session still
+  // cited the old one, and the hand-over — under a prompt promising the log is on disk —
+  // sent the agent to read steps in a file that was gone.
+  const s = sandbox()
+  const store = s.store()
+  store.record([lesson()], { session: "ses_old" })
+  store.close("lint-skill-no-config", "accepted", { note: "fixed" })
+  store.record([{ ...lesson(), steps: [4, 6] }], { session: "ses_new" })
+
+  const [back] = store.list()
+  assert.deepEqual(back.evidence, [
+    { session: "ses_old", steps: [9, 18], released: true },
+    { session: "ses_new", steps: [4, 6] },
+  ])
+
+  const text = renderProposal(back)
+  assert.match(text, /From `sessions\/ses_new\.jsonl` steps 4–6\./, "the current evidence is offered to read")
+  assert.doesNotMatch(text, /sessions\/ses_old\.jsonl/, "the released log is not")
+  assert.match(text, /Seen before it was closed in `ses_old` — those logs were released/)
+})
+
 
 test("an explicit match to an archived lesson beats an unrelated open lesson with the same id", () => {
   // `matches` is the extractor saying "this is that problem". It was only consulted when the

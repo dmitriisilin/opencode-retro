@@ -18,6 +18,16 @@ make true, and each one names the test that pins it, in backticks, by its exact 
 test breaks the document that depends on it, and an invariant with no test is visible as
 such — it says `(untested)`.
 
+## How they are exercised
+
+Beyond the tests each invariant cites, `test/model.test.js` walks random histories — turns,
+hooks, `/retro`, decisions, restarts, crashes mid-answer, replaced logs, a model that answers
+nothing or prose — through the real entry point, and checks the invariants after every step.
+A failure is shrunk to the shortest history that still fails; the ones found that way are
+kept in the same file as named tests, and cited here like any other. The audit cycles walked
+into new corners every time because the space is combinatorial; the walk is how that space
+is covered. `RETRO_MODEL_RUNS=1000 RETRO_MODEL_STEPS=60 npm test` is the deep run.
+
 ## How to change them
 
 Change the concept first, then the code, then the test — and cite the test here. If a

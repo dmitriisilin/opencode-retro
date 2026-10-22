@@ -190,6 +190,10 @@ test("every invariant in docs/concepts cites a test that exists", () => {
     for (const [, title] of read(`test/${file}`).matchAll(/^test\("((?:[^"\\]|\\.)*)"/gm)) {
       titles.add(title.replace(/\\"/g, '"'))
     }
+    // Histories the model test found are tests too, declared as keys of its FOUND table.
+    for (const [, title] of read(`test/${file}`).matchAll(/^  "((?:[^"\\]|\\.)*)": \[$/gm)) {
+      titles.add(title)
+    }
   }
 
   const missing = []

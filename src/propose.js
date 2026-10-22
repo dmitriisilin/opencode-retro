@@ -152,15 +152,21 @@ export function renderProposal(
 
   const evidence = Array.isArray(lesson.evidence) ? lesson.evidence : lesson.evidence ? [lesson.evidence] : []
   if (evidence.length) {
-    lines.push(
-      "",
-      "From " +
-        evidence
-          .map((e) => `\`sessions/${e.session}.jsonl\`${Array.isArray(e.steps) && e.steps.length ? ` steps ${e.steps.join("–")}` : ""}`)
-          .join(", ") +
-        ".",
-      "",
-    )
+    const cite = (e) =>
+      `\`sessions/${e.session}.jsonl\`${Array.isArray(e.steps) && e.steps.length ? ` steps ${e.steps.join("–")}` : ""}`
+    const current = evidence.filter((e) => !e?.released)
+    const earlier = evidence.filter((e) => e?.released)
+    if (current.length) lines.push("", "From " + current.map(cite).join(", ") + ".", "")
+    // Not presented as something to read: these logs were released while the lesson was
+    // closed, and the reviewer is told the log is on disk only where it is.
+    if (earlier.length) {
+      lines.push(
+        "Seen before it was closed in " +
+          earlier.map((e) => `\`${e.session}\``).join(", ") +
+          " — those logs were released then and may no longer be on disk.",
+        "",
+      )
+    }
   }
 
   lines.push(

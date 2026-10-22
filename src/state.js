@@ -183,6 +183,7 @@ export function createState({ path, onError, now = () => Date.now() }) {
         for (const id of rebased) {
           if (!(id in ownExtracted) && data.extracted[id]) data.extracted[id] = { ...data.extracted[id], size: 0 }
         }
+        const ownPending = new Map(data.pending.map((p) => [p.session, p]))
         data.looked = looked
 
         // An entry queued before an extraction is done once that extraction has covered it;
@@ -218,12 +219,23 @@ export function createState({ path, onError, now = () => Date.now() }) {
             held
               ? {
                   ...held,
-                  attempts: Math.max(held.attempts ?? 0, entry.attempts ?? 0),
+                  // The attempts of whichever entry is about the larger log: a count spent on a
+                  // smaller input says nothing about the larger one, and a plain maximum let a
+                  // stale writer's exhausted count retire material that had never been tried.
+                  attempts:
+                    (held.size ?? 0) === (entry.size ?? 0)
+                      ? Math.max(held.attempts ?? 0, entry.attempts ?? 0)
+                      : (held.size ?? 0) > (entry.size ?? 0)
+                        ? (held.attempts ?? 0)
+                        : (entry.attempts ?? 0),
                   size: Math.max(held.size ?? 0, entry.size ?? 0),
                 }
               : { ...entry },
           )
         }
+        // A rebased session's entry is this writer's own: the disk's copy carries the byte count
+        // of the file that was replaced, and maxing it back up undoes the rebase.
+        for (const id of rebased) if (ownPending.has(id)) queued.set(id, { ...ownPending.get(id) })
         data.pending = [...queued.values()]
           .filter((p) => !excluded.has(p.session))
           .filter((p) => !data.extracted[p.session] || (p.size ?? 0) > coveredSizeOf(p.session))
@@ -351,6 +363,15 @@ export function createState({ path, onError, now = () => Date.now() }) {
       rebased.add(session)
       delete data.looked[session]
       if (data.extracted[session]) data.extracted[session] = { ...data.extracted[session], size: 0 }
+      // The queue entry's size described the old file too. Left in place, a replacement that
+      // is smaller than its predecessor is never "covered": every extraction of the new file
+      // is compared against the old file's byte count, the merge brings the entry back, and
+      // one command read the same log for ever. Found by the model test, as a hang.
+      const held = data.pending.find((p) => p.session === session)
+      if (held) {
+        held.size = 0
+        held.attempts = 0
+      }
       save()
     },
 
@@ -470,6 +491,10 @@ export function createState({ path, onError, now = () => Date.now() }) {
         // before it.
         if ((size ?? 0) > (held.size ?? 0)) {
           held.size = size
+          // Attempts belong to the input they were spent on. The cap exists because a third
+          // try on the same log would pay for the same answer; a log that grew is a different
+          // input, and its new material has not failed anywhere yet.
+          held.attempts = 0
           changed = true
         }
       } else {

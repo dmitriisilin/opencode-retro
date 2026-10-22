@@ -55,6 +55,9 @@ per session either way — not with the age of the project.
   `a deliberate removal survives a merge that happens after compaction`
   `a rebased mark is not resurrected by the merge`
   `a rebase whose save failed is not undone by the next look`
+- A rebase voids every byte count about the old file — the mark, the extraction's coverage
+  and the queue entry's size — so a smaller replacement is not owed for ever.
+  `a log replaced by a smaller one is settled, and one command reads it once`
 - A mark about a replaced log is void everywhere, including for a writer that never saw
   the replacement.
   `a mark about a replaced log cannot be resurrected by a writer that never saw the replacement`

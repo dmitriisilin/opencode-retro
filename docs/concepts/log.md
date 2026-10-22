@@ -17,7 +17,11 @@ stream reaches every session in the project, including foreign ones, so an event
 
 **Step number (`n`).** The plugin's own counter, one per owner, continuous for the life of
 the file. It is the coordinate a lesson's evidence uses, so it must be unique within a
-file and must not restart when a new process appends to an existing log.
+file and must not restart when a new process appends to an existing log. The plugin is
+the only writer of its logs: the counter is read from the file when a process first
+writes to a session, so a log replaced by hand *while* the plugin is writing to that
+session can get duplicate numbers until the next restart. Replaced while the plugin is
+down, it is a different log and is read from its own start.
 
 **One call id, one record.** A tool call is identified by its `id`. A tool run through Code
 Mode's `execute` arrives as a second `before`/`after` pair under the same id as the inner
@@ -83,6 +87,8 @@ lesson cites it, nothing is owed for it, and its session is not live.
   `a log given up on after three attempts is not retried in the same command`
 - Settling keeps the step mark, because the session may be picked up again.
   `settling keeps the step mark, because the session may be picked up again`
+- A log given up on after three failures stays on disk, whatever else is pruned.
+  `a log given up on stays on disk, even when another log's success runs the pruning`
 - A log is kept while an open lesson cites it, and goes once that lesson is decided.
   `a log survives while a lesson cites it, and goes once that lesson is decided`
 - A log with an unread gap, a failed read, or growth since its mark is still owed, and no

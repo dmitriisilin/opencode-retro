@@ -41,8 +41,10 @@ coverage, never to the last step seen, so the gap is read next time rather than 
 A projection that covers no step past the mark has covered nothing new: it is a failed read,
 not an excerpt.
 
-**Attempt.** One analysis of one queued log. A log gets three; a successful excerpt is
-progress, not an attempt. After three failures the log is retired: its outcome recorded
+**Attempt.** One analysis of one queued log. A log gets three *on the same input*; a
+successful excerpt is progress, not an attempt, and a log that grows is a different input —
+the count starts again, because the cap exists so a fourth try does not pay for the same
+answer, and new material has not failed anywhere yet. After three failures the log is retired: its outcome recorded
 as failed, the log kept on disk, and the self-check names it. Retirement is decided before
 the queue is scanned, so a log that has grown since the third failure is new work and is
 read in the same command rather than waiting for the next one.
@@ -68,7 +70,10 @@ rather than retried.
 
 **Skipped.** A session of one prompt and no tool calls is not analysed: it cannot hold
 evidence of anything. Everything else is, including a conversation that ran no tools —
-that is where a wrong instruction file shows up.
+that is where a wrong instruction file shows up. On a re-read the rule is about what is
+*new*: a new reply is material even with no prompt and no tool call of its own, while a
+slice that is nothing but the prompts it carries, a hand-over the plugin wrote itself, or
+an end marker, still proves nothing.
 
 ## Invariants
 
@@ -121,6 +126,14 @@ that is where a wrong instruction file shows up.
   `the model the user is actually working with is the one used for analysis`
   `with no model configured, the workspace default is used`
   `a workspace default that cannot be read refuses with the remedy, not a hang`
+- A skip covers nothing: a session skipped as one exchange is read from its start once it
+  does real work.
+  `a session skipped as one exchange is read from its start once it does real work`
+- Attempts belong to the input they were spent on; material that arrives after failures
+  gets attempts of its own.
+  `material that arrives after failures gets attempts of its own`
+- One command reads each log at most once, whatever the outcome, so a command always ends.
+  `a log replaced by a smaller one is settled, and one command reads it once`
 - A session of one prompt and nothing done is skipped; anything more is read. On a re-read
   the question is what is *new*: a new reply is material even with no prompt or tool call,
   while a slice that is only the prompts it carries proves nothing.
