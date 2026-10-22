@@ -22,8 +22,8 @@ such — it says `(untested)`.
 
 Beyond the tests each invariant cites, `test/model.test.js` walks random histories — turns,
 hooks, delegations, `/retro`, decisions, restarts, crashes mid-answer and mid-append, slow
-models, replaced logs, lesson files and prompts edited by hand, a model that answers nothing
-or prose — through the real entry point, and checks the invariants after every step.
+models, replaced logs, lesson files and prompts edited by hand, weeks passing, two plugin
+instances on one project, a model that answers nothing or prose — through the real entry point, and checks the invariants after every step.
 A failure is shrunk to the shortest history that still fails; the ones found that way are
 kept in the same file as named tests, and cited here like any other. The audit cycles walked
 into new corners every time because the space is combinatorial; the walk is how that space
@@ -39,12 +39,12 @@ is wrong, out loud, rather than to make the code work and leave the concept behi
 
 | File | Owns the words |
 |---|---|
-| [session.md](session.md) | session, turn, live, over, invoking, foreign, delegation, root |
-| [log.md](log.md) | shadow log, record, owner, step number, the mark, owed, settled, pruned |
+| [session.md](session.md) | session, turn, quiet, foreign, delegation, root |
+| [log.md](log.md) | shadow log, record, owner, step number, the mark, owed, retired, pruned |
 | [analysis.md](analysis.md) | projection, budget, excerpt, coverage, attempt, failure |
 | [lesson.md](lesson.md) | lesson, evidence, recurrence, score, archive, reopen, restore, cap |
 | [handover.md](handover.md) | proposal, currency, decision, what a decision records |
 | [prompts.md](prompts.md) | prompt, layer, seed, base, news, the contract, fallback |
 | [config.md](config.md) | options, the layout, resolution, the capture clamp, the project's git |
-| [state.md](state.md) | state.json, merge, append-only, tombstone, log identity |
+| [state.md](state.md) | state.json, merge, marks, tombstone, log identity |
 | [selfcheck.md](selfcheck.md) | liveness, the three timestamps, what the report may claim |

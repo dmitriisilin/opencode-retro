@@ -10,12 +10,12 @@ const sandbox = () => {
   return { root, path: join(root, "state.json") }
 }
 
-test("a fresh state has nothing rejected, queued or extracted", () => {
+test("a fresh state has nothing rejected, read or extracted", () => {
   const s = sandbox()
   const state = createState({ path: s.path })
 
   assert.deepEqual(state.rejected, [])
-  assert.deepEqual(state.pending, [])
+  assert.deepEqual(state.looked("ses_none"), { n: 0, size: 0 })
   assert.equal(state.sessions, 0)
   assert.equal(state.wasExtracted("ses_none"), false)
 })
@@ -35,63 +35,6 @@ test("a rejection is remembered once, and outlives the process", () => {
   assert.match(reloaded.rejected[0].at, /^\d{4}-\d{2}-\d{2}T/, "and when it was rejected")
 })
 
-test("the queue is oldest first, deduped, and the running session is not its own debt", () => {
-  const s = sandbox()
-  const state = createState({ path: s.path })
-  state.queue("ses_a")
-  state.queue("ses_a")
-  state.queue("ses_b")
-
-  assert.deepEqual(state.pending.map((p) => p.session), ["ses_a", "ses_b"])
-  assert.equal(state.nextPending(null).session, "ses_a")
-  assert.equal(state.nextPending("ses_a").session, "ses_b")
-})
-
-test("a session that has already been extracted is never queued again", () => {
-  const s = sandbox()
-  const state = createState({ path: s.path })
-  state.markExtracted("ses_done", { ok: true, detail: "nothing to learn" })
-  state.queue("ses_done")
-
-  assert.deepEqual(state.pending, [])
-  assert.ok(state.wasExtracted("ses_done"))
-})
-
-test("markExtracted records the outcome and drops the session from the queue", () => {
-  const s = sandbox()
-  const state = createState({ path: s.path })
-  state.queue("ses_a")
-  state.queue("ses_b")
-  state.markExtracted("ses_a", { ok: false, detail: "unparseable reply" })
-
-  assert.deepEqual(state.pending.map((p) => p.session), ["ses_b"])
-
-  const reloaded = createState({ path: s.path })
-  const entry = JSON.parse(readFileSync(s.path, "utf8")).extracted.ses_a
-  assert.equal(entry.ok, false, "a failure is recorded as a failure")
-  assert.match(entry.detail, /unparseable/)
-  assert.ok(reloaded.wasExtracted("ses_a"))
-})
-
-test("skip is for one run, so a broken log cannot hold up the ones behind it", () => {
-  const s = sandbox()
-  const state = createState({ path: s.path })
-  for (const id of ["ses_a", "ses_b"]) state.queue(id)
-
-  assert.equal(state.nextPending(null, new Set(["ses_a"])).session, "ses_b")
-  assert.equal(state.nextPending(null, ["ses_a"]).session, "ses_b", "a plain array works too")
-})
-
-test("a session is given up on after three attempts, not billed forever", () => {
-  const s = sandbox()
-  const state = createState({ path: s.path })
-  state.queue("ses_a")
-  for (let i = 0; i < 3; i++) state.attempt("ses_a")
-
-  assert.equal(state.nextPending(null), null)
-  assert.equal(state.pending[0].attempts, 3, "the count is kept, so a restart does not restart the bill")
-})
-
 test("sessions are counted and persisted, because freshness is measured in them", () => {
   const s = sandbox()
   const state = createState({ path: s.path })
@@ -101,18 +44,6 @@ test("sessions are counted and persisted, because freshness is measured in them"
   assert.equal(createState({ path: s.path }).sessions, 2)
 })
 
-test("pending hands out copies, so a caller cannot corrupt the queue in place", () => {
-  const s = sandbox()
-  const state = createState({ path: s.path })
-  state.queue("ses_a")
-
-  const copy = state.pending
-  copy[0].attempts = 99
-  copy.push({ session: "invented" })
-  assert.equal(state.pending[0].attempts, 0)
-  assert.equal(state.pending.length, 1)
-})
-
 test("a corrupt state file starts clean instead of refusing to run", () => {
   // The plugin is not allowed to break the user's session over its own bookkeeping.
   const s = sandbox()
@@ -120,23 +51,22 @@ test("a corrupt state file starts clean instead of refusing to run", () => {
   const state = createState({ path: s.path })
 
   assert.deepEqual(state.rejected, [])
-  assert.deepEqual(state.pending, [])
   assert.equal(state.sessions, 0)
 
-  state.queue("ses_a")
-  assert.deepEqual(createState({ path: s.path }).pending.map((p) => p.session), ["ses_a"], "and it can still save")
+  state.look("ses_a", { n: 1, size: 10 })
+  assert.deepEqual(createState({ path: s.path }).looked("ses_a"), { n: 1, size: 10 }, "and it can still save")
 })
 
 test("a hand-edited file with the wrong shapes is repaired, not trusted", () => {
   const s = sandbox()
   writeFileSync(
     s.path,
-    JSON.stringify({ version: 1, rejected: "nope", pending: {}, extracted: "nope", sessions: "twelve" }),
+    JSON.stringify({ version: 1, rejected: "nope", pending: {}, extracted: "nope", looked: "nope", sessions: "twelve" }),
   )
   const state = createState({ path: s.path })
 
   assert.deepEqual(state.rejected, [])
-  assert.deepEqual(state.pending, [])
+  assert.deepEqual(state.looked("anything"), { n: 0, size: 0 })
   assert.equal(state.wasExtracted("anything"), false)
   assert.equal(state.sessions, 0)
 })
@@ -158,7 +88,7 @@ test("a save merges with the file instead of overwriting another writer", () => 
   // belongs to, so losing it silently is the worst case this file has.
   const path = join(mkdtempSync(join(tmpdir(), "retro-state-merge-")), "state.json")
   const mine = createState({ path })
-  mine.queue("ses_a")
+  mine.look("ses_a", { n: 4, size: 400 })
 
   // Somebody else records a rejection and an extraction while we hold our own copy.
   const theirs = createState({ path })
@@ -175,23 +105,10 @@ test("a save merges with the file instead of overwriting another writer", () => 
     "the other writer's rejection survived our save",
   )
   assert.ok(saved.extracted.ses_b, "and its extraction")
-  // The larger of the two, not the sum: two writers counting the same session must not count
-  // it twice, and freshness only needs the counter to move forward.
-  assert.equal(saved.sessions, 1, "the counter never goes backwards")
-  assert.deepEqual(saved.pending.map((p) => p.session), ["ses_a"], "our own queue is ours")
-})
-
-test("an entry the file says is extracted leaves our queue on the next save", () => {
-  const path = join(mkdtempSync(join(tmpdir(), "retro-state-merge2-")), "state.json")
-  const mine = createState({ path })
-  mine.queue("ses_a")
-  mine.queue("ses_b")
-
-  createState({ path }).markExtracted("ses_a", { ok: true, detail: "done elsewhere" })
-  mine.countSession()
-
-  const saved = JSON.parse(readFileSync(path, "utf8"))
-  assert.deepEqual(saved.pending.map((p) => p.session), ["ses_b"], "no work is done twice")
+  // Each writer takes in the other's copy before counting, so two anonymous counts made one
+  // after the other are two — and the counter never goes backwards.
+  assert.equal(saved.sessions, 2, "the counter never goes backwards")
+  assert.deepEqual([saved.looked.ses_a.n, saved.looked.ses_a.size], [4, 400], "and our own mark is ours")
 })
 
 test("the step mark only moves forward, and an old byte-count file still loads", () => {
@@ -199,9 +116,11 @@ test("the step mark only moves forward, and an old byte-count file still loads",
   const path = join(dir, "state.json")
 
   // A state.json written before the offset existed holds a bare byte count.
-  writeFileSync(path, JSON.stringify({ version: 1, rejected: [], extracted: {}, pending: [], sessions: 3, looked: { ses_a: 4096 } }))
+  writeFileSync(path, JSON.stringify({ version: 1, rejected: [], extracted: {}, pending: [{ session: "ses_a" }], sessions: 3, looked: { ses_a: 4096 } }))
   const state = createState({ path })
   assert.deepEqual(state.looked("ses_a"), { n: 0, size: 4096 }, "read as 'nothing analysed, this much sent'")
+  state.countSession()
+  assert.equal(JSON.parse(readFileSync(path, "utf8")).pending, undefined, "and the old queue is not carried forward")
 
   state.look("ses_a", { n: 30, size: 8192 })
   assert.deepEqual(state.looked("ses_a"), { n: 30, size: 8192 })
@@ -229,70 +148,6 @@ test("settling keeps the step mark, because the session may be picked up again",
   assert.deepEqual(createState({ path: s.path }).looked("ses_a"), { n: 12, size: 4096 }, "and after a reload")
 })
 
-test("a rebased mark is not resurrected by the merge", () => {
-  // A pruned log written again under the same id starts at step 1 and is shorter than the
-  // mark. A size that only ever grows would then call the new file already read, for ever.
-  const s = sandbox()
-  const state = createState({ path: s.path })
-  state.look("ses_a", { n: 40, size: 9000 })
-  state.rebase("ses_a")
-
-  assert.deepEqual(state.looked("ses_a"), { n: 0, size: 0 }, "forgotten, not maxed")
-  assert.deepEqual(createState({ path: s.path }).looked("ses_a"), { n: 0, size: 0 }, "and the write wins over the old file")
-
-  state.look("ses_a", { n: 3, size: 120 })
-  assert.deepEqual(state.looked("ses_a"), { n: 3, size: 120 }, "and the new file can be read from its own start")
-})
-
-test("an entry queued before an extraction is done; one queued for later work is not", () => {
-  const s = sandbox()
-  const state = createState({ path: s.path })
-
-  // Settled at byte 100. A run of the queue that predates that settle is stale work.
-  state.look("ses_a", { n: 10, size: 100 })
-  state.markExtracted("ses_a", { ok: true, detail: "done" })
-  state.queue("ses_a", 90)
-  assert.deepEqual(state.pending, [], "the extraction covered what was queued")
-
-  // The session was prompted again and wrote past where the analysis stopped.
-  state.queue("ses_a", 240)
-  assert.deepEqual(state.pending.map((p) => p.session), ["ses_a"], "new material is owed")
-  assert.deepEqual(
-    createState({ path: s.path }).pending.map((p) => p.session),
-    ["ses_a"],
-    "and a reload does not drop it as though it had been extracted",
-  )
-})
-
-test("re-queueing a session for later material records the size it is owed at", () => {
-  // `size` is what the merge compares an extraction against. Keeping the first, smaller
-  // number meant a later end could be queued at 240 bytes and still be recorded as 100 — and
-  // an extraction covering 150 would then be thought to have answered it.
-  const s = sandbox()
-  const state = createState({ path: s.path })
-
-  state.queue("ses_a", 100)
-  state.queue("ses_a", 240)
-  assert.equal(state.pending[0].size, 240, "the entry says how much log is owed")
-  assert.equal(createState({ path: s.path }).pending[0].size, 240, "and the file agrees")
-
-  state.queue("ses_a", 120)
-  assert.equal(state.pending[0].size, 240, "a smaller re-queue does not shrink a debt")
-})
-
-test("a rebase also clears what the old extraction covered", () => {
-  // The extraction's byte size describes the file that was replaced. A shorter new log would
-  // otherwise look already covered and be dropped from the queue on the next save.
-  const s = sandbox()
-  const state = createState({ path: s.path })
-  state.look("ses_a", { n: 40, size: 9000 })
-  state.markExtracted("ses_a", { ok: true, detail: "done", size: 9000 })
-  state.rebase("ses_a")
-  state.queue("ses_a", 30)
-
-  assert.deepEqual(state.pending.map((p) => p.session), ["ses_a"], "new bytes are not covered by an extraction of the old file")
-})
-
 test("a session is counted once, however many times it runs", () => {
   // Freshness is counted in sessions, and OpenCode emits an execution per prompt: a session
   // left open and prompted five times is still one session, and counting turns would age the
@@ -306,29 +161,6 @@ test("a session is counted once, however many times it runs", () => {
   assert.equal(createState({ path: s.path }).sessions, 3, "and the count survives a restart")
 })
 
-
-test("two writers' queues are merged, so neither loses what the other owed", () => {
-  // A lost queue entry is a session nobody analyses: the log sits there and nothing is owed
-  // for it. Entries only ever leave through an extraction, which the coverage filter already
-  // expresses, so a union cannot resurrect one that was removed on purpose.
-  const path = join(mkdtempSync(join(tmpdir(), "retro-queue-merge-")), "state.json")
-  const mine = createState({ path })
-  mine.queue("ses_a", 100)
-  mine.attempt("ses_a")
-
-  const theirs = createState({ path })
-  theirs.queue("ses_b", 200)
-
-  mine.queue("ses_c", 300)
-
-  const saved = JSON.parse(readFileSync(path, "utf8"))
-  assert.deepEqual(
-    saved.pending.map((p) => p.session).sort(),
-    ["ses_a", "ses_b", "ses_c"],
-    "both writers' debts survive",
-  )
-  assert.equal(saved.pending.find((p) => p.session === "ses_a").attempts, 1, "and the attempt count is not reset")
-})
 
 test("two writers counting different sessions count two, not one", () => {
   // The counter used to be merged as a maximum. Two instances that each counted a different
@@ -365,49 +197,6 @@ test("a session discovered to be a subagent is taken back out of the counter", (
   assert.equal(saved.sessions, 1, "only the real session is left")
   assert.equal(saved.counted.ses_child, undefined, "and the stale writer cannot put it back")
   assert.deepEqual(Object.keys(saved.counted), ["ses_other"])
-})
-
-test("a session removed from the queue stays removed even if another writer queued it", () => {
-  // The removal tombstone used to be cleared when *our* copy had no entry to remove. The
-  // entry can exist only on disk — the other instance queued the child before we learned it
-  // was a child — and the queue union would then bring it straight back.
-  const path = join(mkdtempSync(join(tmpdir(), "retro-unqueue-merge-")), "state.json")
-  const mine = createState({ path })
-  const theirs = createState({ path })
-  theirs.queue("ses_child", 100)
-
-  mine.unqueue("ses_child")
-  mine.countSession("ses_x") // any later save
-
-  const saved = JSON.parse(readFileSync(path, "utf8"))
-  assert.deepEqual(saved.pending, [], "the child is not owed an analysis")
-  assert.deepEqual(createState({ path }).pending, [], "and a reload agrees")
-})
-
-test("a rebase whose save failed is not undone by the next look", () => {
-  // `look` used to clear the rebase tombstone before saving. If the rebase itself could not
-  // be written, the next successful merge maxed the new, smaller mark against the old one
-  // still on disk and the replaced log became invisible for ever.
-  const dir = mkdtempSync(join(tmpdir(), "retro-rebase-fail-"))
-  const path = join(dir, "state.json")
-  const errors = []
-  const state = createState({ path, onError: (where) => errors.push(where) })
-
-  state.look("ses_a", { n: 40, size: 9000 })
-  const old = readFileSync(path, "utf8")
-
-  rmSync(path)
-  mkdirSync(path) // makes the rebase's write fail with EISDIR
-  state.rebase("ses_a")
-  assert.deepEqual(state.looked("ses_a"), { n: 0, size: 0 }, "forgotten in memory")
-  assert.deepEqual(errors, ["state.save"], "and the failure was reported, not thrown")
-
-  rmSync(path, { recursive: true })
-  writeFileSync(path, old) // the old mark survives on disk, as it would after a failed write
-  state.look("ses_a", { n: 3, size: 120 })
-
-  assert.deepEqual(state.looked("ses_a"), { n: 3, size: 120 }, "the new file's own mark, not the old one")
-  assert.deepEqual(createState({ path }).looked("ses_a"), { n: 3, size: 120 }, "and the write wins")
 })
 
 test("an open mark survives a save and is cleared by a read that reaches the end", () => {
@@ -451,29 +240,24 @@ test("bookkeeping about a session is dropped once nothing can refer to it", () =
   const path = join(mkdtempSync(join(tmpdir(), "retro-compact-")), "state.json")
   const state = createState({ path })
 
-  state.queue("ses_gone", 10)
-  state.unqueue("ses_gone")
   state.countSession("ses_gone")
   state.uncountSession("ses_gone")
   state.look("ses_gone", { n: 1, size: 10, id: "f" })
   state.markExtracted("ses_gone", { ok: true, detail: "x" })
 
   state.look("ses_kept", { n: 1, size: 10, id: "g" })
-  state.queue("ses_owed", 5)
   // A session counted long ago, whose log is gone and which nothing owes. Its identity is
   // not bookkeeping: a session left open can be prompted again months later, and folding it
   // away would count it a second time and make everything look fresher than it is.
   state.countSession("ses_counted_only")
 
-  state.compact((id) => id === "ses_kept" || id === "ses_owed")
+  state.compact((id) => id === "ses_kept")
 
   const saved = JSON.parse(readFileSync(path, "utf8"))
-  assert.equal(saved.unqueued.includes("ses_gone"), true, "the tombstones are the defence against a stale writer")
-  assert.equal(saved.uncounted.includes("ses_gone"), true)
+  assert.equal(saved.uncounted.includes("ses_gone"), true, "the tombstone is the defence against a stale writer")
   assert.equal(saved.looked.ses_gone, undefined, "the mark is bookkeeping and goes")
   assert.equal(saved.extracted.ses_gone, undefined, "so does the extraction outcome")
   assert.ok(saved.looked.ses_kept, "what can still be referred to stays")
-  assert.deepEqual(saved.pending.map((p) => p.session), ["ses_owed"], "and so does a debt")
   assert.equal(saved.counted.ses_counted_only, true, "but a counted session keeps its identity")
   assert.equal(saved.sessions, 1, "so the session count still means what it says")
 })
@@ -487,10 +271,8 @@ test("a deliberate removal survives a merge that happens after compaction", asyn
   const path = join(mkdtempSync(join(tmpdir(), "retro-tombstone-compact-")), "state.json")
   const mine = createState({ path })
   const stale = createState({ path })
-  stale.queue("ses_child", 100)
   stale.countSession("ses_child")
 
-  mine.unqueue("ses_child")
   mine.uncountSession("ses_child")
   mine.countSession("ses_other")
   mine.compact((id) => id === "ses_other")
@@ -498,8 +280,7 @@ test("a deliberate removal survives a merge that happens after compaction", asyn
   stale.countSession("ses_other") // any save at all, from the writer that never learned
   const saved = JSON.parse(readFileSync(path, "utf8"))
 
-  assert.deepEqual(saved.pending, [], "the child is not owed an analysis")
-  assert.equal(saved.counted.ses_child, undefined, "and it is not a session again")
+  assert.equal(saved.counted.ses_child, undefined, "the child is not a session again")
   assert.equal(saved.sessions, 1, "freshness counts the real session only")
 })
 
@@ -529,24 +310,78 @@ test("a stale writer cannot clear a mark flag at the same step", () => {
   assert.equal(saved.ses_open.open, true, "and the excerpt is still owed now")
 })
 
-test("a queue entry queued again after an extraction is not lost by the merge", () => {
-  // The union took the *smaller* queued size for a session both writers held, on the theory
-  // that it was the conservative one. It is the opposite: if one writer queued a session at
-  // 100 bytes and another queued the same session again at 200 after an extraction covered
-  // 150, the minimum makes the entry look covered by that extraction and the union drops it.
-  // The debt those two entries describe is the larger one — the log has material past 150.
-  const path = join(mkdtempSync(join(tmpdir(), "retro-queue-remerge-")), "state.json")
+test("two writers' marks are merged, so neither loses what the other read", () => {
+  // There is no queue: what is owed is computed from each log and its mark. So the marks are
+  // the whole of the debt, and losing one is reading a log twice or, worse, never reading
+  // what another writer left open.
+  const path = join(mkdtempSync(join(tmpdir(), "retro-marks-merge-")), "state.json")
+  const mine = createState({ path })
+  const theirs = createState({ path })
+  mine.look("ses_a", { n: 4, size: 400, id: "a" })
+  theirs.look("ses_b", { n: 0, size: 200, failed: true, attempts: 2, id: "b" })
+  mine.look("ses_a", { n: 6, size: 600, id: "a" })
 
-  const stale = createState({ path })
-  stale.queue("ses_s", 100)
-
-  const fresh = createState({ path })
-  fresh.markExtracted("ses_s", { ok: true, detail: "read to 150", size: 150 })
-  fresh.queue("ses_s", 200)
-
-  stale.countSession("ses_other") // any save at all, from the writer that loaded before
-
-  const saved = JSON.parse(readFileSync(path, "utf8"))
-  assert.deepEqual(saved.pending.map((p) => p.session), ["ses_s"], "the retry for the later material survives")
-  assert.ok(saved.pending[0].size > 150, "queued at a size the extraction did not cover")
+  const saved = JSON.parse(readFileSync(path, "utf8")).looked
+  assert.deepEqual(saved.ses_a, { n: 6, size: 600, id: "a", at: saved.ses_a.at })
+  assert.equal(saved.ses_b.failed, true, "the other writer's failure is still owed")
+  assert.equal(saved.ses_b.attempts, 2, "with the attempts it has spent")
 })
+
+test("attempts belong to the input they were spent on", () => {
+  const s = sandbox()
+  const state = createState({ path: s.path })
+  state.look("ses_a", { size: 100, failed: true, attempts: 2 })
+  assert.equal(state.looked("ses_a").attempts, 2)
+  state.look("ses_a", { size: 100, failed: true })
+  assert.equal(state.looked("ses_a").attempts, 2, "the same input keeps its count")
+  state.look("ses_a", { size: 180, failed: true })
+  assert.equal(state.looked("ses_a").attempts, undefined, "a log that grew is a different input")
+})
+
+test("a mark about a log that is gone or was replaced does not survive a merge", () => {
+  // The writer that never saw a log pruned or replaced still holds the old mark. The merge
+  // asks the disk which file is there now, so the old numbers cannot come back and make the
+  // new log look read — the job the `rebased` tombstone used to do, for one writer only.
+  const dir = mkdtempSync(join(tmpdir(), "retro-probe-"))
+  const path = join(dir, "state.json")
+  const files = { ses_kept: { id: "k", size: 100 }, ses_replaced: { id: "new", size: 50 } }
+  const probe = (id) => files[id] ?? null
+
+  const stale = createState({ path, probe })
+  stale.look("ses_kept", { n: 3, size: 100, id: "k" })
+  stale.look("ses_replaced", { n: 9, size: 900, id: "old" })
+  stale.look("ses_pruned", { n: 2, size: 20, id: "p" })
+  stale.countSession("ses_other")
+
+  const saved = JSON.parse(readFileSync(path, "utf8")).looked
+  assert.ok(saved.ses_kept, "a mark about the file on disk stays")
+  assert.equal(saved.ses_replaced, undefined, "a mark about a different file goes")
+  assert.equal(saved.ses_pruned, undefined, "and so does one about a file that is gone")
+})
+
+test("a later outcome wins the merge, whichever writer holds it", () => {
+  const path = join(mkdtempSync(join(tmpdir(), "retro-outcome-merge-")), "state.json")
+  const stale = createState({ path })
+  stale.markExtracted("ses_a", { ok: true, detail: "read" })
+  const fresh = createState({ path })
+  fresh.markExtracted("ses_a", { ok: false, detail: "given up after three failed analyses" })
+
+  stale.countSession("ses_other") // any save, from the writer holding the older outcome
+  assert.equal(JSON.parse(readFileSync(path, "utf8")).extracted.ses_a.ok, false, "the newer outcome stands")
+})
+
+test("a writer reads what another saved since, not only what it loaded", () => {
+  // Reads used to come from memory, refreshed only by the reader's own next save: a second
+  // instance counted a third failure as a first and re-read what the other had just read.
+  const path = join(mkdtempSync(join(tmpdir(), "retro-refresh-")), "state.json")
+  const mine = createState({ path })
+  const theirs = createState({ path })
+  theirs.look("ses_a", { n: 7, size: 700, failed: true, attempts: 2, id: "a" })
+
+  assert.deepEqual(
+    [mine.looked("ses_a").n, mine.looked("ses_a").attempts],
+    [7, 2],
+    "the other writer's mark is seen without saving anything first",
+  )
+})
+

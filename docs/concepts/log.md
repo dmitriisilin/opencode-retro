@@ -39,21 +39,31 @@ rendered as one.
   as far as that analysis *covered* (see analysis.md). The next read starts after it.
 - `size` — the largest byte count already sent, success or failure. A log no larger than
   this has nothing new in it.
-- `open` — a successful analysis covered a prefix and left a gap. Owed **now**.
-- `failed` — the last read of this log failed and nothing settled it. Owed **later**.
+- `open` — a successful analysis covered a prefix and left a gap. Owed now.
+- `failed` — the last read of this log failed. Owed now, while attempts are left.
+- `attempts` — failed reads of the log at this `size`. Growth resets it: new material has
+  not failed anywhere yet.
 - `id` — the identity of the file the mark describes (see state.md). A mark about a
   different file is void. A mark written before identities existed is voided by the one
   other safe signal: a byte count larger than the file on disk.
 
 **Owed.** A log the plugin still has to read: its size grew past the mark, or the mark is
-`open`, or the mark is `failed`. Owed is the only reason an analysis happens.
+`open`, or the mark is `failed` with attempts left. Owed is computed from the file and its
+mark, every time — there is no queue to fall out of step with them — and it is the only
+reason an analysis happens. The plugin's own hand-over, written into a log that was read to its end,
+does not make it owed: it is not material (analysis.md), and the next read carries it along
+with whatever follows.
 
-**Settled.** A session whose log has been analysed to its end and whose outcome is
-recorded in `state.extracted`. Settled is not permanent: a session prompted again grows
-past its mark and is owed again.
+**Read to its end.** A log whose mark covers its whole size with neither flag set. Not
+permanent: a session prompted again grows past its mark and is owed again.
 
-**Pruned.** Removed from disk. A log is pruned when nothing can ask about it: no open
-lesson cites it, nothing is owed for it, and its session is not live.
+**Retired.** A log that failed three reads at the same size. Not owed; its failure is
+recorded and named in the self-check. It is owed again if it grows.
+
+**Pruned.** Removed from disk. A log is pruned when it is quiet (session.md: unwritten for
+seven days), nothing is owed for it, and no open lesson cites it. A retired log goes the
+same way, so a log the model could never answer does not stay for ever. `keepSessions`
+keeps everything.
 
 ## Invariants
 
@@ -71,38 +81,48 @@ lesson cites it, nothing is owed for it, and its session is not live.
   `a tool run through execute is one call, not two records with the same id`
 - The hand-over the plugin delivers is in the session's own log, as a hand-over.
   `the hand-over the plugin delivers is in the session's own log`
-- A working session is read, and nothing about it is settled.
-  `a session still working is read, and nothing about it is settled`
+- A working session is read as far as it goes, and owed the rest when it writes more.
+  `a session still working is read, and owed the rest when it writes more`
 - A second look reads only what is new, and carries the prompts whatever their step.
   `a second look at a session reads only what is new since the first`
 - Nothing is paid for twice: a log no larger than its mark is not sent again.
   `a working session is not read again until its log has grown`
+- The plugin's own hand-over does not make a log owed.
+  `the plugin's own hand-over does not make a log owed`
 - An excerpt is owed now: read again without growth, and not pruned first.
   `an excerpted log is read again without growing, and is not pruned first`
-- A failed read of a live session is owed later: not re-read until the log grows, and
-  queued the moment the session is over.
-  `a failed read of a live session is owed, not forgotten`
+- A failed read is owed: tried again on the next command, up to three times at one size.
+  `a failed read is owed, and tried again on the next command`
 - Nothing is marked as read until the read completes. A read that never returns leaves the
   debt that started it in place, so the log is owed again rather than looking sent.
   `a read that never returns leaves the log owed, not marked as read`
 - A success clears the failure on the mark; retirement clears both flags. A flag that
-  outlives either re-queues a log nobody owes.
+  outlives either makes a log owed that nobody owes.
   `a successful read clears the failure the mark was carrying`
   `a log given up on after three attempts is not retried in the same command`
-- Settling keeps the step mark, because the session may be picked up again.
+- Reading a log to its end keeps the step mark, because the session may be picked up again.
   `settling keeps the step mark, because the session may be picked up again`
-- A log given up on after three failures stays on disk, whatever else is pruned.
+- A log given up on after three failures stays on disk until it is quiet, whatever else is
+  pruned.
   `a log given up on stays on disk, even when another log's success runs the pruning`
-- A log is kept while an open lesson cites it, and goes once that lesson is decided.
+  `a log given up on goes once it has been quiet for seven days`
+- A log is kept while an open lesson cites it, and goes once that lesson is decided and the
+  log is quiet.
   `a log survives while a lesson cites it, and goes once that lesson is decided`
+- A log is pruned only when it is quiet, read to its end, and cited by no open lesson;
+  anything less keeps it. A log nobody has read is never pruned, however old.
+  `a log written in the last seven days is not pruned, whatever else is true of it`
+  `a log nobody has read is kept, however old`
+- A session picked up after its log was pruned starts a new log, read from its start.
+  `a session picked up after its log was pruned is read from the start of its new log`
 - A log with an unread gap, a failed read, or growth since its mark is still owed, and no
   decision may prune it.
   `a log that is still owed is not pruned by a decision`
 - A log that nothing cites is still kept when `keepSessions` says so.
   `keepSessions keeps a log that nothing cites, because losing it is not recoverable`
-- A log whose session is over but whose end was never seen is finished, and joins the
-  queue.
-  `a log left behind by a server that stopped is finished, and is treated as such`
+- A log whose end was never seen — a server that stopped, a turn resumed over the API — is
+  read like any other: nothing waits for an end.
+  `a log left behind by a server that stopped is read like any other`
 - A replaced file is a different log: read from its own start, whatever its size or
   numbering, and no mark about the old file survives.
   `a mark belongs to one log: a replaced file is read from its own start, whatever its size or numbering`

@@ -20,7 +20,7 @@ export const DEFAULTS = {
   halfLife: 10,
   /** Keep the shadow log after a successful extraction. Off — the lesson carries the story. */
   keepSessions: false,
-  /** Give up on a silent model call rather than wedging the queue behind it. */
+  /** Give up on a silent model call rather than wedging the command behind it. */
   extractTimeoutMs: 90_000,
   /** Lessons carried by one `/retro all`. Beyond this a plan stops being a plan. */
   proposeLimit: 10,

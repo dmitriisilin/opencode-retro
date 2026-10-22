@@ -1,9 +1,9 @@
-<!-- translated-from: README.md@eb7e67ef3055 -->
+<!-- translated-from: README.en.md@1a3a6c6d30fe -->
 # opencode-retro
 
-[English](README.md) | [Русский](README.ru.md) | [简体中文](README.zh-CN.md) | **Español** | [日本語](README.ja.md)
+[Русский](README.md) | [English](README.en.md) | [简体中文](README.zh-CN.md) | **Español** | [日本語](README.ja.md)
 
-> Traducción de `README.md`. La versión en inglés es la canónica (canonical); si discrepan, prevalece ella.
+> Traducción de [`README.en.md`](README.en.md). La versión en inglés es la canónica (canonical); si discrepan, prevalece ella.
 
 Retrospectivas para agentes de programación. Un plugin de [OpenCode](https://opencode.ai) v2 que lee el diálogo de una sesión terminada, encuentra en él lo que puede mejorar el trabajo del agente y lo convierte en cambios propuestos al propio entorno del proyecto: sus skills, sus instrucciones, sus herramientas.
 
@@ -40,7 +40,7 @@ Cuando una sesión termina, su log se conserva y, por omisión, no ocurre nada m
 
 Cada log se analiza en una sesión propia, creada para esa única llamada y eliminada después: entra el log, no intervienen agente, historial ni herramientas, y sale texto. El agente que hizo el trabajo queda excluido a propósito, porque defendería sus propias decisiones.
 
-Las sesiones que aún no han terminado también se leen, incluida aquella en la que se ejecutó el comando: su fricción es la más reciente que hay. Nada queda zanjado sobre ellas, eso sí. El log no se marca como analizado, porque la sesión todavía tiene algo que decir, y no se elimina mientras la sesión siga trabajando. Una sesión en curso se vuelve a leer solo cuando su log ha crecido, y entonces solo la parte nueva: lo que ya se convirtió en lección no se analiza otra vez. Lo normal es dejar las sesiones abiertas y volver a ellas, así que de otro modo un `/retro` semanas después releería todo y volvería a deducir lecciones sobre las que ya se trabajó.
+Las sesiones que aún no han terminado también se leen, incluida aquella en la que se ejecutó el comando: su fricción es la más reciente que hay. Leerlas no cierra nada. El plugin recuerda hasta dónde se leyó cada log, y lo que la sesión escriba después se lee en un `/retro` posterior, y solo esa parte: lo que ya se convirtió en lección no se analiza otra vez. Lo normal es dejar las sesiones abiertas y volver a ellas, así que de otro modo un `/retro` semanas después releería todo y volvería a deducir lecciones sobre las que ya se trabajó. El plugin no necesita saber si una sesión sigue en marcha: todo lo que sabe está en disco, en `.retro/`, así que un reinicio, un fallo o un segundo OpenCode sobre el mismo proyecto no cambian nada de lo que se lee.
 
 Solo se omite sin llamada la sesión que no puede contener evidencia de nada: una instrucción, una respuesta, nada hecho. Una conversación sin ninguna llamada a herramientas sí se analiza, porque es justo ahí donde se manifiesta un archivo de instrucciones equivocado: una respuesta errónea y una corrección, sin nada ejecutado.
 
@@ -206,7 +206,7 @@ Todo lo que el plugin escribe se queda bajo `.retro/` dentro del proyecto, y en 
     extract.md       qué cuenta como lección
     propose.md       cómo se entrega una lección, una o todas
     updates/         valores por omisión más nuevos, sin usar
-  sessions/          logs en bruto, se conservan mientras una lección abierta los cite
+  sessions/          logs en bruto, se conservan mientras no se hayan leído, una lección los cite o se haya escrito en ellos esta semana
   lessons/           cuestiones abiertas
   archive/           lecciones aceptadas, rechazadas y desalojadas
   selfcheck.md       si el plugin funciona
@@ -215,7 +215,7 @@ Todo lo que el plugin escribe se queda bajo `.retro/` dentro del proyecto, y en 
   .gitignore         se siembra una vez y pasa a ser tuyo
 ```
 
-Un log permanece en disco mientras alguna lección abierta lo cite. La evidencia de una lección nombra una sesión y un rango de pasos, y durante la revisión la pregunta «¿qué pasó realmente ahí?» tiene que tener una respuesta que no sea un resumen. Cuando todas las lecciones que citan un log han sido decididas, el log se elimina. El crecimiento lo marca el número de lecciones abiertas, que está acotado, y no la edad del proyecto.
+Un log se elimina cuando se cumplen tres cosas: se ha leído hasta el final, ninguna lección abierta lo cita y nadie ha escrito en él durante siete días. La evidencia de una lección nombra una sesión y un rango de pasos, y durante la revisión la pregunta «¿qué pasó realmente ahí?» tiene que tener una respuesta que no sea un resumen, así que un log citado se queda. Los siete días son lo que hace seguro eliminar sin saber si una sesión sigue en marcha: una sesión que sigue escribiendo conserva su log, y una que se retoma tras una semana en silencio empieza un log nuevo, que se lee desde el principio. Un log que nadie ha leído no se elimina nunca, por antiguo que sea. El crecimiento lo marcan el número de lecciones abiertas, que está acotado, y una semana de sesiones, no la edad del proyecto.
 
 No hay nada que añadir al `.gitignore` del proyecto. En la primera ejecución el plugin escribe `.retro/.gitignore`, y git lo aplica a todo lo que hay debajo: las sesiones, el estado, la autocomprobación, el log del plugin, los avisos de actualización de prompts y cualquier archivo `.tmp` a medio escribir que deje un fallo quedan ignorados, mientras que `lessons/`, `archive/` y los archivos de prompt vigentes no. Ese archivo se siembra una vez y a partir de entonces es del proyecto.
 

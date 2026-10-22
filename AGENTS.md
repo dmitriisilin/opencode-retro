@@ -1,6 +1,6 @@
 # AGENTS.md — opencode-retro
 
-Context for any coding agent (OpenCode, Claude Code, …) working on this repo. Read this first; README.md is the public-facing pitch, this file is the working brief.
+Context for any coding agent (OpenCode, Claude Code, …) working on this repo. Read this first; the README (`README.en.md`, canonical; `README.md` is its Russian translation and the default page) is the public-facing pitch, this file is the working brief.
 
 **What things *are* is in [`docs/concepts/`](docs/concepts/README.md), and that is the place
 to change first.** This file records how things came to be — decisions, measured API facts,
@@ -39,9 +39,10 @@ Motivating example: a project carries a `lint` skill borrowed from another harne
 16. **A lesson is checked for currency before it is proposed.** A lesson can sit for weeks, and by the time anyone looks the thing it complains about may be fixed, moved or gone. Proposing a fix for a problem that no longer exists wastes the attention this plugin exists to save. So `/retro` runs a cheap deterministic check first — is the target file gone, or changed since the lesson was recorded (a content fingerprint taken at extraction time) — and when it has, the proposal carries that warning at the top. It never decides on its own: a changed file is a reason to look, not proof. The other half is the agent receiving the proposal, which is told to verify the claims against the repository before relaying them, and does it well.
 17. **Decided means closed, and closed means archived — and a rejection is closed for good.** A problem the user rejected does not come back, whichever way the extractor arrives at it: `state.rejected` is told to the extractor and filters its answer, and `record()` refuses to reopen a lesson the archive has as `rejected`. Both, because the list is one file away from being lost — it *was* lost here, to a stale whole-file write, and the archive is the record of the decision itself. An **accepted** lesson that comes back is a different matter and does reopen: that is the news that the fix did not hold.
 17. **Decided means closed, and closed means archived.** `lessons/` holds open questions only; accepting or rejecting moves the file to `archive/`. Nothing is deleted, because recurrence consults the archive: a problem that comes back after being closed is the same problem *plus* the news that the fix did not hold, so it is reopened with its history and a `reopenedFrom` marker rather than started over at recurrence 1. `later` stays open. **Cap eviction is not a decision:** overflow past the cap also lands in `archive/`, but keeps `status: new`, and recurrence restores it as an open question without a `reopenedFrom` claim that a fix failed. That distinction is why `concludedIn()` leaves evicted lessons out of the "already concluded" note.
-18. **A log lives as long as an open lesson cites it — and always while its session works.** Every lesson carries `evidence` as a session id and a step range, and during review the human may ask what actually happened at those steps — a summary cannot answer that and the log can, so the reference has to resolve. Once every lesson citing a log has been decided and archived, nothing will ask about it again and the log is removed. Growth is therefore bounded by the number of open lessons, which is capped, rather than by the age of the project. `keepSessions: true` keeps everything, which is how `fixtures/sessions/` gets filled. *Replaces "deleted once extracted", which made the evidence reference a dead link and threw away the only thing that could answer a follow-up question.*
+18. **A log lives as long as an open lesson cites it — and for a week after it was last written.** Every lesson carries `evidence` as a session id and a step range, and during review the human may ask what actually happened at those steps — a summary cannot answer that and the log can, so the reference has to resolve. Once every lesson citing a log has been decided and archived, nothing will ask about it again and the log is removed — once it has also gone a week unwritten (decision 21). Growth is therefore bounded by the number of open lessons, which is capped, and by a week of sessions, rather than by the age of the project. `keepSessions: true` keeps everything, which is how `fixtures/sessions/` gets filled. *Replaces "deleted once extracted", which made the evidence reference a dead link and threw away the only thing that could answer a follow-up question.*
 19. **The plugin must prove it is alive, in a file.** `.retro/selfcheck.md`. Registration proves nothing (see "Gotchas": wrong hook names register happily), so the report asserts *liveness*, not setup. It carries three timestamps — `loaded`, `heartbeat`, `verified` — because they fail separately and the gaps between them name which half broke.
 20. **Everything the file needs to be understood is in the file.** `selfcheck.md` states its own cadence, its own staleness threshold, what each failing line means, what to run next, and the version and repo it came from. Nobody reads documentation to interpret a diagnostic, and a diagnostic that needs documentation is not one. Same rule for `.retro/prompts/updates/`: each update file explains in its own header what it is and that nothing was changed on the user's behalf.
+21. **The disk is the only state about a session, and a log goes after a week of silence.** What the plugin knows about a session is its log and its mark in `state.json`; nothing depends on this process having seen a session start or end. A log is owed when it grew past its mark, stopped at a gap, or failed with attempts left — computed from the file every time, so there is no queue. It is pruned when it has been read to the end, no open lesson cites it, and its file has not been written for seven days. *Replaces "live" — a session whose turn had started and not ended, as far as this process had seen — and the queue that went with it. That model was the most expensive part of the project: "live", "settled" and "owed" were each rewritten three times, the queue merged across writers through tombstones, a restart forgot what was working, a turn resumed over the API could stay live for ever, and a second instance on the project could prune a log the other was writing — the one case the model test still failed, documented as "one instance per project is the contract". The owner's framing ended it: the plugin does not need to be exact, it needs to catch ninety percent of sessions with a model simple enough to state in three sentences. The week is long enough that a session left open and returned to keeps its log, and a session picked up after it starts a new log, read from its start; nothing a lesson cites is ever removed. The rewrite also found that each instance read marks from its own memory, refreshed only by its own next save, so a second instance counted a third failure as a first and re-read what the other had just read — reads now take in what another writer saved, and the later extraction outcome wins the merge.*
 
 ## On-disk layout (in the user's project, not this repo)
 
@@ -348,14 +349,10 @@ plugin needed — and it gets the `sessionID`, so it can drive the review conver
   own copy to one, and the maximum lost one — a workspace aged by less than it had lived. Each
   `looked` mark takes the newer view, and carries `open` when the last successful read stopped
   at an excerpt, so the next command reads the gap instead of calling the bytes "already sent".
-  The queue is a union as well, with the higher attempt count and the smaller queued size: it
-  used to be the writer's own, and two instances on one project then lost each other's entries,
-  which means a session nobody analyses — the log sits there and nothing is owed for it. A
-  union is only safe because entries leave in exactly two ways, and both say so in the data: an
-  extraction that covers the size the entry was queued at, and an explicit `unqueue` (a session
-  that turned out to be a subagent), which is persisted until `queue` deliberately reverses it.
-  A rebase is still a one-save tombstone, because only the writer that saw the file replaced
-  can say the old mark is gone.
+  A mark that does not describe the file on disk — a log pruned or replaced since — does not
+  survive a merge, which is what the `rebased` tombstone used to do for one writer only. Reads
+  take in what another writer saved since the last look (a stat when nothing changed), and the
+  later extraction outcome wins. There is no queue to merge any more (decision 21).
 - Whether `/api/experimental/session/{id}/log` (the durable event log) makes the shadow log
   redundant. Decision 3 says keep our own; worth a look before M1 ships.
 
@@ -570,18 +567,16 @@ simply awaited: no fire-and-forget, no draining guard, no race.
 
 **"Everything accumulated" includes the sessions that have not finished** — this one among
 them. Their friction is the most recent there is, so there is no reason to wait for a
-session to end before reading it. But an unfinished session will have more to say, so
-nothing about it is settled: its log is not marked extracted, which would discard everything
-after this moment, and it is never pruned, which would take the only record of what is
-happening right now. When the session does end it is analysed in full, and `record()` keys
-evidence by session, so recurrence does not move for having read it twice — only the step
-range follows the newer, longer read.
+session to end before reading it, and reading closes nothing: the mark says how far the log
+was read, and whatever the session writes next is owed. `record()` keys evidence by session,
+so recurrence does not move for having read a session twice — only the step range follows
+the newer, longer read.
 
 The gate on re-reading is **growth, not a clock**: a log no larger than when it was last read
-has nothing new in it. That also disposes of the abandoned case. A server that stops takes
-its sessions with it and no end event ever arrives, so the log is neither queued nor live; it
-used to sit on disk for ever, never analysed and never removed. Not live means over, so it
-joins the queue and is settled like any other.
+has nothing new in it. The one clock is for removal (decision 21): a log goes after a week
+unwritten, which is what makes pruning safe without knowing whether a session is working. A
+server that stops takes its sessions with it and no end event ever arrives — and nothing
+waits for one, so such a log is read like any other.
 
 The reason is not the API, it is the bill. A model call costs money, and nothing else in
 this plugin spends the user's money without being asked. Lessons sitting unextracted and
@@ -591,7 +586,7 @@ automatically either way — so there is no value in paying earlier.
 - **Bounded on request.** `extractLimit` caps the attempts one command makes, with the
   remainder reported; it is unlimited by default, because a backlog that is never finished
   is a backlog that keeps asking. It counts attempts rather than successes: an attempt is
-  what costs a model call, and a queue of failing logs would otherwise spend without limit
+  what costs a model call, and a backlog of failing logs would otherwise spend without limit
   under a limit that only counted the ones that worked.
 - **Cheap when there is nothing to read.** A session of one prompt with no tool calls is
   skipped without a model call. Anything more is read, including a conversation that ran no
@@ -686,7 +681,7 @@ free by every analysis — with the model's own words when they fail.
 The liveness assertions can only be measured from real traffic, but that does not make the
 report a session summary. The file states up front that it is about the plugin, cites the
 session it measured on as evidence in one line, and keeps anything the human has to *act*
-on — lessons waiting, sessions queued — in its own section. `sessions/` holds the sessions
+on — lessons waiting, logs owed an analysis — in its own section. `sessions/` holds the sessions
 and `lessons/` holds what was learned from them; the self-check holds neither.
 
 ### The file explains itself
@@ -907,15 +902,17 @@ Shipping with these known, listed so nobody discovers them as surprises:
   in this brief. The README describes implemented behaviour, states when and with which model
   each step runs, and links to the prompt files rather than paraphrasing them, so the
   description cannot drift from the thing described.
-- **README.md is canonical and has four translations** (`README.ru.md`, `README.zh-CN.md`,
-  `README.es.md`, `README.ja.md`), each opening with the same language bar and a note saying
-  the English version wins. A change to `README.md` means updating all four **in the same
-  commit**, then `npm run i18n` to re-stamp them. `npm test` fails while any stamp is stale
+- **`README.en.md` is canonical and has four translations**: `README.md` (Russian — the page
+  GitHub and npm open by default, which is the owner's choice of how the project is presented),
+  `README.zh-CN.md`, `README.es.md`, `README.ja.md`. Each opens with the same language bar,
+  Russian first, and each translation with a note saying the English version wins. A change to
+  `README.en.md` means updating all four **in the same commit**, then `npm run i18n` to
+  re-stamp them. `npm test` fails while any stamp is stale
   and names which ones — a translation that drifts silently is a lie told to whoever can
   only read it, and this project does not ship diagnostics that misreport themselves. CI
   runs the suite before publishing, so a stale translation blocks a release too. Adding a
   language means a file plus one entry
-  in `LANGUAGES` in `scripts/i18n-stamp.mjs`; the bar and the staleness check follow from it.
+  in `READMES` in `scripts/i18n-stamp.mjs`; the bar and the staleness check follow from it.
 
 ## Release
 

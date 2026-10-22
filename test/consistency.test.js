@@ -20,7 +20,7 @@ const SHIPPED = [
   ...readdirSync(join(root, "src")).map((f) => `src/${f}`),
   ...readdirSync(join(root, "prompts")).map((f) => `prompts/${f}`),
   "README.md",
-  "README.ru.md",
+  "README.en.md",
   "README.zh-CN.md",
   "README.es.md",
   "README.ja.md",
@@ -104,9 +104,9 @@ test("the three steps are named extract, propose and decide — and no name is `
   // translated heading cannot be compared with an English one. The four translations used to
   // say "Revisión" / "レビュー" / "复核" / "Разбор" where English now says "Propose".
   const headings = (file) => [...read(file).matchAll(/^#{1,6} .*$/gm)].map((m) => m[0])
-  assert.deepEqual(headings("README.md").filter((h) => /review/i.test(h)), [], "README.md still has a `review` heading")
-  const levels = headings("README.md").map((h) => h.match(/^#+/)[0])
-  for (const file of SHIPPED.filter((f) => /^README\..+\.md$/.test(f))) {
+  assert.deepEqual(headings("README.en.md").filter((h) => /review/i.test(h)), [], "README.en.md still has a `review` heading")
+  const levels = headings("README.en.md").map((h) => h.match(/^#+/)[0])
+  for (const file of SHIPPED.filter((f) => /^README(\..+)?\.md$/.test(f) && f !== "README.en.md")) {
     assert.deepEqual(headings(file).map((h) => h.match(/^#+/)[0]), levels, `${file} has a different section structure`)
   }
 })

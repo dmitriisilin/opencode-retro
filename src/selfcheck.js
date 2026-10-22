@@ -188,11 +188,11 @@ export function assess(session) {
       name: "extraction",
       detail: "not run",
     })
-  } else if (x.queued) {
+  } else if (x.owed) {
     checks.push({
       status: SKIPPED,
       name: "extraction",
-      detail: "this session's log is queued; `/retro` analyses it",
+      detail: "this session's log is waiting; `/retro` analyses it",
       meaning:
         "analysis is not automatic — it costs a model call, so it happens when you ask. " +
         "`/retro` analyses everything waiting, in one go. `options.autoExtract` moves it to " +
@@ -296,7 +296,6 @@ function renderStock({
   top = null,
   queued = 0,
   failing = 0,
-  reading = 0,
   cited = 0,
   decided = 0,
   setAside = 0,
@@ -347,12 +346,6 @@ function renderStock({
   }
   if (queued) {
     lines.push(`- ${queued} log${queued === 1 ? "" : "s"} not analysed yet — \`/retro\` analyses them`)
-  }
-  if (reading) {
-    lines.push(
-      `- ${reading} log${reading === 1 ? "" : "s"} of ${reading === 1 ? "a session" : "sessions"} ` +
-        "still working, read as far as they go — settled when the session is over",
-    )
   }
   // Counted, not inferred. An earlier version derived this by subtracting the queue from
   // the logs on disk and announced that open lessons cited them — while there were no
@@ -406,7 +399,7 @@ export const REQUIRED_SURFACE = [
   ["model", "default"],
 ]
 
-export async function activeCheck({ ctx, config, prompts, store, state }) {
+export async function activeCheck({ ctx, config, prompts, store, owed = 0 }) {
   const checks = []
   const notes = []
 
@@ -440,7 +433,7 @@ export async function activeCheck({ ctx, config, prompts, store, state }) {
   checks.push({
     status: OK,
     name: "store",
-    detail: `${lessons.length} lesson(s), ${state.pending.length} session(s) queued`,
+    detail: `${lessons.length} lesson(s), ${owed} log(s) waiting to be analysed`,
   })
 
   return { checks, notes }

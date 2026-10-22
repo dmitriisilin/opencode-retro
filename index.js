@@ -35,11 +35,15 @@ export const VERSION = (() => {
 /**
  * opencode-retro — capture, extract, propose, decide.
  *
- * Writes a shadow log of every prompt and tool call. When a session ends it is queued for
- * extraction, and the next session's first prompt pays that debt: one clean-context model
- * call turns the log into lessons. `/retro` hands the highest-scoring one to the session
- * you are in and stops there — you and the agent decide what to do with it. A self-check
- * says whether any of it worked.
+ * Writes a shadow log of every prompt and tool call. `/retro` reads whatever has been written
+ * since the last time — one clean-context model call per log — turns it into lessons, hands
+ * the highest-scoring one to the session you are in, and stops there: you and the agent
+ * decide what to do with it. A self-check says whether any of it worked.
+ *
+ * Everything it knows about a session is on disk: the log, and how far it was read. Nothing
+ * depends on this process having seen a session start or end, so a restart, a crash or a
+ * second instance on the project changes nothing about what is read or removed — and a log
+ * is removed only once it has been quiet for a week (docs/concepts/session.md).
  *
  * Nothing is analysed until `/retro` asks for it: a model call costs money, and nothing
  * here spends it unprompted. The analysis goes through a session of its own rather than
@@ -48,6 +52,9 @@ export const VERSION = (() => {
  * The API facts this relies on are all verified against OpenCode 2.0.32; see AGENTS.md
  * "OpenCode v2 plugin API" and fixtures/payloads/.
  */
+/** How long a log must go unwritten before it may be pruned (session.md, "Quiet"). */
+const QUIET_MS = 7 * 24 * 60 * 60 * 1000
+
 export default {
   id: "opencode-retro",
 
@@ -64,7 +71,7 @@ export default {
     }
 
     const log = createShadowLog({ dir: config.sessions, onError })
-    const state = createState({ path: config.state, onError })
+    const state = createState({ path: config.state, onError, probe: (id) => log.probe(id) })
     const store = createStore({
       dir: config.lessons,
       archive: config.archive,
@@ -79,14 +86,11 @@ export default {
       repo: REPO,
     })
 
-    /** Sessions we have seen an end event for, so a stray late event cannot re-verify. */
-    const ended = new Set()
     /**
-     * Sessions working right now, so that `/retro` can read their logs without touching
-     * them. A session that started and has not ended still has something to add, so its log
-     * is not ours to settle or to delete — see `processQueue`.
+     * Sessions whose current turn has reported its end, so a stray late event cannot
+     * re-verify. Only the self-check reads this; nothing about what is analysed or pruned does.
      */
-    const started = new Set()
+    const ended = new Set()
     /** Evidence from each finished session, kept so a later extraction can complete its report. */
     const lastVerified = new Map()
     let lastBeat = 0
@@ -102,39 +106,18 @@ export default {
     const lastExtraction = new Map()
 
     /**
-     * The queue as the human should read it. An entry is not "not analysed yet" just because
-     * it is in the queue: a working session read by `/retro` stays queued until it is over,
-     * because reading is not settling. What the marks say is owed is what is waiting; what has
-     * failed is named as a failure, not as something nobody has looked at.
+     * What is waiting, as the marks say it is. A log whose last read failed is named as a
+     * failure, not as something nobody has looked at; everything else owed is waiting.
      */
-    function queueFacts() {
+    function stockFacts() {
       let queued = 0
       let failing = 0
-      let reading = 0
-      const seen = new Set()
-      for (const entry of state.pending) {
-        seen.add(entry.session)
-        const mark = state.looked(entry.session)
-        const size = log.stat(entry.session).size
-        const owed = size > mark.size || mark.open || mark.failed
-        // `failed` is the last read's own verdict, not a count of attempts. Counting history
-        // made a session that failed once and was then read successfully report a failure for
-        // as long as its entry stayed queued — next to an extraction line saying `ok`.
-        if (mark.failed) failing++
-        else if (isLive(entry.session) && !owed) reading++
-        else queued++
-      }
-      // A working session that was never queued is still a log the plugin has read: the very
-      // common case of `/retro` in the session it is running in. The queue alone cannot see it.
       for (const id of log.list()) {
-        if (seen.has(id) || !isLive(id)) continue
-        const mark = state.looked(id)
-        if (!mark.size) continue
-        if (mark.failed) failing++
-        else if (log.stat(id).size <= mark.size && !mark.open) reading++
+        if (parents.has(id) || !isOwed(id)) continue
+        if (state.looked(id).failed) failing++
         else queued++
       }
-      return { queued, failing, reading }
+      return { queued, failing }
     }
 
     const writeSelfCheck = () => {
@@ -144,17 +127,15 @@ export default {
           lessons: lessons.length,
           top: lessons[0]?.id ?? null,
           topScore: lessons.length ? store.score(lessons[0]) : null,
-          ...queueFacts(),
+          ...stockFacts(),
           cited: log.list().filter((id) => citedSessions().has(id)).length,
           decided: store.listArchive().length,
           unreadable: store.unreadable(),
-          // Logs that failed three analyses: still on disk, and nothing will read them — but
-          // only while nothing owes them. A session left open can be prompted again, and that
-          // queues its log afresh; announcing it as beyond reading next to the line saying it
-          // will be tried again is two contradictory claims in one report.
-          setAside: log
-            .list()
-            .filter((id) => !state.isPending(id) && !isLive(id) && state.wasExtracted(id) && !state.extractionOf(id)?.ok).length,
+          // Logs that failed three analyses: still on disk until they are quiet, and nothing
+          // will read them — but only while nothing owes them. A log that grows is owed afresh;
+          // announcing it as beyond reading next to the line saying it will be tried again is
+          // two contradictory claims in one report.
+          setAside: log.list().filter((id) => !isOwed(id) && state.extractionOf(id)?.ok === false).length,
         })
         mkdirSync(config.dir, { recursive: true })
         writeFileSync(config.selfcheck, check.render())
@@ -184,7 +165,7 @@ export default {
       // written — but it is not news about liveness. Re-measuring here would recreate the
       // forgotten ingest counts and report `BROKEN prompt hook` about a session that was fine
       // and is over.
-      if (ended.has(sessionID) && !started.has(sessionID)) return
+      if (ended.has(sessionID)) return
       const now = Date.now()
       const first = !observedSessions.has(sessionID)
       if (!first && !force && now - lastBeat < config.heartbeatMs) return
@@ -238,12 +219,11 @@ export default {
 
     await hook("session", "prompt", (p) => {
       ingest.prompt(p)
-      touch(p.sessionID)
       observe(rootOf(p.sessionID))
       // Analysis is what `/retro` does, not something a new session triggers: a model call
       // costs money and nothing here spends it unprompted. `autoExtract` restores the old
       // behaviour for anyone who wants lessons ready before they ask.
-      if (config.autoExtract) void drainQueue(p.sessionID)
+      if (config.autoExtract) void drainOne(p.sessionID)
     })
 
     // The model the user actually works with, so extraction can default to it instead of
@@ -256,7 +236,6 @@ export default {
     })
 
     await hook("tool", "execute.before", (p) => {
-      touch(p.sessionID)
       ingest.toolBefore(p)
     })
     await hook("tool", "execute.after", (p) => {
@@ -264,7 +243,6 @@ export default {
         adopt(p.result.metadata.sessionID, p.sessionID)
       }
       ingest.toolAfter(p)
-      touch(p.sessionID)
       // Measured on the parent, never on the child: the child's records are written into
       // the parent's log, so the self-check would otherwise look for sessions/<child>.jsonl,
       // not find it, and report BROKEN about a healthy session.
@@ -317,7 +295,7 @@ export default {
           output: DECIDE_OUTPUT,
           execute: async (input, context) => {
             const result = decide(input, { store, state, session: context?.sessionID ?? null })
-            pruneLogs(context?.sessionID ?? null)
+            pruneLogs()
             writeSelfCheck()
             return { output: result, content: result.detail }
           },
@@ -375,18 +353,10 @@ export default {
 
       if (event.type === "session.execution.started" && sessionID) {
         // An execution is one turn, not the life of the session: a session left open and
-        // prompted again starts another one. Keeping the previous end here made the second
-        // turn look finished — never live, so another `/retro` could settle it mid-work, and
-        // its own end was dropped as a duplicate, so nothing was ever queued.
-        //
-        // This runs before the ownership gate on purpose. The start event arrives before the
-        // turn's first hook, and the previous end dropped the session from the ingest map, so
-        // an owned-only check here would skip exactly the event that says the session is
-        // working again. Marking liveness is safe for a session that never turns out to be
-        // ours: with no log, nothing reads or prunes it.
+        // prompted again starts another one, and its end must not be dropped as a duplicate of
+        // the previous turn's. Before the ownership gate on purpose: the start event arrives
+        // before the turn's first hook.
         ended.delete(sessionID)
-        // A subagent's execution is a step in its parent's task, not a session.
-        if (!parents.has(sessionID)) started.add(sessionID)
       }
 
       // Only a session a hook has fired for is ours. `ctx.event.subscribe` reaches every
@@ -409,7 +379,6 @@ export default {
       // A subagent finishing is a step in its parent's task, not a session to analyse.
       if (parents.has(sessionID)) return
       ended.add(sessionID)
-      started.delete(sessionID)
       observedSessions.delete(sessionID)
 
       const verified = {
@@ -423,12 +392,11 @@ export default {
       writeSelfCheck()
       ingest.forget(sessionID)
 
-      // Not extracted here: a model call from the event stream never returns. Queued, and
-      // drained from the next session's prompt hook — or by `/retro`, which settles it.
+      // Not extracted here: a model call from the event stream never returns, and nothing is
+      // analysed unasked. The log is owed because it grew; `/retro` reads it.
       state.countSession(sessionID)
-      state.queue(sessionID, log.stat(sessionID).size)
       lastVerified.set(sessionID, verified)
-      check.verify({ ...verified, extraction: { queued: true } })
+      check.verify({ ...verified, extraction: { owed: true } })
       writeSelfCheck()
     }
 
@@ -455,7 +423,17 @@ export default {
         await ctx.session.synthetic({ sessionID, text, description: "opencode-retro", resume: true })
         // Written to the log ourselves, because a synthetic does not fire the prompt hook:
         // without this the session's own log shows the work and not the instruction behind it.
+        const owner = rootOf(sessionID)
+        const before = log.stat(owner).size
+        const mark = state.looked(owner)
         ingest.handover(sessionID, text)
+        // Our own text is not material (analysis.md), so a log read to its end is not owed for
+        // it: otherwise every `/retro` left its own session "not analysed yet" in the report,
+        // and the next command paid a read to skip it. It is still in the log, and the next
+        // read carries it along with whatever the agent does after it.
+        if (before > 0 && before === mark.size && !mark.open && !mark.failed) {
+          state.look(owner, { size: log.stat(owner).size })
+        }
       } catch (err) {
         onError("session.synthetic", err)
       }
@@ -492,26 +470,21 @@ export default {
     }
 
     /**
-     * A log lives as long as an open lesson cites it.
-     *
-     * Lessons carry `evidence` as a session id and a step range, and during review the
-     * human may well ask what actually happened at those steps. A summary cannot answer
-     * that; the log can. So the reference has to be real. Once every lesson citing a log
-     * has been decided and archived, nothing will ask about it again and it goes.
-     *
-     * Growth is bounded by the number of open lessons, which is capped, rather than by how
-     * long the project has existed. `keepSessions` keeps everything.
+     * Whether this log still has to be read: it grew past its mark, or the last read stopped
+     * at a gap, or it failed with attempts left (log.md, "Owed"). Computed from the file and
+     * the mark every time, so there is nothing to fall out of step with them.
      */
-    /**
-     * A session that started and has not ended is still writing its log.
-     *
-     * A function declaration, not a `const`: everything from here down sits after `setup`
-     * has returned, where a `const` is never initialised and every use throws
-     * "Cannot access 'isLive' before initialization" — which is how `/retro` once shipped
-     * broken for a commit (AGENTS.md Gotcha 13). Declarations hoist; bindings do not.
-     */
-    function isLive(id, invoking = null) {
-      return id === invoking || (started.has(id) && !ended.has(id))
+    function isOwed(id) {
+      const mark = markOf(id)
+      if (log.stat(id).size > mark.size) return true
+      if (mark.open) return true
+      return Boolean(mark.failed && (mark.attempts ?? 0) < 3)
+    }
+
+    /** Unwritten for a week (session.md, "Quiet"): the only place the plugin reads a clock. */
+    function isQuiet(id) {
+      const file = log.probe(id)
+      return Boolean(file) && Date.now() - file.mtimeMs >= QUIET_MS
     }
 
     /**
@@ -521,21 +494,6 @@ export default {
      */
     function logFacts(id) {
       return { ...log.stat(id), entries: log.count(id) }
-    }
-
-    /**
-     * A session is live from its first hook until its execution ends.
-     *
-     * `started` only knows about sessions whose `session.execution.started` this process
-     * saw. A hook firing is the older fact and the more reliable one: after a restart in the
-     * middle of a session, the start event has already gone by, and the session would look
-     * finished — queued, settled and possibly pruned while it is still writing. A hook that
-     * arrives after the end does not resurrect it: the next turn starts with an execution
-     * event, which clears the mark deliberately.
-     */
-    function touch(id) {
-      if (!id || ended.has(id) || parents.has(id)) return
-      started.add(id)
     }
 
     /**
@@ -568,14 +526,13 @@ export default {
       // the one on disk is void, whatever the sizes and step numbers say — this is what makes
       // "a replaced log is read from its own start" true for a longer replacement too, which
       // the size check cannot see.
-      const now = log.identity(id)
-      const stat = log.stat(id)
+      const file = log.probe(id)
       // A file that exists but has no whole first record is not the log the mark described:
       // the first record was whole when the mark was made and an append never rewrites it, so
       // this one was replaced or truncated. Treating the missing identity as "same file" let a
       // longer replacement keep the old step mark and its early steps were filtered away.
-      if (isReplacedLog(mark, now, { exists: stat.exists })) state.rebase(id)
-      else if (stat.size < mark.size) state.rebase(id)
+      const replaced = isReplacedLog(mark, file?.id ?? null, { exists: Boolean(file) }) || (file?.size ?? 0) < mark.size
+      if (replaced && (mark.size || mark.n)) state.forget(id)
       return state.looked(id)
     }
 
@@ -605,34 +562,23 @@ export default {
       return concludedIn(store.listArchive(), sessionID)
     }
 
-    function pruneLogs(invoking = null) {
+    /**
+     * A log goes when nothing can ask about it any more: it has been quiet for a week, nothing
+     * is owed for it, and no open lesson cites it (log.md, "Pruned"). The week is what makes
+     * this safe without knowing whether a session is working: a session that writes keeps its
+     * log, and one picked up after a week of silence starts a new log, read from its start.
+     * A log nobody has read is owed, so it is never pruned however old it is.
+     *
+     * Growth is bounded by the number of open lessons, which is capped, and by a week of
+     * sessions, rather than by how long the project has existed. `keepSessions` keeps
+     * everything.
+     */
+    function pruneLogs() {
       if (config.keepSessions) return
       const cited = citedSessions()
-      const owed = new Set(state.pending.map((p) => p.session))
       for (const id of log.list()) {
-        // Never a session that is working. Its log is the only record of what is happening
-        // right now, it is still being appended to, and nothing about it is settled. The
-        // session the command is running in counts as working even if a restart meant its
-        // start event was never seen: deleting the log under the session that asked is the
-        // worst possible answer.
-        if (isLive(id, invoking)) continue
-        // Nor one the marks say is still owed. Pruning is "nothing can ask about it: no open
-        // lesson cites it, nothing is owed for it, and it is not live" — so an unread excerpt,
-        // a failed read and a log that has grown since it was read all stay. Only checking the
-        // excerpt and the queue here deleted the material a failure existed to protect.
-        const mark = markOf(id)
-        if (mark.open || mark.failed) continue
-        if (log.stat(id).size > mark.size) continue
-        // Nor one given up on. Retirement keeps the log on disk and the self-check names it
-        // (analysis.md); retiring clears the `failed` flag, so without this line the next
-        // success anywhere — even a skipped one-exchange log — deleted the material the three
-        // failures had left unread. Found by the model test, in seven actions.
-        if (state.extractionOf(id)?.ok === false) continue
-        if (!cited.has(id) && !owed.has(id) && log.remove(id)) {
-          // The mark described a file that no longer exists. Leaving it would make the next
-          // log written under this id look already read, because size only moves forward.
-          state.rebase(id)
-        }
+        if (cited.has(id) || isOwed(id) || !isQuiet(id)) continue
+        if (log.remove(id)) state.forget(id)
       }
     }
 
@@ -647,7 +593,6 @@ export default {
     function adopt(child, parent) {
       if (parents.get(child) === parent) return
       parents.set(child, parent)
-      started.delete(child)
       ended.delete(child)
       observedSessions.delete(child)
       const stray = log.read(child)
@@ -657,7 +602,7 @@ export default {
       // moves with the records — same root, renumbered steps.
       if (stray.length) store.remapEvidence(child, rootOf(parent), absorbed?.renumbered)
       // Unconditionally: this log belongs to a delegation now, whether or not its records
-      // could be parsed. Leaving an unreadable orphan behind lets `processQueue` treat the
+      // could be parsed. Leaving an unreadable orphan behind lets `analyseOwed` treat the
       // child as a session of its own — the one thing a delegation must never become.
       log.remove(child)
       // Its end may already have been processed, before the link was known: a delegation is a
@@ -665,7 +610,6 @@ export default {
       // was counted before we knew, the count has to come back out, or freshness moves for
       // work that is never a session. `uncountSession` keeps the id, so a writer holding the
       // old count cannot put it back.
-      state.unqueue(child)
       state.uncountSession(child)
       // The self-check may have been measuring the child's log, which no longer exists.
       observe(rootOf(parent), { force: true })
@@ -691,7 +635,7 @@ export default {
     }
 
     async function proposeAll(sessionID) {
-      const extracted = await processQueue(sessionID)
+      const extracted = await analyseOwed(sessionID)
 
       const open = pickOpen(store.list(), { sessions: state.sessions, halfLife: config.halfLife })
       await diagnose()
@@ -721,137 +665,76 @@ export default {
 
     /**
      * Both proposal modes analyse what has accumulated before they propose anything: one
-     * `/retro` compresses the raw logs, turns them into lessons, and only then looks for
-     * something to hand over. Bounded, so a long backlog cannot bill in one command.
+     * `/retro` reads every owed log, turns it into lessons, and only then looks for something
+     * to hand over.
+     *
+     * "Everything accumulated" includes sessions still working — this one among them. Their
+     * friction is the most recent there is, and reading a log does not settle anything a
+     * session can still add to: the mark says how far it was read, and whatever it writes
+     * next is simply owed. Oldest first, so the session the command runs in comes last.
      */
-    async function processQueue(sessionID) {
+    function owedLogs(skip = new Set()) {
+      return log
+        .list()
+        .filter((id) => !skip.has(id) && !parents.has(id) && isOwed(id))
+        .map((id) => ({ id, at: log.probe(id)?.mtimeMs ?? 0 }))
+        .sort((a, b) => a.at - b.at)
+        .map((x) => x.id)
+    }
+
+    async function analyseOwed(sessionID) {
       const done = []
-      const reread = []
       const failures = []
-      // A log that fails is set aside for this run rather than ending it. Stopping at the
-      // first failure meant one unreadable reply hid every log behind it, and the message
-      // said to run `/retro` again — which would fail on the same log.
+      // One command reads each log at most once, whatever the outcome. A failure set aside for
+      // this run rather than ending it: stopping at the first failure meant one unreadable
+      // reply hid every log behind it. And termination should not depend on every rule
+      // elsewhere being right.
       const skip = new Set()
 
-      // An entry that spent its three attempts without an outcome recorded — a crash between
-      // `attempt()` and `markExtracted()` — used to sit in the queue for ever, skipped by every
-      // command and reported by none. Retired here, so it reaches the stock section and the
-      // message instead.
-      for (const entry of state.pending) {
-        // Three failures on *this* input — `queue()` resets the count when the log grows, so
-        // an exhausted entry means nothing new arrived since. Not `!wasExtracted`: settling is
-        // not permanent, and a session settled once, picked up again and then failing three
-        // times was never retired by that test — it sat in the queue, skipped by every command.
-        if ((entry.attempts ?? 0) >= 3) {
-          const detail = "given up after three failed analyses"
-          // The size it covers is the size it was queued at. Without it the save-time merge
-          // saw an entry for 2,780 bytes against an extraction covering nothing, and brought
-          // the retired entry straight back from disk, still at three attempts.
-          state.markExtracted(entry.session, { ok: false, detail, size: entry.size ?? 0 })
-          // Nothing is owed for it any more. Without this the `failed` flag the last read left
-          // behind re-queues the session in the scan below, and the same command spends a
-          // fourth call on a log it has just declared given up on.
-          state.look(entry.session, { open: false, failed: false })
-          failures.push({ session: entry.session, detail })
-        }
-      }
-
       // The cap counts attempts, not successes: an attempt is what costs a model call, so a
-      // queue of failing logs could otherwise spend without limit under a limit that only
+      // backlog of failing logs could otherwise spend without limit under a limit that only
       // ever counted the ones that worked.
       let attempted = 0
 
-      // "Everything accumulated to now" has to mean everything. A log whose session is over
-      // but whose end never reached us — a server that stops takes its sessions with it, and
-      // no event arrives — would otherwise sit on disk for ever, never analysed and never
-      // removed. It is not live, so it is finished, so it joins the queue.
-      //
-      // Being settled is not permanent. A session left open and prompted again produces
-      // another execution, and this loop must pick that up too: the question is whether the
-      // log has grown since it was last read, not whether it was ever extracted. `extracted`
-      // records the outcome of the last settle; the byte mark is what decides the cost.
+      // A mark at three failed attempts with no outcome to say so — a state written by a
+      // process that died mid-retirement — is not owed and would be reported by nothing.
+      // Retired here, so it reaches the stock section and the message instead.
       for (const id of log.list()) {
-        if (isLive(id, sessionID) || state.isPending(id)) continue
-        // A delegation is a step in its parent's task, never a session of its own. Its log
-        // is absorbed and removed when the link is learned; if a failed removal or a late
-        // write left one behind, it still must not be analysed on its own.
-        if (parents.has(id)) continue
-        const size = log.stat(id).size
-        const mark = markOf(id)
-        // Bytes already sent are not the same as steps turned into lessons: an excerpt sends
-        // the whole file but covers only its unbroken prefix, and the rest has to be read
-        // again without waiting for growth that a finished session will never produce.
-        if (size <= mark.size && !mark.open && !mark.failed) continue
-        state.queue(id, size)
+        const mark = state.looked(id)
+        if (!mark.failed || (mark.attempts ?? 0) < 3) continue
+        const detail = "given up after three failed analyses"
+        state.markExtracted(id, { ok: false, detail })
+        state.look(id, { open: false, failed: false, attempts: 0 })
+        failures.push({ session: id, detail })
       }
 
       while (attempted < config.extractLimit) {
-        const owed = nextToSettle(sessionID, skip)
-        if (!owed) break
+        const [id] = owedLogs(skip)
+        if (!id) break
+        skip.add(id)
         attempted++
-        const result = await runExtraction(owed.session, { invoking: sessionID })
-        if (!result?.ok) {
-          failures.push({ session: owed.session, detail: result?.detail ?? "unknown failure" })
-          skip.add(owed.session)
-          continue
-        }
-        done.push(owed.session)
-        // One command handles each log at most once in this loop, whatever its outcome. Only
-        // failures and excerpts used to be set aside; a success was trusted to leave the queue,
-        // and when a merge brought it straight back the loop read the same log for ever —
-        // with skips not counting against the limit, without ever yielding. Termination should
-        // not depend on every rule elsewhere being right.
-        skip.add(owed.session)
+        const result = await runExtraction(id)
         // A skipped log — one exchange, nothing done — never reached the model, so it is not
         // an attempt against a limit whose reason to exist is the model call it costs.
-        if (result.skipped) attempted--
-        // An excerpted read is progress, not completion. It stays owed (so the log is not
-        // pruned and the stock line tells the truth) but is not picked again in this same
-        // command, which would just send the same excerpt back to the model.
-        if (state.looked(owed.session).open) skip.add(owed.session)
-      }
-
-      /**
-       * Then the sessions still working, this one included.
-       *
-       * They are read and never settled: a session that has not finished will have more to
-       * say, so marking its log extracted would throw away everything after this moment, and
-       * deleting it would take the only record of what is happening right now. Lessons it
-       * produces are recorded normally — `record()` keys evidence by session, so when the
-       * session ends and is analysed in full, recurrence does not move for having read it
-       * twice.
-       *
-       * The gate is growth, not a clock: a log no larger than when we last read it has
-       * nothing new in it. That also settles the abandoned case — a log nobody will ever
-       * append to again is read once and then left alone, at no further cost.
-       */
-      for (const id of log.list()) {
-        if (attempted >= config.extractLimit) break
-        if (!isLive(id, sessionID)) continue
-        if (parents.has(id)) continue
-        const size = log.stat(id).size
-        const mark = markOf(id)
-        if (size <= mark.size && !mark.open) continue
-        attempted++
-        const result = await runExtraction(id, { settle: false })
+        if (result?.skipped) attempted--
         if (!result?.ok) failures.push({ session: id, detail: result?.detail ?? "unknown failure" })
-        else if (!result.skipped) reread.push(id)
-        else attempted-- // skipped: no model call, so not an attempt against the limit
+        else if (!result.skipped) done.push(id)
       }
 
-      // Bookkeeping about a session is dropped once nothing can refer to it: no log on disk,
-      // not queued, not live. Once per command is often enough, and cheap.
+      pruneLogs()
+      // Bookkeeping about a session is dropped once its log is gone. Once per command is often
+      // enough, and cheap.
       const present = new Set(log.list())
-      state.compact((id) => present.has(id) || state.isPending(id) || isLive(id, sessionID))
+      state.compact((id) => present.has(id))
 
-      const left = state.pending.filter((p) => p.session !== sessionID).length
-      return { analysed: done.length, live: reread.length, left, failures }
+      const left = owedLogs().filter((id) => id !== sessionID).length
+      return { analysed: done.length, left, failures }
     }
 
     async function proposeOne(sessionID) {
       // One invocation, one lesson: the top of the list. Deciding is the user's business,
       // in this session, with the agent that is already here.
-      const extracted = await processQueue(sessionID)
+      const extracted = await analyseOwed(sessionID)
 
       const lessons = store.list()
       const lesson = pickLesson(lessons, { sessions: state.sessions, halfLife: config.halfLife })
@@ -891,8 +774,7 @@ export default {
           config,
           prompts,
           store,
-          state,
-          log,
+          owed: owedLogs().length,
         })
         for (const note of report.notes) check.note(note)
         check.active(report.checks)
@@ -904,30 +786,17 @@ export default {
     }
 
     /**
-     * The oldest owed session that is not one somebody is working in.
-     *
-     * A session queued when one execution ended may have been picked up again before the
-     * queue was drained. Settling it now would settle material still being written and
-     * could delete a log that is still growing; the live pass reads it instead, and it is
-     * settled when the execution it is in now ends. `skip` is the caller's own, so a session
-     * set aside for this run is not picked again by the same loop.
+     * `autoExtract`: one owed log per prompt, never the session that was just prompted, and
+     * one at a time — a prompt that arrives while an analysis is in flight does not start a
+     * second.
      */
-    function nextToSettle(exclude, skip) {
-      let owed = state.nextPending(exclude, skip)
-      while (owed && isLive(owed.session, exclude)) {
-        skip.add(owed.session)
-        owed = state.nextPending(exclude, skip)
-      }
-      return owed
-    }
-
-    async function drainQueue(currentSession) {
+    async function drainOne(currentSession) {
       if (draining) return
-      const owed = nextToSettle(currentSession, new Set())
-      if (!owed) return
+      const [id] = owedLogs(new Set([currentSession]))
+      if (!id) return
       draining = true
       try {
-        await runExtraction(owed.session, { invoking: currentSession })
+        await runExtraction(id)
       } catch (err) {
         onError("drain", err)
       } finally {
@@ -958,7 +827,7 @@ export default {
       return null
     }
 
-    async function runExtraction(sessionID, { settle = true, invoking = null } = {}) {
+    async function runExtraction(sessionID) {
       // The mark is checked against the file that is actually there first: a log that was
       // pruned and written again is smaller than the mark that described the old one.
       let mark = markOf(sessionID)
@@ -980,7 +849,7 @@ export default {
       // the bytes in hand instead of a second look at the file.
       const identity = identityOf(text)
       if (raw != null && isReplacedLog(mark, identity, { exists: true })) {
-        state.rebase(sessionID)
+        state.forget(sessionID)
         mark = { n: 0, size: 0 }
       }
 
@@ -988,7 +857,7 @@ export default {
       // even if it is longer: the file was replaced rather than appended to. Starting over
       // is the only reading that makes the step references resolve.
       if (lastN > 0 && lastN < mark.n) {
-        state.rebase(sessionID)
+        state.forget(sessionID)
         mark = { n: 0, size: 0 }
       }
 
@@ -1011,7 +880,7 @@ export default {
       // A log we could not read is a failure like any other, and it reaches the same retry
       // policy below. It used to be marked extracted here and returned early, which did two
       // wrong things at once: the log was never retried although the brief says a failed
-      // extraction keeps its log, and `processQueue` — which reads success off the queue —
+      // extraction keeps its log, and the command —
       // counted it as analysed. `/retro` then reported "analysed 1 session, nothing to learn
       // from it" about a log it had not read.
       /**
@@ -1086,19 +955,31 @@ export default {
       // the difference between prose and truncated JSON is only visible in the rest of it.
       // Only a failure spends the retry budget. A successful excerpt is progress, and
       // charging it against the budget of three would retire the rest of the log.
+      // The step mark moves only on success: a failed analysis must not skip the material it
+      // failed on. The bytes were read either way, so nothing is paid for twice. Attempts
+      // belong to the input they were spent on: a read of a larger log starts the count again.
       if (!result.ok) {
-        state.attempt(sessionID)
-        // The last read of this log did not succeed — whether the model failed, the reply
-        // could not be parsed, or the excerpt could not reach past the mark. The bytes were
-        // read, so they are not paid for twice; `open` is cleared so a failed retry falls back
-        // to the queue's attempt budget instead of re-reading the same excerpt on every
-        // command for ever. A success below clears the failure.
-        state.look(sessionID, { size: readSize, open: false, failed: true, id: identity })
+        const attempts = (readSize > mark.size ? 0 : (mark.attempts ?? 0)) + 1
         onError(`extract.${sessionID}`, result.reply ? `${result.detail}\n--- reply ---\n${result.reply}` : result.detail)
+        if (attempts >= 3) {
+          // Retired: three failures on the same input. Nothing is owed any more, so neither
+          // flag may outlive it; the outcome says why, the self-check names it, and the log
+          // stays until it is quiet. Growth makes it owed again, with attempts of its own.
+          // The outcome first: a crash between the two writes then leaves a mark still owed
+          // (one more attempt) rather than a log nobody owes and nothing reports.
+          const detail = `given up after three failed analyses: ${result.detail}`
+          state.markExtracted(sessionID, { ok: false, detail })
+          state.look(sessionID, { size: readSize, open: false, failed: false, attempts: 0, id: identity })
+          result = { ...result, detail }
+        } else {
+          // `open` is cleared so a failed retry falls back to the attempt budget instead of
+          // re-reading the same excerpt on every command for ever.
+          state.look(sessionID, { size: readSize, open: false, failed: true, attempts, id: identity })
+        }
       }
-      // `open` is the other half of that rule. Stopping the mark at the gap is only useful if
-      // the next command actually reads from there; the size gate would otherwise call a log
-      // whose bytes were all sent "already read" and the gap would never be visited.
+      // `open` is the other half of the coverage rule. Stopping the mark at the gap is only
+      // useful if the next command actually reads from there; the size gate would otherwise
+      // call a log whose bytes were all sent "already read" and the gap would never be visited.
       const open = Boolean(result.ok && through < lastN && through > mark.n)
       if (result.ok) {
         state.look(sessionID, {
@@ -1112,26 +993,10 @@ export default {
           ...(through > 0 && !result.skipped ? { n: through } : {}),
           open,
           failed: false,
+          attempts: 0,
           id: identity,
         })
-      }
-
-      // An excerpt leaves the debt open: the gap has not been turned into lessons, so the
-      // entry stays and the next command reads from the mark. Only a complete read (or a
-      // run of real failures) settles the entry, and only a complete read may prune.
-      const exhausted = (state.pending.find((p) => p.session === sessionID)?.attempts ?? 0) >= 3
-      if (settle && ((result.ok && !open) || (!result.ok && exhausted))) {
-        // `size` is what this settle actually covered, so a queue entry for later material
-        // is not mistaken for one this extraction already answered.
-        state.markExtracted(sessionID, { ok: result.ok, detail: result.detail, size: readSize })
-        if (result.ok) {
-          // Only a complete success releases the log; a failure keeps it, as decision 18 says.
-          pruneLogs(invoking)
-        } else {
-          // Retirement is a settlement: nothing is owed any more, so neither flag may outlive
-          // it and re-queue the log the same report calls given up on.
-          state.look(sessionID, { open: false, failed: false })
-        }
+        state.markExtracted(sessionID, { ok: true, detail: result.detail })
       }
 
       lastExtraction.set(sessionID, result)

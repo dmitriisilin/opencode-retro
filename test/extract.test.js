@@ -261,29 +261,6 @@ test("where the model came from is not passed to the model call itself", async (
   assert.deepEqual(r.calls[0].model, MODEL, "`from` is for the report, not for the API")
 })
 
-test("the queue survives a restart and does not re-extract a finished session", () => {
-  const r = rig({ reply: REPLY() })
-  r.state.queue("ses_a")
-  r.state.queue("ses_b")
-  assert.equal(r.state.nextPending(null).session, "ses_a")
-  assert.equal(r.state.nextPending("ses_a").session, "ses_b", "the running session is not its own debt")
-
-  r.state.markExtracted("ses_a", { ok: true, detail: "done" })
-  assert.equal(r.state.nextPending(null).session, "ses_b")
-  assert.ok(r.state.wasExtracted("ses_a"))
-
-  const reloaded = createState({ path: join(r.root, "state.json") })
-  assert.equal(reloaded.nextPending(null).session, "ses_b")
-  assert.ok(reloaded.wasExtracted("ses_a"))
-})
-
-test("a session is given up on after three attempts rather than billed forever", () => {
-  const r = rig({ reply: REPLY() })
-  r.state.queue("ses_a")
-  for (let i = 0; i < 3; i++) r.state.attempt("ses_a")
-  assert.equal(r.state.nextPending(null), null)
-})
-
 test("a model call that never settles is given up on, not waited on forever", async () => {
   const r = rig()
   const result = await extract({
@@ -303,24 +280,6 @@ test("a slow but finite call still succeeds", async () => {
   const slow = (input) => new Promise((res) => setTimeout(() => res({ text: REPLY() }), 10)).then((x) => (r.calls.push(input), x))
   const result = await extract({ records: live(), session: "ses_slow", ...r, generate: slow, timeoutMs: 2000 })
   assert.ok(result.ok, result.detail)
-})
-
-test("a backlog is analysed in order and bounded, so one command cannot bill without limit", () => {
-  // processQueue's contract, exercised through the state it drives.
-  const r = rig({ reply: REPLY() })
-  for (const id of ["ses_a", "ses_b", "ses_c"]) r.state.queue(id)
-
-  const order = []
-  let guard = 0
-  while (guard++ < 2) {
-    const next = r.state.nextPending("ses_current")
-    if (!next) break
-    order.push(next.session)
-    r.state.markExtracted(next.session, { ok: true, detail: "done" })
-  }
-
-  assert.deepEqual(order, ["ses_a", "ses_b"], "oldest first")
-  assert.equal(r.state.pending.length, 1, "and the bound leaves the rest for the next call")
 })
 
 test("the per-command log limit is unlimited by default and can be capped", async () => {

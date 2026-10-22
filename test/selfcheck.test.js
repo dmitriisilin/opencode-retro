@@ -38,8 +38,8 @@ test("the shadow log line counts the file, not just the turn being measured", ()
   assert.match(checks.find((c) => c.name === "shadow log").detail, /79 entries/)
 })
 
-test("a queued log says what will analyse it, and that nothing happens unasked", () => {
-  const checks = assess({ ...healthy, extraction: { queued: true } })
+test("a log waiting for analysis says what will analyse it, and that nothing happens unasked", () => {
+  const checks = assess({ ...healthy, extraction: { owed: true } })
   const x = checks.find((c) => c.name === "extraction")
   assert.equal(x.status, STATUS.SKIPPED)
   assert.match(x.detail, /`\/retro` analyses it/)
@@ -219,7 +219,7 @@ test("the active check passes when every member the plugin depends on is present
   assert.equal(activeStatus(report, "extract prompt").status, STATUS.OK)
   assert.match(activeStatus(report, "extract prompt").detail, /^packaged \(base \d+\)$/, "and which layer is live")
   assert.equal(activeStatus(report, "store").status, STATUS.OK)
-  assert.match(activeStatus(report, "store").detail, /0 lesson\(s\), 0 session\(s\) queued/)
+  assert.match(activeStatus(report, "store").detail, /0 lesson\(s\), 0 log\(s\) waiting to be analysed/)
   assert.deepEqual(report.notes, [])
 })
 
@@ -259,13 +259,11 @@ test("a newer default waiting on disk is named, and says nothing was changed", a
   assert.match(report.notes[0], /Nothing was changed for you/)
 })
 
-test("the stock line counts what is queued, so the review reports its own backlog", async () => {
+test("the stock line counts what is owed, so the review reports its own backlog", async () => {
   const r = activeRig()
-  r.state.queue("ses_a")
-  r.state.queue("ses_b")
-  const report = await activeCheck(r)
+  const report = await activeCheck({ ...r, owed: 2 })
 
-  assert.match(activeStatus(report, "store").detail, /0 lesson\(s\), 2 session\(s\) queued/)
+  assert.match(activeStatus(report, "store").detail, /0 lesson\(s\), 2 log\(s\) waiting to be analysed/)
 })
 
 test("a lesson file that cannot be read is named, with what to do about it", () => {

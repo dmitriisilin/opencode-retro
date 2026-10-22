@@ -24,12 +24,10 @@ turn, so a session prompted earlier and handed a lesson later was not "started b
 hand-over"; a shortfall of hook calls against events is not evidence while calls are in
 flight; the trigger cannot be judged before the session ends.
 
-**Stock.** What is waiting for the human: open lessons, logs not analysed yet, logs whose
-analysis failed, logs of working sessions read as far as they go, logs kept because a
-lesson cites them, logs given up on, and lesson files that cannot be read. Kept in its own section, because it is the one part a
-person has to act on. A queue entry is not "not analysed": a working session read by
-`/retro` stays queued until it is over, because reading is not settling, and a failed
-analysis is a failure, not something nobody looked at. The extraction line reports the
+**Stock.** What is waiting for the human: open lessons, logs owed an analysis, logs whose
+analysis failed, logs kept because a lesson cites them, logs given up on, and lesson files
+that cannot be read. Kept in its own section, because it is the one part a person has to act
+on. A failed analysis is a failure, not something nobody looked at, and is named as one. The extraction line reports the
 last analysis of the session whichever path ran it.
 
 ## Invariants
@@ -39,19 +37,18 @@ last analysis of the session whichever path ran it.
 - The report is written from the first prompt, not once the session is over.
   `the report is written from the first prompt, not once the session is over`
 - A finished session proves the hooks ran, with numbers.
-  `a finished session is queued by the event stream, and the report proves the hooks ran`
+  `a finished session is owed an analysis, and the report proves the hooks ran`
 - Events the hooks never received are reported as a dead hook, with numbers — at the end
   of the session, not while calls are still in flight.
   `events the hooks never received are reported as a dead hook, with numbers`
   `a running session with calls still in flight is not reported as a broken tool hook`
-- The report describes the last analysis and the queue as the marks say they are: read,
+- The report describes the last analysis and what is owed as the marks say they are: read,
   owed, or failed. A failure that a later read recovered from is not still a failure, and a
-  log that was given up on and has since been queued again is not beyond reading.
+  log that was given up on and has since grown is not beyond reading.
   `a working session read by /retro is reported as read, not as unanalysed`
   `a log whose analysis failed is named as failed, not as not analysed yet`
   `a successful read clears the failure the mark was carrying`
-  `a working session read by /retro is reported as read even when it was never queued`
-  `a log given up on and then queued again is not reported as beyond reading`
+  `a log given up on and then grown is not reported as beyond reading`
 - A call the turn ended in the middle of accounts for its event: an interrupted turn with a
   subagent still running is not a dead tool hook.
   `an interrupted turn with a subagent still running is not a dead tool hook`

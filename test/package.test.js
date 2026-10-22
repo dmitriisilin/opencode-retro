@@ -41,6 +41,7 @@ test("the published tarball carries everything the entry point imports", () => {
     assert.ok(listed.includes(`prompts/${name}.md`), `prompts/${name}.md must ship — it is seeded at runtime`)
   }
   assert.ok(listed.includes("README.md"))
+  assert.ok(listed.includes("README.en.md"), "the canonical English README ships beside the default one")
   assert.ok(listed.includes("LICENSE"))
 
   // And nothing that is only ours to develop with.

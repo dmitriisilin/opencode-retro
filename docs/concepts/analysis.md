@@ -41,21 +41,21 @@ coverage, never to the last step seen, so the gap is read next time rather than 
 A projection that covers no step past the mark has covered nothing new: it is a failed read,
 not an excerpt.
 
-**Attempt.** One analysis of one queued log. A log gets three *on the same input*; a
-successful excerpt is progress, not an attempt, and a log that grows is a different input —
-the count starts again, because the cap exists so a fourth try does not pay for the same
-answer, and new material has not failed anywhere yet. After three failures the log is retired: its outcome recorded
-as failed, the log kept on disk, and the self-check names it. Retirement is decided before
-the queue is scanned, so a log that has grown since the third failure is new work and is
+**Attempt.** One analysis of one owed log. A log gets three *on the same input*, counted on
+its mark; a successful excerpt is progress, not an attempt, and a log that grows is a
+different input — the count starts again, because the cap exists so a fourth try does not
+pay for the same answer, and new material has not failed anywhere yet. After three failures
+the log is retired (log.md): its outcome recorded as failed, the log kept until it is quiet,
+and the self-check names it. A log that has grown since its third failure is new work and is
 read in the same command rather than waiting for the next one.
 
 **Limit (`extractLimit`).** The most analyses one command attempts. Unlimited by default.
 It counts attempts rather than successes, because a failed attempt is what costs a model
 call; a log skipped as one exchange never reaches the model, so it does not spend one.
-Whatever is left stays queued and is named in the command's message.
+Whatever is left stays owed and is named in the command's message.
 
 **Auto-extraction (`autoExtract`).** Off by default. Nothing is analysed without a command.
-When on, the next queued log is analysed at the next prompt instead — one per prompt, so a
+When on, the next owed log is analysed at the next prompt instead — one per prompt, so a
 backlog of four costs four prompts and never an unbounded spend in a hook. Only one of
 these runs at a time: a prompt that arrives while an analysis is in flight does not start a
 second.
@@ -95,7 +95,7 @@ an end marker, still proves nothing.
   `an excerpt reports how far it actually goes, not how far it looked`
   `a truncation reports only the steps that survived the cut`
 - A projection that covers no step past the mark is a failed read: it is reported, never
-  settled as done, and charged against the attempt budget when the log is queued.
+  marked as read, and charged against the log's attempts.
   `an excerpt that cannot reach past the mark is reported, not settled as done`
 - An empty reply is answered by asking again with less, at half and then at a quarter,
   and never more than that.
@@ -103,7 +103,7 @@ an end marker, still proves nothing.
   `an empty reply with nothing left to trim is reported, not retried for ever`
   `a second empty reply is answered once more, at a quarter of the budget`
 - A failed log is tried again on the next command, and given up on after three.
-  `a log that failed stays queued, and is tried again on the next command`
+  `a log that failed stays owed, and is tried again on the next command`
   `a session is given up on after three attempts, not billed forever`
 - One failing log does not hold up the ones behind it, and both commands report it.
   `a log the model could not answer does not hold up the logs behind it`
@@ -111,12 +111,12 @@ an end marker, still proves nothing.
 - An entry that used its three attempts is retired and reported, never silently skipped.
   `an entry that used its three attempts is retired and reported, not skipped for ever`
   `a log given up on after three attempts is not retried in the same command`
-- One command makes at most `extractLimit` attempts; the rest stay queued and are named.
+- One command makes at most `extractLimit` attempts; the rest stay owed and are named.
   A skipped log makes no attempt, because there is no model call to bound.
-  `extractLimit caps what one command analyses and leaves the rest queued`
+  `extractLimit caps what one command analyses and leaves the rest owed`
   `the per-command log limit is unlimited by default and can be capped`
   `a log skipped as one exchange does not spend the command's limit`
-- With `autoExtract` the next queued log is analysed at the next prompt; without it, only
+- With `autoExtract` the next owed log is analysed at the next prompt; without it, only
   a command analyses anything.
   `autoExtract analyses at the start of the next session, and is off by default`
 - The model is `options.model` when set, otherwise the one the user's own session is

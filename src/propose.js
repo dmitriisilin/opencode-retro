@@ -222,18 +222,8 @@ export function renderNothing({ queued = 0, extracted = null } = {}) {
   for (const f of extracted?.failures ?? []) {
     lines.push("", `Could not analyse \`${f.session}\`: ${f.detail}`)
   }
-  if (extracted?.live) {
-    lines.push(
-      "",
-      `Read ${extracted.live} log${extracted.live === 1 ? "" : "s"} of ${
-        extracted.live === 1 ? "a session" : "sessions"
-      } still working. Nothing is settled while a session can still add to it, so ${
-        extracted.live === 1 ? "it" : "they"
-      } will be read again when there is more.`,
-    )
-  }
   if (extracted?.analysed) {
-    lines.push("", `Analysed ${extracted.analysed} finished session${extracted.analysed === 1 ? "" : "s"} just now, with nothing to learn from ${extracted.analysed === 1 ? "it" : "them"}.`)
+    lines.push("", `Analysed ${extracted.analysed} session log${extracted.analysed === 1 ? "" : "s"} just now, with nothing to learn from ${extracted.analysed === 1 ? "it" : "them"}.`)
   }
   if (queued) lines.push("", backlogLine(queued))
   lines.push(

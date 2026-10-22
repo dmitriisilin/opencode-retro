@@ -115,6 +115,44 @@ export function createShadowLog({ dir, onError }) {
       }
     },
 
+    /**
+     * The file as it is on disk now — its identity, its size and when it was last written —
+     * or `null` when there is none. Reads the first line only, because the state merge asks
+     * this about every mark on every save, and a whole-file read there would cost the sum of
+     * every log the project keeps.
+     */
+    probe(sessionID) {
+      const path = join(dir, `${sessionID}.jsonl`)
+      let fd
+      let stat
+      try {
+        stat = statSync(path)
+      } catch {
+        return null
+      }
+      const { size, mtimeMs } = stat
+      try {
+        fd = openSync(path, "r")
+        const chunks = []
+        const buf = Buffer.alloc(65536)
+        for (let pos = 0; pos < size; ) {
+          const got = readSync(fd, buf, 0, buf.length, pos)
+          if (!got) break
+          const part = buf.subarray(0, got)
+          const nl = part.indexOf(0x0a)
+          chunks.push(Buffer.from(nl >= 0 ? part.subarray(0, nl + 1) : part))
+          if (nl >= 0) break
+          pos += got
+        }
+        return { id: identityOf(Buffer.concat(chunks).toString("utf8")), size, mtimeMs }
+      } catch {
+        // There, but not readable: still a file the marks may describe, with no identity.
+        return { id: null, size, mtimeMs }
+      } finally {
+        if (fd !== undefined) closeSync(fd)
+      }
+    },
+
     /** Used by the self-check: the log must exist and be non-empty. */
     stat(sessionID) {
       try {

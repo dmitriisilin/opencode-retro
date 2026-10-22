@@ -1,6 +1,6 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { appendFileSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs"
+import { appendFileSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import plugin from "../index.js"
@@ -17,8 +17,9 @@ import { parseFrontmatter } from "../src/frontmatter.js"
  * corners the last one had not, and cycle 5 found twelve defects in code that had not
  * changed. This walks the space instead: random histories of turns, hooks, delegations,
  * `/retro`, decisions, restarts, crashes mid-answer and mid-append, replaced logs, lesson
- * files and prompts edited by hand, a second plugin instance on the same project, and a
- * model that sometimes answers nothing — through the real entry
+ * files and prompts edited by hand, weeks passing, a second plugin instance on the same
+ * project in half the histories, and a model that sometimes answers nothing — through the
+ * real entry
  * point, against the shared fake — and checks the invariants after every step. A failure is
  * shrunk to the shortest history that still fails, which is a ready-made regression test.
  *
@@ -70,6 +71,9 @@ const hash = (text) => {
  * for good, exactly as a process that died would.
  */
 const timers = new Set()
+/** The world's clock, in ms. Starts at the real time, so files written in a run are recent. */
+let clock = 0
+const WEEK = 7 * 24 * 60 * 60 * 1000
 /** Fire every pending timer: the model call they guard has been waiting longer than allowed. */
 const advanceTimers = () => {
   for (const t of [...timers]) {
@@ -79,7 +83,7 @@ const advanceTimers = () => {
 }
 function freezeTime() {
   const real = { Date: globalThis.Date, now: Date.now, setTimeout: globalThis.setTimeout, clearTimeout: globalThis.clearTimeout }
-  let clock = 1_800_000_000_000
+  clock = Math.floor(real.now() / 1000) * 1000
   // `new Date()` reads the real clock, not `Date.now`, and a recorded date that differs per
   // run reaches the model's prompt — the same history then answered differently on replay.
   const RealDate = real.Date
@@ -117,10 +121,10 @@ function generate(seed, steps) {
   const pick = (list) => list[Math.floor(r() * list.length)]
   const forced = process.env.RETRO_MODEL_WRITERS ? Number(process.env.RETRO_MODEL_WRITERS) : null
   const roll = r()
-  // One instance by default: a second instance on the same project is supported for data
-  // safety only (session.md), and liveness across instances is not. RETRO_MODEL_WRITERS=2
-  // walks that case on purpose.
-  const writers = forced ?? 1
+  // Half the histories run two instances on the project: nothing about what is read or pruned
+  // depends on one instance knowing the other's sessions (session.md). RETRO_MODEL_WRITERS
+  // pins either case.
+  const writers = forced ?? (roll < 0.5 ? 1 : 2)
   const w = () => (writers === 2 && r() < 0.5 ? 1 : 0)
   // A prolific history has a model that finds four to eight lessons a time and a human who
   // mostly defers: that is what fills the open set past its cap, a branch the ordinary
@@ -159,6 +163,7 @@ function generate(seed, steps) {
     else if (roll < 0.925) actions.push({ op: "torn", s })
     else if (roll < 0.945) actions.push({ op: "edit", pick: r(), how: pick(["delete", "later", "nostatus", "body", "break"]) })
     else if (roll < 0.955) actions.push({ op: "reprompt", marker: `marker-${Math.floor(r() * 1e6)}` })
+    else if (roll < 0.975) actions.push({ op: "week", days: pick([3, 6, 8, 8, 15]) })
     else actions.push({ op: "tool", s, w: w(), exit: 2, size: 1200 })
   }
   // Every delegation the parent finished is eventually reported; ones whose parent died with
@@ -199,6 +204,10 @@ function createWorld() {
     /** session -> the records last seen in its log. */
     seen: new Map(),
     replaced: new Set(),
+    /** Sessions whose log was given up on after three failures: allowed to go when quiet. */
+    givenUp: new Set(),
+    /** session -> { size, at }: when each log last changed, by the world's clock. */
+    written: new Map(),
     /** file -> the text a hand edit left in it, unparseable: the user's, until they fix it. */
     broken: new Map(),
     /** session -> half-records a crash left in its log, which no write may swallow. */
@@ -286,7 +295,7 @@ function createWorld() {
   world.state = () =>
     existsSync(join(retro, "state.json"))
       ? JSON.parse(readFileSync(join(retro, "state.json"), "utf8"))
-      : { rejected: [], pending: [], extracted: {} }
+      : { rejected: [], extracted: {}, looked: {} }
   world.lessons = (where) => {
     const dir = join(retro, where)
     if (!existsSync(dir)) return []
@@ -295,6 +304,28 @@ function createWorld() {
       .map((f) => parseFrontmatter(readFileSync(join(dir, f), "utf8")).data)
       .filter((l) => l?.id)
   }
+  /**
+   * The filesystem's clock is the world's: a log that changed is stamped with the world's
+   * time, so "a week of silence" means a week of the world, not of the CPU. Run around every
+   * action and every check.
+   */
+  world.sync = () => {
+    for (const s of world.logs()) {
+      let st
+      try {
+        st = statSync(world.logPath(s))
+      } catch {
+        continue
+      }
+      // By size and by stamp: a file replaced by one of the same size is a write too, and its
+      // modification time is then the CPU's, not the world's.
+      const held = world.written.get(s)
+      if (held && held.size === st.size && held.mtimeMs === st.mtimeMs) continue
+      const t = clock / 1000
+      utimesSync(world.logPath(s), t, t)
+      world.written.set(s, { size: st.size, at: clock, mtimeMs: statSync(world.logPath(s)).mtimeMs })
+    }
+  }
   world.dispose = () => rmSync(directory, { recursive: true, force: true })
   return world
 }
@@ -302,6 +333,15 @@ function createWorld() {
 /* ------------------------------------------------------------- actions */
 
 async function apply(world, action) {
+  world.sync()
+  try {
+    return await act(world, action)
+  } finally {
+    world.sync()
+  }
+}
+
+async function act(world, action) {
   const prompt = async (s, inst, text) => {
     world.inPrompt = true
     await inst.fake.hooks.get("session.prompt")({ sessionID: s, messageID: `m${++world.calls}`, prompt: { text } })
@@ -465,6 +505,11 @@ async function apply(world, action) {
     case "model":
       world.mode = action.mode
       return
+    case "week":
+      // Time passes with nothing written: the only thing the plugin measures with a clock.
+      clock += action.days * 24 * 60 * 60 * 1000
+      if (action.days >= 7) world.saw.add("a week passed")
+      return
     case "restart": {
       // A restart ends every session on that server: no end event reaches anybody.
       const w = Math.min(action.w ?? 0, world.writers - 1)
@@ -574,17 +619,23 @@ function check(world) {
   }
   const retro = join(world.directory, ".retro")
   const isChild = (s) => world.children.has(s) && !s.includes("#")
+
+  world.sync()
   const linked = (s) => isChild(s) && world.children.get(s).linked
 
-  // state.md — the file is always readable, and the queue holds a session once.
+  // state.md — the file is always readable.
   let state
   try {
     state = world.state()
   } catch (err) {
     fail("state", "state.json is always valid", String(err))
   }
-  const pending = state.pending.map((p) => p.session)
-  if (new Set(pending).size !== pending.length) fail("state", "a session is queued once", JSON.stringify(pending))
+  for (const [id, x] of Object.entries(state.extracted ?? {})) if (x?.ok === false) world.givenUp.add(id)
+  for (const inst of world.instances) {
+    for (const d of inst.fake.synthetic) {
+      for (const m of d.text.matchAll(/`(ses_\w+)`: given up after three failed analyses/g)) world.givenUp.add(m[1])
+    }
+  }
 
   const logs = world.logs()
 
@@ -599,11 +650,10 @@ function check(world) {
   }
 
   // session.md — a delegation whose link the plugin was told is never a session of its own:
-  // no log under its id, not queued, not counted.
+  // no log under its id, not counted.
   for (const s of world.children.keys()) {
     if (!linked(s)) continue
     if (logs.includes(s)) fail("session", "a delegation is never a session of its own", `${s} still has a log`)
-    if (pending.includes(s)) fail("session", "a delegation is never a session of its own", `${s} is queued`)
     const counted = state.counted ?? {}
     const uncounted = new Set(state.uncounted ?? [])
     if (Object.hasOwn(counted, s) && !uncounted.has(s)) fail("session", "a delegation is never a session of its own", `${s} is counted`)
@@ -616,7 +666,15 @@ function check(world) {
     const before = world.seen.get(s)
     const now = logs.includes(s) ? world.readLog(s) : null
     if (before && !now && !linked(s)) {
-      if (!skippable(before)) {
+      // session.md — a log written in the last seven days is never pruned.
+      const last = world.written.get(s)?.at ?? 0
+      if (clock - last < WEEK) {
+        fail("session", "a log written in the last seven days is not pruned", `${s} last written ${Math.round((clock - last) / 3600000)}h before it vanished`)
+      }
+      // A log given up on after three failures is not owed, and goes once it is quiet like any
+      // other (log.md, "Retired"). The outcome that says so is compacted with the log in the
+      // same command, so it is remembered here from the reports and from earlier checks.
+      if (!skippable(before) && !world.givenUp.has(s)) {
         const analysed = world.analysed.get(s) ?? new Set()
         const unread = before.filter((r) => isMaterial(r) && !analysed.has(r.n)).map((r) => r.n)
         if (unread.length) {
@@ -642,7 +700,10 @@ function check(world) {
     if (before && !now) world.analysed.delete(s) // a new file under this id numbers afresh
     if (!now) world.torn.delete(s)
     if (now) world.seen.set(s, now)
-    else world.seen.delete(s)
+    else {
+      world.seen.delete(s)
+      world.written.delete(s)
+    }
   }
 
   if (world.violation) fail("prompts", "only the user's prose reaches the model", world.violation)
@@ -759,7 +820,7 @@ async function quiesce(world) {
     await apply(world, { op: "retro", invoker: `ses_quiet_${i}`, w: i % world.writers })
     if (DEBUG) {
       const st = world.state()
-      debug(`quiesce ${i}: pending ${JSON.stringify(st.pending)}`)
+      debug(`quiesce ${i}: looked ${JSON.stringify(st.looked)}`)
       for (const s of world.logs()) {
         const records = world.readLog(s)
         debug(`  ${s}: ${records.map((r) => `${r.n}${r.k[0]}`).join(" ")}  mark ${JSON.stringify(st.looked?.[s] ?? null)}`)
@@ -771,7 +832,9 @@ async function quiesce(world) {
   for (const s of world.logs()) {
     const records = world.readLog(s)
     if (!records || skippable(records)) continue
-    const retired = state.extracted?.[s]?.ok === false && !state.pending.some((p) => p.session === s)
+    const mark = state.looked?.[s] ?? {}
+    const owedNow = statSync(world.logPath(s)).size > (mark.size ?? 0) || mark.open || (mark.failed && (mark.attempts ?? 0) < 3)
+    const retired = state.extracted?.[s]?.ok === false && !owedNow
     if (retired) continue
     const analysed = world.analysed.get(s) ?? new Set()
     const unread = records.filter((r) => isMaterial(r) && !analysed.has(r.n)).map((r) => r.n)
