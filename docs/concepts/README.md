@@ -31,5 +31,7 @@ is wrong, out loud, rather than to make the code work and leave the concept behi
 | [analysis.md](analysis.md) | projection, budget, excerpt, coverage, attempt, failure |
 | [lesson.md](lesson.md) | lesson, evidence, recurrence, score, archive, reopen, restore, cap |
 | [handover.md](handover.md) | proposal, currency, decision, what a decision records |
+| [prompts.md](prompts.md) | prompt, layer, seed, base, news, the contract, fallback |
+| [config.md](config.md) | options, the layout, resolution, the capture clamp, the project's git |
 | [state.md](state.md) | state.json, merge, append-only, tombstone, log identity |
 | [selfcheck.md](selfcheck.md) | liveness, the three timestamps, what the report may claim |
