@@ -319,6 +319,13 @@ plugin needed — and it gets the `sessionID`, so it can drive the review conver
    that out) — which is how the dogfooding run eventually triggered it. With the CLI:
    `opencode api post /api/session/<id>/command -d '{"name":"retro","text":""}'`. `/retro` typed in the TUI is unaffected. Worth knowing before
    believing a scripted review did anything.
+18. **An agent that restarts the service kills itself.** `opencode run` sessions run on the
+   background service, so an audit agent that runs `opencode service restart` — to make the
+   service pick up a freshly packed plugin — closes the socket its own session is on. Both
+   attempts of cycle 4's stranger run died that way, with `Transport: The socket connection
+   was closed unexpectedly`, minutes after a `service restart` in the server log. A plugin at
+   a new absolute path loads fresh in a new location anyway, so there is nothing to restart
+   for; audit prompts say so.
 
 ### Still unverified
 
