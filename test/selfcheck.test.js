@@ -229,7 +229,7 @@ test("the active check passes when every member the plugin depends on is present
   assert.equal(activeStatus(report, "extract prompt").status, STATUS.OK)
   assert.match(activeStatus(report, "extract prompt").detail, /^packaged \(base \d+\)$/, "and which layer is live")
   assert.equal(activeStatus(report, "store").status, STATUS.OK)
-  assert.match(activeStatus(report, "store").detail, /0 lesson\(s\), 0 log\(s\) waiting to be analysed/)
+  assert.match(activeStatus(report, "store").detail, /0 open lesson\(s\); what is waiting is under "What is waiting for you"/)
   assert.deepEqual(report.notes, [])
 })
 
@@ -269,11 +269,11 @@ test("a newer default waiting on disk is named, and says nothing was changed", a
   assert.match(report.notes[0], /Nothing was changed for you/)
 })
 
-test("the stock line counts what is owed, so the review reports its own backlog", async () => {
-  const r = activeRig()
-  const report = await activeCheck({ ...r, owed: 2 })
-
-  assert.match(activeStatus(report, "store").detail, /0 lesson\(s\), 2 log\(s\) waiting to be analysed/)
+test("the checked block does not count waiting logs, so it cannot contradict the stock", async () => {
+  // A stranger's run: the checked block, taken before the hand-over, said "0 logs waiting"
+  // while the stock section below, written after it, said "1 log not analysed yet".
+  const report = await activeCheck(activeRig())
+  assert.doesNotMatch(activeStatus(report, "store").detail, /waiting to be analysed|log\(s\)/)
 })
 
 test("a lesson file that cannot be read is named, with what to do about it", () => {

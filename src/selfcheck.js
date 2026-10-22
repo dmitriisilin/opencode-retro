@@ -409,7 +409,7 @@ export const REQUIRED_SURFACE = [
   ["model", "default"],
 ]
 
-export async function activeCheck({ ctx, config, prompts, store, owed = 0 }) {
+export async function activeCheck({ ctx, config, prompts, store }) {
   const checks = []
   const notes = []
 
@@ -443,7 +443,10 @@ export async function activeCheck({ ctx, config, prompts, store, owed = 0 }) {
   checks.push({
     status: OK,
     name: "store",
-    detail: `${lessons.length} lesson(s), ${owed} log(s) waiting to be analysed`,
+    // Lessons only. The logs waiting are counted in the stock section, which is recomputed
+    // every time the file is written; a count here was a snapshot from before the hand-over,
+    // and the same file then said "0 logs waiting" and "1 log not analysed yet" at once.
+    detail: `${lessons.length} open lesson(s); what is waiting is under "What is waiting for you"`,
   })
 
   return { checks, notes }

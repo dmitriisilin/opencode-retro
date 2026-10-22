@@ -178,6 +178,21 @@ function generate(seed, steps) {
 // the agent works after it, it travels with that work. So it is not owed by itself.
 const MATERIAL = new Set(["prompt", "text", "tool"])
 const isMaterial = (r) => MATERIAL.has(r.k) || (r.k === "step" && r.files?.length)
+/**
+ * The material steps of a log, in context: a reply that answers the plugin's own hand-over is
+ * the plugin talking to itself (analysis.md, "Skipped"), not something owed a model call.
+ */
+const materialSteps = (records) => {
+  let answering = null
+  const out = []
+  for (const r of [...records].sort((a, b) => a.n - b.n)) {
+    if (r.k === "prompt" || r.k === "handover") answering = r.k
+    if (!isMaterial(r)) continue
+    if (r.k === "text" && answering === "handover") continue
+    out.push(r)
+  }
+  return out
+}
 /** One prompt and nothing done: the skip rule says such a log cannot hold evidence. */
 const skippable = (records) =>
   records.filter((r) => r.k === "prompt").length <= 1 && !records.some((r) => r.k === "tool")
@@ -676,7 +691,7 @@ function check(world) {
       // same command, so it is remembered here from the reports and from earlier checks.
       if (!skippable(before) && !world.givenUp.has(s)) {
         const analysed = world.analysed.get(s) ?? new Set()
-        const unread = before.filter((r) => isMaterial(r) && !analysed.has(r.n)).map((r) => r.n)
+        const unread = materialSteps(before).filter((r) => !analysed.has(r.n)).map((r) => r.n)
         if (unread.length) {
           fail("log", "a log is pruned only when nothing is owed for it", `${s} vanished with steps ${unread.join(",")} never analysed`)
         }
@@ -837,7 +852,7 @@ async function quiesce(world) {
     const retired = state.extracted?.[s]?.ok === false && !owedNow
     if (retired) continue
     const analysed = world.analysed.get(s) ?? new Set()
-    const unread = records.filter((r) => isMaterial(r) && !analysed.has(r.n)).map((r) => r.n)
+    const unread = materialSteps(records).filter((r) => !analysed.has(r.n)).map((r) => r.n)
     if (unread.length) {
       const err = new Error(
         `analysis: once the world is calm, nothing is owed\n  ${s}: steps ${unread.join(",")} never reached a model that answered`,

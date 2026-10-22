@@ -92,6 +92,25 @@ test("an empty store explains itself rather than looking broken", () => {
   assert.match(text, /selfcheck\.md/)
 })
 
+test("a log that could not be read is not reported as a session that went straight", () => {
+  // Measured live: the message said "Could not analyse …" and then "Either the sessions have
+  // been going straight, or nothing is recorded yet" — a failed read dressed as a clean bill
+  // of health, which is the one thing this plugin exists to prevent.
+  const text = renderNothing({
+    extracted: {
+      analysed: 1,
+      left: 0,
+      failures: [{ session: "ses_bad", detail: "unparseable reply — the model returned nothing" }],
+    },
+  })
+  assert.match(text, /Could not analyse `ses_bad`/)
+  assert.match(text, /Analysed 1 session log just now/, "the one that was read is still reported")
+  assert.doesNotMatch(text, /going straight/, "a failed read is not evidence that nothing went wrong")
+  assert.match(text, /not read, so this is not a clean result/, "say what the failure means")
+  assert.match(text, /next `\/retro` tries again/, "and what happens next")
+  assert.match(text, /plugin\.log/, "and where the reason is")
+})
+
 test("auto carries every waiting lesson and asks for one plan", () => {
   const lessons = [
     lesson({ id: "a", cost: 20 }),

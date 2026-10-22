@@ -119,8 +119,10 @@ export default {
         if (mark.failed) failing++
         // Read in part and nothing new since: a log too long for one call, which the next
         // command reads on from where this one stopped. Calling it "not analysed yet" right
-        // after `/retro` read it made the command look as if it had not finished.
-        else if (mark.open && log.stat(id).size <= mark.size) partial++
+        // after `/retro` read it made the command look as if it had not finished. An unread
+        // gap outranks later growth: the log is still read in part whether or not something
+        // wrote to it afterwards, and saying "not analysed yet" throws away that it was.
+        else if (mark.open) partial++
         else queued++
       }
       return { queued, failing, partial }
@@ -780,7 +782,6 @@ export default {
           config,
           prompts,
           store,
-          owed: owedLogs().length,
         })
         for (const note of report.notes) check.note(note)
         check.active(report.checks)

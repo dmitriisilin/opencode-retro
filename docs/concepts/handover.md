@@ -35,6 +35,9 @@ closed. Accepting or rejecting moves the file to `archive/`; `later` keeps it op
   hand-over rather than a silent one.
   `the hand-over instructions come from the prompt file, not from source`
   `a missing prompt degrades to a terse hand-off rather than a silent one`
+- An empty hand-over after a failed read says the read failed, and does not conclude that
+  the sessions went straight.
+  `a log that could not be read is not reported as a session that went straight`
 - `/retro all` is one plan over every open lesson, capped, and says what it left out.
   `/retro all delivers every waiting lesson as one plan`
   `proposeLimit caps one plan and says what it left out`

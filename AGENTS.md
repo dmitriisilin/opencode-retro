@@ -319,7 +319,12 @@ plugin needed — and it gets the `sessionID`, so it can drive the review conver
    `{"name": "retro", "text": ""}` (both keys are required; a stranger got two 400s finding
    that out) — which is how the dogfooding run eventually triggered it. With the CLI:
    `opencode api post /api/session/<id>/command -d '{"name":"retro","text":""}'`. `/retro` typed in the TUI is unaffected. Worth knowing before
-   believing a scripted review did anything.
+   believing a scripted review did anything. And the review it starts may stop to ask: the agent can put
+   the decision to the human with its `question` tool, which headless means a form waiting on
+   the session for ever. Cycle 7's stranger answered it through
+   `/api/session/<id>/form/<formID>/reply`; a scripted review that never answers is a review
+   that never decides. The command returns before any of this — it returns once the hand-over
+   is delivered — so "the POST came back" says nothing about whether the review has happened.
 18. **An agent that restarts the service kills itself.** `opencode run` sessions run on the
    background service, so an audit agent that runs `opencode service restart` — to make the
    service pick up a freshly packed plugin — closes the socket its own session is on. Both

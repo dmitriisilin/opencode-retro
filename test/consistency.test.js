@@ -4,6 +4,7 @@ import { readFileSync, readdirSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { REQUIRED_SURFACE } from "../src/selfcheck.js"
+import { DEFAULTS } from "../src/config.js"
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..")
 const read = (p) => readFileSync(join(root, p), "utf8")
@@ -46,6 +47,18 @@ test("every command named in shipped text is a command that exists", () => {
     }
   }
   assert.deepEqual(offenders, [], `text names commands that do not exist:\n  ${offenders.join("\n  ")}`)
+})
+
+test("the hand-over names the session logs where the plugin actually keeps them", () => {
+  // Measured live: the agent read a lesson, went to `sessions/` in the project root as the
+  // hand-over told it to, found nothing, and wrote the mistake into `discovered`. The path
+  // is in a file the user can edit, so it cannot be derived at call time — but the default
+  // it names has to be the default the plugin uses.
+  const where = `${DEFAULTS.dir}/sessions/`
+  assert.ok(
+    read("prompts/propose.md").includes(where),
+    `prompts/propose.md must name ${where}, where the logs are by default`,
+  )
 })
 
 test("every option the plugin reads is documented, in every language", () => {

@@ -1,4 +1,4 @@
-<!-- translated-from: README.en.md@a40342d16aa6 -->
+<!-- translated-from: README.en.md@f75a2b2a6cd3 -->
 # opencode-retro
 
 [Русский](README.md) | [English](README.en.md) | [简体中文](README.zh-CN.md) | **Español** | [日本語](README.ja.md)
@@ -46,7 +46,7 @@ Solo se omite sin llamada la sesión que no puede contener evidencia de nada: un
 
 `options.autoExtract` traslada el análisis de una sesión terminada al inicio de la sesión siguiente, para quien prefiera tener las lecciones listas antes de pedirlas.
 
-Por omisión el análisis usa el modelo con el que se ejecutan tus propias sesiones y, si todavía no lo ha visto, el modelo por omisión del espacio de trabajo. Esto funciona también con los modelos de la capa gratuita de OpenCode, así que no hace falta configurar nada. `options.model` fija otro, lo que conviene si el análisis debe ejecutarse en algo más barato que el trabajo.
+Por omisión el análisis usa el modelo con el que se ejecutan tus propias sesiones y, si todavía no lo ha visto, el modelo por omisión del espacio de trabajo. Esto funciona también con los modelos de la capa gratuita de OpenCode, así que no hace falta configurar nada. `options.model` fija otro, lo que conviene si el análisis debe ejecutarse en algo más barato que el trabajo, o si vuelve vacío una y otra vez. Algunos modelos responden a un log largo con nada en absoluto; el plugin lo registra como un fallo y lo reintenta en el siguiente `/retro`, y `selfcheck.md` lo señala, pero un modelo que lo hace a menudo conviene sustituirlo para esta tarea.
 
 Esa llamada recibe una vista comprimida de la sesión: la salida de las herramientas se recorta mucho y los prompts y las respuestas se conservan completos hasta unos miles de caracteres cada uno. Responde a una sola pregunta:
 

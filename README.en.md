@@ -43,7 +43,7 @@ A session is skipped without a call only when it cannot contain evidence of anyt
 
 `options.autoExtract` moves the analysis of a finished session to the start of the next session instead, for anyone who would rather have lessons ready before asking.
 
-By default the analysis uses the model your own sessions run on, falling back to the workspace default. This works on OpenCode's free-tier models too, so nothing needs configuring. `options.model` pins a different one, which is worth doing if the analysis should run somewhere cheaper than the work.
+By default the analysis uses the model your own sessions run on, falling back to the workspace default. This works on OpenCode's free-tier models too, so nothing needs configuring. `options.model` pins a different one, which is worth doing if the analysis should run somewhere cheaper than the work — or if it keeps coming back empty. Some models answer a long log with nothing at all; the plugin records that as a failure and retries on the next `/retro`, and `selfcheck.md` names it, but a model that does it often is worth replacing for this one job.
 
 That call receives a compressed view of the session. Tool output is trimmed hard; prompts and replies are kept in full up to a few thousand characters each. It answers one question:
 

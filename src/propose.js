@@ -218,19 +218,33 @@ export function renderFailures(extracted) {
 }
 
 export function renderNothing({ queued = 0, extracted = null } = {}) {
+  const failures = extracted?.failures ?? []
   const lines = ["# retro", "", "Nothing to review."]
-  for (const f of extracted?.failures ?? []) {
+  for (const f of failures) {
     lines.push("", `Could not analyse \`${f.session}\`: ${f.detail}`)
   }
   if (extracted?.analysed) {
     lines.push("", `Analysed ${extracted.analysed} session log${extracted.analysed === 1 ? "" : "s"} just now, with nothing to learn from ${extracted.analysed === 1 ? "it" : "them"}.`)
   }
   if (queued) lines.push("", backlogLine(queued))
-  lines.push(
-    "",
-    "Either the sessions have been going straight, or nothing is recorded yet.",
-    "`.retro/selfcheck.md` says whether the plugin is actually watching.",
-  )
+  // A failure is not a session that went straight. Ending every empty hand-over with the
+  // same two lines made a log that could not be read look like a clean bill of health —
+  // measured live, the message said "Could not analyse …" and, two lines later, "Either the
+  // sessions have been going straight". It sent a stranger looking at the project instead
+  // of at the failure.
+  if (failures.length) {
+    lines.push(
+      "",
+      `The log${failures.length === 1 ? "" : "s"} above ${failures.length === 1 ? "was" : "were"} not read, so this is not a clean result: the next \`/retro\` tries again.`,
+      "`.retro/plugin.log` says why each read failed; `.retro/selfcheck.md` says whether the plugin is still watching.",
+    )
+  } else {
+    lines.push(
+      "",
+      "Either the sessions have been going straight, or nothing is recorded yet.",
+      "`.retro/selfcheck.md` says whether the plugin is actually watching.",
+    )
+  }
   return lines.join("\n")
 }
 

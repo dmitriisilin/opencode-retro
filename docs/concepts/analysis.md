@@ -71,9 +71,10 @@ rather than retried.
 **Skipped.** A session of one prompt and no tool calls is not analysed: it cannot hold
 evidence of anything. Everything else is, including a conversation that ran no tools —
 that is where a wrong instruction file shows up. On a re-read the rule is about what is
-*new*: a new reply is material even with no prompt and no tool call of its own, while a
-slice that is nothing but the prompts it carries, a hand-over the plugin wrote itself, or
-an end marker, still proves nothing.
+*new*: a new prompt, a tool call, or a reply to a person is material, even a reply with no
+prompt of its own; a slice that is nothing but the prompts it carries, a hand-over the
+plugin wrote itself and the agent's answer to it with nothing done, or an end marker, still
+proves nothing.
 
 ## Invariants
 
@@ -141,3 +142,7 @@ an end marker, still proves nothing.
   `a single exchange that did nothing costs no model call`
   `a re-read with a reply is analysed even when it has no prompt or tool call of its own`
   `a re-read of a session that did work is analysed even when the new material is a reply alone`
+- On a re-read, only what is new counts: a person's new prompt, a tool call, or a reply to a
+  person. A reply to the plugin's own hand-over, with nothing done, is the plugin talking to
+  itself and costs no model call.
+  `a reply to the plugin's own hand-over, with nothing done, costs no model call`

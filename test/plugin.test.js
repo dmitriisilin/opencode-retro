@@ -2267,6 +2267,47 @@ test("a working session read by /retro is reported as read, not as unanalysed", 
   await cleanup?.()
 })
 
+test("a log read in part stays read in part after the hand-over wrote into it", async () => {
+  // Measured live: `/retro` read a long log as an excerpt, wrote "nothing to learn (from an
+  // excerpt…)" and then delivered a hand-over into the same session. The hand-over grew the
+  // log past the mark, and the stock line fell back to "not analysed yet" — exactly what
+  // selfcheck.md's own invariant says it must not do. The unreached gap is the reason it is
+  // owed; later growth does not make the part already read disappear.
+  const directory = sandbox()
+  const fake = fakeOpenCode({ directory, options: { model: MODEL } })
+  const cleanup = await plugin.setup(fake.ctx)
+  const session = "ses_partial"
+  await workSession(fake, session)
+
+  const file = join(directory, ".retro", "sessions", `${session}.jsonl`)
+  const size = statSync(file).size
+  writeFileSync(
+    join(directory, ".retro", "state.json"),
+    JSON.stringify({
+      version: 2,
+      rejected: [],
+      extracted: {},
+      sessions: 1,
+      looked: { [session]: { n: 1, size: size - 1, open: true } },
+      counted: { [session]: true },
+      anonymous: 0,
+      uncounted: [],
+    }),
+  )
+  // A second instance reads the state written above; state is read at setup, so the first
+  // one still holds the empty copy it loaded.
+  const reader = fakeOpenCode({ directory, options: { model: MODEL } })
+  const cleanup2 = await plugin.setup(reader.ctx)
+  await reader.hooks.get("session.prompt")({ sessionID: session, messageID: "m2", prompt: { text: "more" } })
+
+  const report = readFileSync(join(directory, ".retro", "selfcheck.md"), "utf8")
+  assert.match(report, /1 log read in part/, "the excerpt is named as an excerpt")
+  assert.doesNotMatch(report, /not analysed yet/, "not as a log nobody has opened")
+
+  await cleanup2?.()
+  await cleanup?.()
+})
+
 test("a log whose analysis failed is named as failed, not as not analysed yet", async () => {
   const directory = sandbox()
   const fake = fakeOpenCode({ directory, options: { model: MODEL } })
@@ -2539,7 +2580,8 @@ test("a re-read of a session that did work is analysed even when the new materia
   fake.emit({ type: "session.execution.started", durable: { seq: 1 }, data: { sessionID: session } })
   await tick()
   await workSession(fake, session)
-  await fake.commands.get("retro").execute({ sessionID: session, prompt: { text: "" } })
+  // From another session, so the reply below answers the person's prompt, not a hand-over.
+  await fake.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
   assert.equal(fake.generated.length, 1, "the whole session, the first time")
 
   fake.emit({
@@ -2553,9 +2595,45 @@ test("a re-read of a session that did work is analysed even when the new materia
   })
   await tick()
 
-  await fake.commands.get("retro").execute({ sessionID: session, prompt: { text: "" } })
+  await fake.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
   assert.equal(fake.generated.length, 2, "the new reply is read, not skipped as one quiet exchange")
   assert.match(fake.generated.at(-1).prompt, /the command does not exist in this repository/)
+
+  await cleanup?.()
+})
+
+test("a reply to the plugin's own hand-over, with nothing done, costs no model call", async () => {
+  // Found by a stranger's run: `/retro` with nothing to review still resumes the agent, which
+  // answers. Counted as material, that answer cost a call on the next command, whose own
+  // hand-over was answered in turn — a call per `/retro`, spent on the plugin talking to
+  // itself, and "1 log not analysed yet" in the report for ever.
+  const directory = sandbox()
+  const session = "ses_reviewing"
+  const fake = fakeOpenCode({ directory, options: { model: MODEL }, reply: () => JSON.stringify({ lessons: [] }) })
+  const cleanup = await plugin.setup(fake.ctx)
+  await workSession(fake, session)
+  await fake.commands.get("retro").execute({ sessionID: session, prompt: { text: "" } })
+  assert.equal(fake.generated.length, 1)
+
+  // The agent answers the hand-over, and does nothing else.
+  fake.emit({
+    type: "session.text.ended",
+    durable: { seq: 40 },
+    data: { sessionID: session, assistantMessageID: "m40", text: "Nothing to review — the sessions went straight." },
+  })
+  await tick()
+  await fake.commands.get("retro").execute({ sessionID: session, prompt: { text: "" } })
+  await fake.commands.get("retro").execute({ sessionID: session, prompt: { text: "" } })
+  assert.equal(fake.generated.length, 1, "no call is spent on the agent relaying the plugin's own message")
+
+  // A tool call after a hand-over is work, and is read: checking a lesson can turn up friction.
+  await fake.hooks.get("tool.execute.before")({ sessionID: session, id: "r1", tool: "shell", input: { command: "ls" } })
+  await fake.hooks.get("tool.execute.after")({
+    sessionID: session, id: "r1", tool: "shell", input: { command: "ls" }, status: "completed",
+    result: { output: { exit: 0, output: "x" }, metadata: { exit: 0 } },
+  })
+  await fake.commands.get("retro").execute({ sessionID: session, prompt: { text: "" } })
+  assert.equal(fake.generated.length, 2, "work done after a hand-over is still read")
 
   await cleanup?.()
 })

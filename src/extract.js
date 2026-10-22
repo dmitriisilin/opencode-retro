@@ -45,10 +45,22 @@ export async function extract({
   // the rule is therefore about what is *new*: a new reply is material even when it came with
   // no prompt and no tool call, while a re-read that is nothing but the prompts it carries
   // (the hand-over the plugin itself wrote, or an end marker) still proves nothing.
-  const asked = records.filter((r) => r.k === "prompt").length
+  //
+  // And a reply to the plugin's own hand-over is not new either, when nothing was done with
+  // it. `/retro` with nothing to review still resumes the agent, which answers; counted as
+  // material, that answer cost a model call on the next command, whose own hand-over was
+  // answered in turn — a call per `/retro`, spent on the plugin talking to itself. Found by a
+  // stranger's run. Only replies to a person's prompt count; tool calls always do.
+  const reread = analysedUpTo > 0
+  const asked = records.filter((r) => r.k === "prompt" && (!reread || r.n > analysedUpTo)).length
   const toolCalls = records.filter((r) => r.k === "tool").length
-  const newReply = analysedUpTo > 0 && records.some((r) => r.k === "text")
-  if (asked <= 1 && toolCalls === 0 && !newReply) {
+  let answering = null
+  let newReply = false
+  for (const r of [...records].sort((a, b) => (a.n ?? 0) - (b.n ?? 0))) {
+    if (r.k === "prompt" || r.k === "handover") answering = r.k
+    else if (r.k === "text" && answering !== "handover") newReply = true
+  }
+  if (reread ? asked === 0 && toolCalls === 0 && !newReply : asked <= 1 && toolCalls === 0) {
     return {
       ok: true,
       skipped: true,

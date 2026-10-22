@@ -32,8 +32,13 @@ last analysis of the session whichever path ran it.
 
 ## Invariants
 
-- A log read in part is named as such, not as not analysed yet.
+- The checked block does not count waiting logs: that is the stock's job, recomputed every
+  time the file is written, so the two cannot contradict each other.
+  `the checked block does not count waiting logs, so it cannot contradict the stock`
+- A log read in part is named as such, not as not analysed yet — and later growth does not
+  turn the part already read back into an unopened log.
   `a log read in part is named as such, not as not analysed yet`
+  `a log read in part stays read in part after the hand-over wrote into it`
 - A lesson file that cannot be read is named in the stock, with what to do about it.
   `a lesson file that cannot be read is named, with what to do about it`
 - The report is written from the first prompt, not once the session is over.

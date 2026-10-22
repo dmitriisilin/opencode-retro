@@ -65,6 +65,9 @@ hand-over degrades to a terse built-in text rather than to silence.
   hand-over rather than silence.
   `the hand-over instructions come from the prompt file, not from source`
   `a missing prompt degrades to a terse hand-off rather than a silent one`
+- The hand-over names the session logs where the plugin actually keeps them, so a reviewer
+  sent to the evidence can find it.
+  `the hand-over names the session logs where the plugin actually keeps them`
 - The shipped prompts make the local-or-global call explicit, survey the setup rather
   than assume a target, and put the currency question without prescribing how.
   `every prompt makes the local-or-global call explicit`

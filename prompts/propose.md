@@ -1,6 +1,6 @@
 ---
 prompt: propose
-base: 7
+base: 8
 ---
 
 A lesson from an earlier session in this project is about to be handed to the human. You
@@ -62,9 +62,10 @@ Relay it: what the problem is, where the fix would go and why there, and what it
 them. Answer their questions. If they ask, show the lesson verbatim.
 
 The lesson's evidence names a session log and a range of steps in it, and that log is still
-on disk under `sessions/`. If they want to know what actually happened — not the summary of
-it — read those steps and tell them. The log is kept precisely so that question has an
-answer; it is removed only once the lesson has been decided.
+on disk in the plugin's `sessions/` directory (`.retro/sessions/` by default). If they want
+to know what actually happened — not the summary of it — read those steps and tell them. The
+log is kept precisely so that question has an answer; it is removed only once the lesson has
+been decided.
 
 **Change nothing until they have decided.** If they want it, make the change here, in this
 session, the way you would make any change. The lesson's `change` field is prose, not a
