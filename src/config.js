@@ -6,8 +6,10 @@ export const DEFAULTS = {
   prompts: "prompts",
   /** Per-entry cap on captured tool output. Head and tail are kept, the middle is elided. */
   maxOutput: 8000,
-  // Characters of composed input one analysis may send. Measured on deepseek-flash: 39,518
-  // was answered, 41,029 came back empty with no error at all, so this sits well under it.
+  // Characters of composed input one analysis may send. A bound on cost, not a guarantee of
+  // an answer: on deepseek-flash an empty reply has been seen at 40,254, 31,993 and 19,181
+  // characters, and the same content answered at 26,034 and 32,034. No number is safe; the
+  // empty reply is handled by asking again at half and a quarter (see src/extract.js).
   maxInput: 32_000,
   /** Lower bound between heartbeat writes. See AGENTS.md "Three timestamps". */
   heartbeatMs: 60_000,

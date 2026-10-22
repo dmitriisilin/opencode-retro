@@ -24,9 +24,13 @@ turn, so a session prompted earlier and handed a lesson later was not "started b
 hand-over"; a shortfall of hook calls against events is not evidence while calls are in
 flight; the trigger cannot be judged before the session ends.
 
-**Stock.** What is waiting for the human: open lessons, queued logs, logs kept because a
-lesson cites them, logs given up on. Kept in its own section, because it is the one part
-a person has to act on.
+**Stock.** What is waiting for the human: open lessons, logs not analysed yet, logs whose
+analysis failed, logs of working sessions read as far as they go, logs kept because a
+lesson cites them, logs given up on. Kept in its own section, because it is the one part a
+person has to act on. A queue entry is not "not analysed": a working session read by
+`/retro` stays queued until it is over, because reading is not settling, and a failed
+analysis is a failure, not something nobody looked at. The extraction line reports the
+last analysis of the session whichever path ran it.
 
 ## Invariants
 
@@ -38,6 +42,10 @@ a person has to act on.
   of the session, not while calls are still in flight.
   `events the hooks never received are reported as a dead hook, with numbers`
   `a running session with calls still in flight is not reported as a broken tool hook`
+- The report describes the last analysis and the queue as the marks say they are: read,
+  owed, or failed.
+  `a working session read by /retro is reported as read, not as unanalysed`
+  `a log whose analysis failed is named as failed, not as not analysed yet`
 - A turn whose input is a hand-over does not report a dead prompt hook.
   `a review session driven by a hand-over is not reported as a dead prompt hook`
 - The surface check names exactly the `ctx` members the plugin calls.

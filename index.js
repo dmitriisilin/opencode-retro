@@ -93,6 +93,34 @@ export default {
     let draining = false
     /** Learned from session.model.request; see resolveModel. */
     let lastSessionModel = null
+    /**
+     * The last analysis of each session, whichever path ran it. The report used to learn of a
+     * result only through `lastVerified`, which exists once a turn has ended — so a working
+     * session analysed by `/retro` was described as `extraction: not run` a moment later, by
+     * the very report that is supposed to claim only what happened.
+     */
+    const lastExtraction = new Map()
+
+    /**
+     * The queue as the human should read it. An entry is not "not analysed yet" just because
+     * it is in the queue: a working session read by `/retro` stays queued until it is over,
+     * because reading is not settling. What the marks say is owed is what is waiting; what has
+     * failed is named as a failure, not as something nobody has looked at.
+     */
+    function queueFacts() {
+      let queued = 0
+      let failing = 0
+      let reading = 0
+      for (const entry of state.pending) {
+        const mark = state.looked(entry.session)
+        const size = log.stat(entry.session).size
+        const owed = size > mark.size || mark.open || mark.failed
+        if ((entry.attempts ?? 0) > 0 || mark.failed) failing++
+        else if (owed) queued++
+        else reading++
+      }
+      return { queued, failing, reading }
+    }
 
     const writeSelfCheck = () => {
       try {
@@ -101,7 +129,7 @@ export default {
           lessons: lessons.length,
           top: lessons[0]?.id ?? null,
           topScore: lessons.length ? store.score(lessons[0]) : null,
-          queued: state.pending.length,
+          ...queueFacts(),
           cited: log.list().filter((id) => citedSessions().has(id)).length,
           decided: store.listArchive().length,
           // Logs that failed three analyses: still on disk, and nothing will read them.
@@ -148,7 +176,7 @@ export default {
           log: logFacts(sessionID),
           triggered: null,
           ended: false,
-          extraction: null,
+          extraction: lastExtraction.get(sessionID) ?? null,
         },
         now,
       )
@@ -1026,6 +1054,7 @@ export default {
         if (result.ok) pruneLogs(invoking)
       }
 
+      lastExtraction.set(sessionID, result)
       const verified = lastVerified.get(sessionID)
       if (verified) {
         check.verify({ ...verified, extraction: result })

@@ -21,8 +21,8 @@ recurrence and merging never move it, or "changed since" would compare the file 
 **Decision.** The third artifact, written by the `retro_decide` tool: `status`
 (`accepted` / `rejected` / `later`), `note`, `decidedIn` (the session it was taken in),
 `changed` (the files really touched, often not the ones proposed), and `discovered`
-(what the work turned up that the lesson did not contain). Accepting or rejecting moves
-the file to `archive/`; `later` keeps it open.
+(what the work turned up that the lesson did not contain), plus `closedAt` when it is
+closed. Accepting or rejecting moves the file to `archive/`; `later` keeps it open.
 
 ## Invariants
 

@@ -597,7 +597,38 @@ test("an empty reply with nothing left to trim is reported, not retried for ever
 
   const result = await extract({ ...r, records, session: "ses_mute", maxInput: 20_000 })
 
-  assert.ok(calls <= 2, `at most two calls, made ${calls}`)
+  assert.ok(calls <= 3, `at most three calls — the first, half, a quarter — made ${calls}`)
   assert.equal(result.ok, false)
   assert.match(result.detail, /returned nothing at all/, "and says what happened, in the model's terms")
+})
+
+test("a second empty reply is answered once more, at a quarter of the budget", async () => {
+  // Measured live: an empty reply at 31,993 characters and another at 19,181. Half was not
+  // enough, so the third and last call goes out at a quarter.
+  const root = mkdtempSync(join(tmpdir(), "retro-quarter-"))
+  const sent = []
+  const r = {
+    store: createStore({ dir: join(root, "lessons"), archive: join(root, "archive") }),
+    state: createState({ path: join(root, "state.json") }),
+    prompts: createPrompts({ dir: join(root, "prompts"), updates: join(root, "prompts", "updates") }),
+    model: MODEL,
+    generate: async (input) => {
+      sent.push(input.prompt)
+      return { text: sent.length < 3 ? "" : REPLY() }
+    },
+  }
+  const records = [
+    { v: 1, n: 1, k: "prompt", text: "fix the lint skill" },
+    ...Array.from({ length: 160 }, (_, i) => ({
+      v: 1, n: i + 2, k: "tool", id: `c${i}`, tool: "shell",
+      input: { command: `npx eslint pass-${i}` }, status: "completed", exit: 2,
+      output: "no config found ".repeat(40),
+    })),
+  ]
+
+  const result = await extract({ ...r, records, session: "ses_twice_silent", maxInput: 24_000 })
+
+  assert.equal(sent.length, 3, "the first, half, and a quarter — and no more")
+  assert.ok(sent[1].length < sent[0].length && sent[2].length < sent[1].length, "each one smaller")
+  assert.ok(result.ok, "the third answer is the one recorded")
 })

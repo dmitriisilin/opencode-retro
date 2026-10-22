@@ -16,10 +16,13 @@ characters by default) when the record is written, with the loss stated in the r
 log is therefore an excerpt of a very large result before the projection ever sees it; the
 projection may trim it again.
 
-**Budget.** The most characters one analysis may send, `maxInput`. Measured on the model
-this was built against, an input past roughly 40,000 characters comes back as an empty
-string with no error, so the budget is a guarantee, not an aim. The log gets what is left
-after the prompt, the contract and the lesson lists. Those fixed parts are not negotiable: if
+**Budget.** The most characters one analysis may send, `maxInput`. The log gets what is
+left after the prompt, the contract and the lesson lists, and the composed input never
+exceeds it except when the fixed part alone does (see the floor below). It is a bound on
+cost, **not** a guarantee of an answer: on the model this was built against, an empty reply
+is more likely the larger the input, and has been observed at 40,254 characters, at 31,993
+and at 19,181 — the same content answered at 26,034 and 32,034 on other occasions. No
+number is safe; the empty reply is handled by the retry, not by the budget. Those fixed parts are not negotiable: if
 they alone exceed `maxInput`, no request can honour it, so a small (2,000-character) log
 section is still sent rather than none, and the request goes over the budget by that floor.
 The guarantee therefore applies whenever the fixed part fits, which is every normal run.
@@ -47,9 +50,11 @@ whatever is left stays queued and is named in the command's message.
 **Auto-extraction (`autoExtract`).** Off by default. Nothing is analysed without a command.
 When on, the queue is drained at the first prompt of the next session instead.
 
-**Empty reply.** This model's way of declining an over-long input. It is answered once,
-by halving the budget and asking again — the one retry that changes the thing that
-correlates with the failure.
+**Empty reply.** This model's way of declining an input, more often the larger it is. It
+is answered by halving the budget and asking again, and once more at a quarter if the
+second reply is empty too — at most three calls, each changing the one thing that
+correlates with the failure. A log that cannot be answered at a quarter of the budget is
+reported as a failure with the model's own silence as the reason, and the attempt counts.
 
 **Skipped.** A session of one prompt and no tool calls is not analysed: it cannot hold
 evidence of anything. Everything else is, including a conversation that ran no tools —
@@ -77,9 +82,11 @@ that is where a wrong instruction file shows up.
 - A projection that covers no step past the mark is a failed read: it is reported, never
   settled as done, and charged against the attempt budget when the log is queued.
   `an excerpt that cannot reach past the mark is reported, not settled as done`
-- An empty reply is answered by asking again with less, exactly once.
+- An empty reply is answered by asking again with less, at half and then at a quarter,
+  and never more than that.
   `an empty reply is answered by asking again with less, not by asking again`
   `an empty reply with nothing left to trim is reported, not retried for ever`
+  `a second empty reply is answered once more, at a quarter of the budget`
 - A failed log is tried again on the next command, and given up on after three.
   `a log that failed stays queued, and is tried again on the next command`
   `a session is given up on after three attempts, not billed forever`

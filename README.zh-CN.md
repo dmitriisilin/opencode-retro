@@ -1,4 +1,4 @@
-<!-- translated-from: README.md@a1af8e9e9c1e -->
+<!-- translated-from: README.md@3bc2b19a730b -->
 # opencode-retro
 
 [English](README.md) | [Русский](README.ru.md) | **简体中文** | [Español](README.es.md) | [日本語](README.ja.md)
@@ -189,7 +189,7 @@ OpenCode 会从 npm 获取插件；在 `opencode.json` 中写出包名即可：
 - `proposeLimit` —— 单次 `/retro all` 中的教训数量，默认十。
 - `extractLimit` —— 单次 `/retro` 分析的日志数量，默认不限。
 - `maxOutput` —— 影子日志中每一步保留的工具输出字符数，默认 8000。
-- `maxInput` —— 一次分析最多发送的字符数，默认 32000。超过模型自身的某个界限后，它会返回空答案而不是报错，因此过长的日志会被裁剪以适配：先减少工具输出，再从中间丢弃整步，每处空缺都会说明丢了多少步。
+- `maxInput` —— 一次分析最多发送的字符数，默认 32000。过长的日志会被裁剪以适配：先减少工具输出，再从中间丢弃整步，每处空缺都会说明丢了多少步。这只限制成本，并不保证得到答案：有些模型不会报错，而是返回空答案，输入越长越常见，因此空答案会以一半的大小再问一次，然后再以四分之一的大小问一次。仍然得不到答案的日志会在下一次 `/retro` 时重试，`.retro/selfcheck.md` 会把它标为失败。
 - `extractTimeoutMs` —— 单次分析放弃前的等待时长，默认 90000。
 - `heartbeatMs` —— 会话进行中两次自检写入之间的最短间隔，默认 60000。
 - `keepSessions` —— 保留所有日志，包括无人引用的；默认关闭。

@@ -295,32 +295,29 @@ plugin needed — and it gets the `sessionID`, so it can drive the review conver
 15. **Nothing tells the user a plugin failed to load.** A bad path, a throwing `setup`, a
    module that does not import — the session just runs without us. Hence "if `selfcheck.md`
    is older than your last session, the plugin is not running".
-17. **An input the model will not answer comes back empty, not refused.** Measured on
-   `deepseek/deepseek-flash` through `session.create` + `session.generate`, the same content
-   each time: 26,034 characters answered, 32,034 answered, 40,254 came back as an empty
-   string. No error, no refusal, no log line — `{ text: "" }`. Near the top of that range it
-   is not a clean cliff either: one 39,518-character input was answered once, and a ~32,000
-   one was not. For this plugin that is the worst possible failure shape, because long
-   sessions are where the friction is, so the sessions most worth reading would be the ones
-   that reliably yield nothing. Two defences, in `src/extract.js`: the composed input is
-   bounded by `maxInput` (default 32,000 characters — characters, not tokens, because
-   tokenisation is model-specific and a dependency, while the budget only has to be under a
-   cliff rather than beside it), and an empty reply is answered by halving the budget and
-   asking once more. The bound holds whatever the log contains: prompts and replies are never
-   *dropped*, but when they alone exceed the budget they are shortened, and past that the text
-   is cut with a notice — being over the budget is where the answer comes back empty, so
-   "never exceeded" has to be a guarantee rather than an intention. The retry matters more than the number: three attempts across `/retro`
-   runs had already sent the identical oversized input and collected the identical silence
-   before retiring the log. The projection spends its budget in the order that loses least —
-   less tool output first, then whole steps from the middle outward, never a prompt or an
-   assistant reply, with each gap saying how many steps went so the model knows it is reading
-   an excerpt. Found by the extractor failing on a real 146 KB session log, not by a test.
+17. **An input the model will not answer comes back empty, not refused — and no size is safe.**
+   Measured on `deepseek/deepseek-flash` through `session.create` + `session.generate`: an
+   empty string, with no error, no refusal and no log line, at 40,254 characters, at 31,993
+   and at 19,181; the same content answered at 26,034 and 32,034 on other occasions. The
+   likelihood grows with size and there is no cliff to stay under. For this plugin it is the
+   worst failure shape there is, because long sessions are where the friction lives. So
+   `maxInput` (default 32,000 characters) bounds the *cost*, and the answer is handled by
+   asking again: at half the budget, then at a quarter, at most three calls in all, each one
+   changing the thing that correlates with the failure. A log that is still not answered
+   counts as a failed attempt, keeps its log, is tried on the next `/retro`, and is named in
+   `selfcheck.md` as failed rather than as not analysed. The projection spends its budget in
+   the order that loses least — less tool output, then whole steps from the middle outward,
+   never a prompt or an assistant reply — with each gap saying how many steps went. Found by
+   the extractor failing on a real 146 KB session log, and corrected by a stranger's run
+   that met the empty reply at 31,993 characters, under the number this note once called safe.
 16. **`opencode run "/retro all"` does not run the command.** The text arrives as an
    ordinary prompt and the registered command never fires; the agent in that session reads
    "/retro all" as an instruction and improvises. Observed while dogfooding: the session's
    first move was `git status`, not our batch. Headless, a command has to be posted to a
-   session — `POST /api/session/{sessionID}/command` — which is how the dogfooding run
-   eventually triggered it. `/retro` typed in the TUI is unaffected. Worth knowing before
+   session — `POST /api/session/{sessionID}/command` with the body
+   `{"name": "retro", "text": ""}` (both keys are required; a stranger got two 400s finding
+   that out) — which is how the dogfooding run eventually triggered it. With the CLI:
+   `opencode api post /api/session/<id>/command -d '{"name":"retro","text":""}'`. `/retro` typed in the TUI is unaffected. Worth knowing before
    believing a scripted review did anything.
 
 ### Still unverified

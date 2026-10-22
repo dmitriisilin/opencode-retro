@@ -18,7 +18,10 @@ memory, not of the file: a restart knows nothing is live until a hook arrives.
 
 **Over.** Not live. A session is over when its last turn ended, or when the process that
 would know restarted. "Over" never means "will not be prompted again": a session is over
-between turns.
+between turns. A turn resumed by a hand-over, or by anything posted to a session over the
+API, may never report its end; such a session stays live — read on growth, never settled,
+never pruned — until it is prompted again or the process restarts. That costs nothing but
+the delay, and is a known limit rather than a lost log.
 
 **Invoking session.** The session a command (`/retro`, `/retro all`) was run in. It is
 live by definition, whatever the event stream said, because the command is running in it.

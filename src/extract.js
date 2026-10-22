@@ -152,15 +152,16 @@ export async function extract({
    * thing that correlates, costs one extra call, and only happens when the first reply was
    * empty.
    */
-  if (!answer.text.trim() && Number.isFinite(budget)) {
-    // Halve it, never round up to a minimum: when the first budget was small because little
-    // room was left, a 1,000-character floor would make the second attempt *larger*.
-    const smaller = projected(records, { budget: Math.max(1, Math.floor(budget / 2)) })
-    if (smaller.text !== log.text) {
-      log = smaller
-      answer = await ask(log.text)
-      if (answer.failed) return { ok: false, detail: answer.failed }
-    }
+  // Half, then a quarter. One retry was measured to be not enough: a live run got an empty
+  // reply at 31,993 characters and again at 19,181. Never round up to a minimum: when the
+  // first budget was small because little room was left, a floor would make a retry *larger*.
+  for (const divisor of [2, 4]) {
+    if (answer.text.trim() || !Number.isFinite(budget)) break
+    const smaller = projected(records, { budget: Math.max(1, Math.floor(budget / divisor)) })
+    if (smaller.text === log.text) break
+    log = smaller
+    answer = await ask(log.text)
+    if (answer.failed) return { ok: false, detail: answer.failed }
   }
 
   const reply = answer.text

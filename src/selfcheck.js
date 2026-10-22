@@ -281,7 +281,17 @@ export function render(state) {
   return lines.join("\n")
 }
 
-function renderStock({ lessons = 0, topScore = null, top = null, queued = 0, cited = 0, decided = 0, setAside = 0 } = {}) {
+function renderStock({
+  lessons = 0,
+  topScore = null,
+  top = null,
+  queued = 0,
+  failing = 0,
+  reading = 0,
+  cited = 0,
+  decided = 0,
+  setAside = 0,
+} = {}) {
   const lines = []
   // "No lessons recorded yet" right after a decision read as though the decision had
   // vanished — the lesson is in `archive/`, which is where a decided one belongs.
@@ -304,8 +314,24 @@ function renderStock({ lessons = 0, topScore = null, top = null, queued = 0, cit
         "model timing out is the usual reason, and `options.model` pins a faster one.",
     )
   }
+  if (failing) {
+    // Named as what it is. After two failed analyses this line used to read "not analysed
+    // yet", which sends the reader to run `/retro` again without telling them it already ran
+    // and why it did not work.
+    lines.push(
+      `- ${failing} log${failing === 1 ? "" : "s"} whose analysis failed — tried again on the next ` +
+        "`/retro`, and given up on after three. `plugin.log` says why; an empty reply from the " +
+        "model on a long log is the usual reason.",
+    )
+  }
   if (queued) {
     lines.push(`- ${queued} log${queued === 1 ? "" : "s"} not analysed yet — \`/retro\` analyses them`)
+  }
+  if (reading) {
+    lines.push(
+      `- ${reading} log${reading === 1 ? "" : "s"} of ${reading === 1 ? "a session" : "sessions"} ` +
+        "still working, read as far as they go — settled when the session is over",
+    )
   }
   // Counted, not inferred. An earlier version derived this by subtracting the queue from
   // the logs on disk and announced that open lessons cited them — while there were no

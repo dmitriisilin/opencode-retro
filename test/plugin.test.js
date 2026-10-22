@@ -2229,3 +2229,59 @@ test("a replaced log whose first record cannot be read is still a different log"
 
   await cleanup?.()
 })
+
+test("a working session read by /retro is reported as read, not as unanalysed", async () => {
+  // Measured live: a session that ended a turn (queued), was prompted again, and was then read
+  // by `/retro` while working. The report said `extraction: not run` and `1 log not analysed
+  // yet` — both false, in the file whose one job is to claim only what happened.
+  const directory = sandbox()
+  const fake = fakeOpenCode({ directory, options: { model: MODEL } })
+  const cleanup = await plugin.setup(fake.ctx)
+  const session = "ses_returned"
+
+  fake.emit({ type: "session.execution.started", durable: { seq: 1 }, data: { sessionID: session } })
+  await tick()
+  await workSession(fake, session)
+  fake.emit({ type: "session.execution.succeeded", durable: { seq: 9 }, data: { sessionID: session } })
+  await tick()
+  fake.emit({ type: "session.execution.started", durable: { seq: 10 }, data: { sessionID: session } })
+  await tick()
+  await fake.hooks.get("session.prompt")({ sessionID: session, messageID: "m2", prompt: { text: "and again" } })
+
+  await fake.commands.get("retro").execute({ sessionID: session, prompt: { text: "" } })
+  assert.equal(fake.generated.length, 1, "it was read")
+
+  // The hand-over turn: a hook fires in the same session and the report is rewritten.
+  await fake.hooks.get("tool.execute.before")({ sessionID: session, id: "h1", tool: "read", input: { path: "x" } })
+  await fake.hooks.get("tool.execute.after")({
+    sessionID: session, id: "h1", tool: "read", input: { path: "x" },
+    status: "completed", result: { output: "x", metadata: {} },
+  })
+
+  const report = readFileSync(join(directory, ".retro", "selfcheck.md"), "utf8")
+  assert.doesNotMatch(report, /extraction\s+not run/, "the analysis that just ran is not denied")
+  assert.match(report, /ok\s+extraction/)
+  assert.doesNotMatch(report, /not analysed yet/, "and a log read to its end is not called unanalysed")
+  assert.match(report, /still working, read as far as they go/)
+
+  await cleanup?.()
+})
+
+test("a log whose analysis failed is named as failed, not as not analysed yet", async () => {
+  const directory = sandbox()
+  const fake = fakeOpenCode({ directory, options: { model: MODEL } })
+  const cleanup = await plugin.setup(fake.ctx)
+  await workSession(fake, "ses_bad")
+  queue(directory, ["ses_bad"])
+
+  const broken = fakeOpenCode({ directory, options: { model: MODEL }, reply: "not json at all" })
+  const cleanup2 = await plugin.setup(broken.ctx)
+  await broken.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
+
+  const report = readFileSync(join(directory, ".retro", "selfcheck.md"), "utf8")
+  assert.match(report, /1 log whose analysis failed — tried again on the next `\/retro`/)
+  assert.doesNotMatch(report, /not analysed yet/, "it was analysed; it failed")
+
+  await cleanup2?.()
+  await cleanup?.()
+})

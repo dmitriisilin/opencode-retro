@@ -186,7 +186,7 @@ Everything else is optional:
 - `proposeLimit` — lessons in one `/retro all`, default ten.
 - `extractLimit` — logs analysed by one `/retro`, unlimited by default.
 - `maxOutput` — characters of tool output stored in the shadow log per step, default 8000.
-- `maxInput` — characters one analysis may send, default 32000. Past a limit of its own the model returns an empty answer rather than an error, so a long log is trimmed to fit: less tool output first, then whole steps from the middle, each gap saying how many went.
+- `maxInput` — characters one analysis may send, default 32000. A long log is trimmed to fit: less tool output first, then whole steps from the middle, each gap saying how many went. This bounds the cost, not the answer: on some models the reply comes back empty rather than as an error, more often the longer the input, so an empty reply is asked again at half the size and then at a quarter. A log that still gets no answer is tried again on the next `/retro`, and `.retro/selfcheck.md` names it as failed.
 - `extractTimeoutMs` — how long one analysis may take before it is given up on, default 90000.
 - `heartbeatMs` — the shortest gap between self-check writes while a session works, default 60000.
 - `keepSessions` — keep every log, including ones nothing cites; off by default.

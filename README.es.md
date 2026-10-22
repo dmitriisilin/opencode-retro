@@ -1,4 +1,4 @@
-<!-- translated-from: README.md@a1af8e9e9c1e -->
+<!-- translated-from: README.md@3bc2b19a730b -->
 # opencode-retro
 
 [English](README.md) | [Русский](README.ru.md) | [简体中文](README.zh-CN.md) | **Español** | [日本語](README.ja.md)
@@ -190,7 +190,7 @@ Todo lo demás es opcional:
 - `proposeLimit` — lecciones en un `/retro all`, por omisión diez.
 - `extractLimit` — logs que analiza un `/retro`, sin límite por omisión.
 - `maxOutput` — caracteres de salida de herramienta que se guardan en el log paralelo por paso, por omisión 8000.
-- `maxInput` — caracteres que puede enviar un análisis, por omisión 32000. Pasado un límite propio, el modelo devuelve una respuesta vacía en lugar de un error, así que un log largo se recorta para encajar: primero menos salida de herramientas, luego pasos enteros del medio, y cada hueco dice cuántos se fueron.
+- `maxInput` — caracteres que puede enviar un análisis, por omisión 32000. Un log largo se recorta para encajar: primero menos salida de herramientas, luego pasos enteros del medio, y cada hueco dice cuántos se fueron. Esto acota el coste, no la respuesta: algunos modelos devuelven una respuesta vacía en lugar de un error, con más frecuencia cuanto más larga es la entrada, así que una respuesta vacía se vuelve a pedir con la mitad del tamaño y luego con un cuarto. Un log que sigue sin respuesta se reintenta en el siguiente `/retro`, y `.retro/selfcheck.md` lo señala como fallido.
 - `extractTimeoutMs` — cuánto puede tardar un análisis antes de abandonarlo, por omisión 90000.
 - `heartbeatMs` — el intervalo mínimo entre escrituras de la autocomprobación mientras una sesión trabaja, por omisión 60000.
 - `keepSessions` — conservar todos los logs, incluidos los que nadie cita; desactivado por omisión.
