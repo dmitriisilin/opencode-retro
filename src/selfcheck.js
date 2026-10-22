@@ -108,8 +108,17 @@ export function assess(session) {
       detail: session.ended === false ? "no tool calls seen yet" : "no tool calls in this session",
       meaning: "nothing to compare against; a session without tool calls cannot prove the hook works.",
     })
-  } else if (c.toolHook >= c.toolEvents) {
-    checks.push({ status: OK, name: "tool hook", detail: `${c.toolEvents} tool-call events / ${c.toolHook} hook calls` })
+  } else if (c.toolHook + (c.unfinished ?? 0) >= c.toolEvents) {
+    // A call the turn ended in the middle of has an event and no after-hook by nature, and the
+    // log records it as `unfinished`. Counting it as a missing hook call reported BROKEN for
+    // every interrupted turn with a subagent still running — found by the model test.
+    checks.push({
+      status: OK,
+      name: "tool hook",
+      detail:
+        `${c.toolEvents} tool-call events / ${c.toolHook} hook calls` +
+        (c.unfinished ? ` + ${c.unfinished} unfinished when the turn ended` : ""),
+    })
   } else if (session.ended === false) {
     // Tool calls run in parallel and their `after` hooks arrive in whatever order they
     // finish, so the event stream can legitimately be ahead of the hooks while calls are

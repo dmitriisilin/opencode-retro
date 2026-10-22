@@ -51,7 +51,7 @@ export function createIngest({
         pending: new Map(),
         completed: new Set(),
         seq: new Map(),
-        counts: { prompts: 0, handovers: 0, toolHook: 0, toolEvents: 0, steps: 0, texts: 0, records: 0 },
+        counts: { prompts: 0, handovers: 0, toolHook: 0, toolEvents: 0, unfinished: 0, steps: 0, texts: 0, records: 0 },
       }
       sessions.set(id, s)
     }
@@ -270,6 +270,9 @@ export function createIngest({
         case "session.execution.interrupted":
           if (parentOf(sessionID)) return // the parent is still working
           for (const call of s.pending.values()) {
+            // Counted, because it is the one honest reason an event has no after-hook: the turn
+            // ended (an interrupt, usually) while the call was still running.
+            s.counts.unfinished++
             append(sessionID, {
               k: "tool",
               seq: s.seq.get(call.id) ?? null,

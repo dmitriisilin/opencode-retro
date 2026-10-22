@@ -158,10 +158,14 @@ export function createStore({ dir, archive, cap = DEFAULT_CAP, halfLife = DEFAUL
             .map((e) => (e.session === from && Array.isArray(e.steps) && e.steps.length ? e.steps.map(at) : e.steps))
             .filter((r) => Array.isArray(r) && r.length)
           const steps = ranges.length ? [Math.min(...ranges.flat()), Math.max(...ranges.flat())] : []
-          const { file, body, ...data } = {
-            ...lesson,
-            evidence: [...kept, { session: to, ...(steps.length ? { steps } : {}) }],
-          }
+          const folded = [...kept, { session: to, ...(steps.length ? { steps } : {}) }]
+          // Recurrence counts independent sessions (decision 8), and a delegation is not one:
+          // when the child's evidence lands on a root the lesson already cited, two sessions
+          // become one and the count has to say so. Found by the model test — a child analysed
+          // as a session before its parent was known lifted a lesson to two sessions for good.
+          const distinct = (list) => new Set(list.map((e) => e?.session).filter(Boolean)).size
+          const recurrence = Math.max(1, (lesson.recurrence ?? 1) - (distinct(evidence) - distinct(folded)))
+          const { file, body, ...data } = { ...lesson, evidence: folded, recurrence }
           try {
             writeFileSync(join(where, file ?? `${data.id}.md`), stringifyFrontmatter(data, body ?? ""))
             moved++

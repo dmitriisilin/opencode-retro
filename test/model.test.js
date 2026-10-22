@@ -1,6 +1,6 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs"
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import plugin from "../index.js"
@@ -15,13 +15,13 @@ import { parseFrontmatter } from "../src/frontmatter.js"
  * leaves the plugin in a state an invariant in docs/concepts forbids. Agents reading code try
  * one or two sequences in their heads; the space is combinatorial, so each cycle walked into
  * corners the last one had not, and cycle 5 found twelve defects in code that had not
- * changed. This walks the space instead: random histories of turns, hooks, `/retro`,
- * decisions, restarts, crashes mid-answer, replaced logs and a model that sometimes answers
- * nothing — through the real entry point, against the shared fake — and checks the
- * invariants after every step. A failure is shrunk to the shortest history that still fails,
- * which is a ready-made regression test.
+ * changed. This walks the space instead: random histories of turns, hooks, delegations,
+ * `/retro`, decisions, restarts, crashes mid-answer, replaced logs, a second plugin instance
+ * on the same project, and a model that sometimes answers nothing — through the real entry
+ * point, against the shared fake — and checks the invariants after every step. A failure is
+ * shrunk to the shortest history that still fails, which is a ready-made regression test.
  *
- *   RETRO_MODEL_RUNS=2000 RETRO_MODEL_STEPS=60 npm test     a deeper walk
+ *   RETRO_MODEL_RUNS=1000 RETRO_MODEL_STEPS=60 npm test     a deeper walk
  *   RETRO_MODEL_SEED=1234 npm test                          replay one history
  *   RETRO_MODEL_HISTORY='[{"op":…}]' RETRO_MODEL_DEBUG=1 node --test test/model.test.js
  *                                                           replay a shrunk one, verbosely
@@ -83,22 +83,44 @@ const flush = async (turns = 4) => {
 function generate(seed, steps) {
   const r = rng(seed)
   const pick = (list) => list[Math.floor(r() * list.length)]
-  const actions = [{ op: "options", maxInput: r() < 0.5 ? 4000 : 32000 }]
+  const forced = process.env.RETRO_MODEL_WRITERS ? Number(process.env.RETRO_MODEL_WRITERS) : null
+  const roll = r()
+  // One instance by default: a second instance on the same project is supported for data
+  // safety only (session.md), and liveness across instances is not. RETRO_MODEL_WRITERS=2
+  // walks that case on purpose.
+  const writers = forced ?? 1
+  const w = () => (writers === 2 && r() < 0.5 ? 1 : 0)
+  const actions = [{ op: "options", maxInput: r() < 0.5 ? 4000 : 32000, writers }]
+  const delegations = []
+  let next = 0
   for (let i = 0; i < steps; i++) {
     const roll = r()
     const s = pick(POOL)
-    if (roll < 0.14) actions.push({ op: "prompt", s })
-    else if (roll < 0.36) actions.push({ op: "tool", s, exit: r() < 0.5 ? 2 : 0, size: 40 + Math.floor(r() * 600) })
-    else if (roll < 0.42) actions.push({ op: "text", s })
-    else if (roll < 0.52) actions.push({ op: "end", s })
-    else if (roll < 0.64) actions.push({ op: "retro", invoker: r() < 0.6 ? "ses_review" : s, all: r() < 0.3 })
-    else if (roll < 0.72) actions.push({ op: "decide", pick: r(), status: pick(["accepted", "rejected", "later"]) })
-    else if (roll < 0.8) actions.push({ op: "model", mode: pick(["ok", "ok", "ok", "empty", "prose"]) })
-    else if (roll < 0.86) actions.push({ op: "restart" })
-    else if (roll < 0.9) actions.push({ op: "crash", invoker: "ses_review" })
-    else if (roll < 0.93) actions.push({ op: "replace", s })
-    else actions.push({ op: "tool", s, exit: 2, size: 1200 })
+    if (roll < 0.12) actions.push({ op: "prompt", s, w: w() })
+    else if (roll < 0.3) actions.push({ op: "tool", s, w: w(), exit: r() < 0.5 ? 2 : 0, size: 40 + Math.floor(r() * 600) })
+    else if (roll < 0.35) actions.push({ op: "text", s, w: w() })
+    else if (roll < 0.43) actions.push({ op: "end", s })
+    else if (roll < 0.5) {
+      // A delegation is two actions, so anything can happen between the child's work and
+      // the parent learning its id — which is where the races are.
+      const child = `${s}_sub${++next}`
+      const nested = r() < 0.25 ? `${child}_sub${++next}` : null
+      actions.push({ op: "delegate", s, child, nested, order: pick(["created", "prompt", "silent"]), w: w() })
+      delegations.push({ s, child })
+    } else if (roll < 0.54 && delegations.length) {
+      const d = delegations.splice(Math.floor(r() * delegations.length), 1)[0]
+      actions.push({ op: "linked", s: d.s, child: d.child })
+    } else if (roll < 0.64) actions.push({ op: "retro", invoker: r() < 0.6 ? "ses_review" : s, all: r() < 0.3, w: w() })
+    else if (roll < 0.71) actions.push({ op: "decide", pick: r(), status: pick(["accepted", "rejected", "later"]), w: w() })
+    else if (roll < 0.78) actions.push({ op: "model", mode: pick(["ok", "ok", "ok", "empty", "prose"]) })
+    else if (roll < 0.84) actions.push({ op: "restart", w: w() })
+    else if (roll < 0.88) actions.push({ op: "crash", invoker: "ses_review", w: w() })
+    else if (roll < 0.91) actions.push({ op: "replace", s })
+    else actions.push({ op: "tool", s, w: w(), exit: 2, size: 1200 })
   }
+  // Every delegation the parent finished is eventually reported; ones whose parent died with
+  // a restart never are, and that is a documented limit (session.md: silence is ours).
+  for (const d of delegations) actions.push({ op: "linked", s: d.s, child: d.child })
   return actions
 }
 
@@ -119,16 +141,23 @@ function createWorld() {
   const world = {
     directory,
     options: { model: MODEL, heartbeatMs: 0 },
-    instance: null,
+    writers: 1,
+    /** One plugin instance per writer, all on the same project directory. */
+    instances: [],
+    /** How many times each instance has been started: a call begun on an older one is dead. */
+    generation: [],
+    /** session -> the instance it runs on. A session exists on one server. */
+    home: new Map(),
     mode: "ok",
     inTurn: new Set(),
-    prompted: new Set(),
     calls: 0,
     /** session -> step numbers that reached a model which answered. */
     analysed: new Map(),
     /** session -> the records last seen in its log. */
     seen: new Map(),
     replaced: new Set(),
+    /** child -> { parent, root, linked }: delegations, and whether the plugin was told. */
+    children: new Map(),
     generated: 0,
   }
 
@@ -136,12 +165,12 @@ function createWorld() {
     world.generated++
     const prompt = input.prompt
     const session = (prompt.match(/id: (ses_\w+)/) ?? [])[1]
-    debug(`model (${world.mode}) asked about ${session}: steps ${[...(prompt.split("## Log")[1]?.split("\n## ")[0] ?? "").matchAll(/^\[(\d+)\]/gm)].map((m) => m[1]).join(",")}`)
+    const logSection = prompt.split("## Log")[1]?.split("\n## ")[0] ?? ""
+    const steps = [...logSection.matchAll(/^\[(\d+)\]/gm)].map((m) => Number(m[1]))
+    debug(`model (${world.mode}) asked about ${session}: steps ${steps.join(",")}`)
     if (world.mode === "hang") return new Promise(() => {})
     if (world.mode === "empty") return ""
     if (world.mode === "prose") return "I think the session went fine overall."
-    const logSection = prompt.split("## Log")[1]?.split("\n## ")[0] ?? ""
-    const steps = [...logSection.matchAll(/^\[(\d+)\]/gm)].map((m) => Number(m[1]))
     if (session) {
       const set = world.analysed.get(session) ?? new Set()
       for (const n of steps) set.add(n)
@@ -162,14 +191,25 @@ function createWorld() {
     return "```json\n" + JSON.stringify({ lessons: [lesson] }) + "\n```"
   }
 
-  world.start = async () => {
+  world.start = async (w) => {
     const fake = fakeOpenCode({ directory, options: world.options, reply: world.reply })
     const cleanup = await plugin.setup(fake.ctx)
-    world.instance = { fake, cleanup }
+    world.instances[w] = { fake, cleanup }
+    world.generation[w] = (world.generation[w] ?? 0) + 1
     await flush()
+  }
+  world.on = (w) => world.instances[Math.min(w ?? 0, world.writers - 1)]
+  /** The instance a session runs on, fixed by its first action. */
+  world.homeOf = (s, w) => {
+    if (!world.home.has(s)) world.home.set(s, Math.min(w ?? 0, world.writers - 1))
+    return world.instances[world.home.get(s)]
   }
 
   world.logPath = (s) => join(retro, "sessions", `${s}.jsonl`)
+  world.logs = () =>
+    existsSync(join(retro, "sessions"))
+      ? readdirSync(join(retro, "sessions")).filter((f) => f.endsWith(".jsonl")).map((f) => f.slice(0, -6))
+      : []
   world.readLog = (s) => (existsSync(world.logPath(s)) ? parseShadowLog(readFileSync(world.logPath(s), "utf8")) : null)
   // state.json exists only once something changed it, so a missing file is a clean state.
   world.state = () =>
@@ -191,14 +231,31 @@ function createWorld() {
 /* ------------------------------------------------------------- actions */
 
 async function apply(world, action) {
-  const fake = () => world.instance.fake
-  const hooks = () => world.instance.fake.hooks
-  const ensureTurn = async (s) => {
+  const prompt = async (s, inst, text) => {
+    await inst.fake.hooks.get("session.prompt")({ sessionID: s, messageID: `m${++world.calls}`, prompt: { text } })
+  }
+  const tool = async (s, inst, { exit = 2, size = 100, name = "shell", input, result } = {}) => {
+    const id = `c${++world.calls}`
+    const args = input ?? { command: exit ? "npx eslint ." : "ls" }
+    await inst.fake.hooks.get("tool.execute.before")({ sessionID: s, id, tool: name, input: args })
+    inst.fake.emit({ type: "session.tool.called", durable: { seq: world.calls }, data: { sessionID: s, id, input: args } })
+    return async (res) => {
+      await inst.fake.hooks.get("tool.execute.after")({
+        sessionID: s,
+        id,
+        tool: name,
+        input: args,
+        status: "completed",
+        result: res ?? result ?? { output: { exit, output: "x".repeat(size) }, metadata: { exit } },
+      })
+    }
+  }
+  const ensureTurn = async (s, w) => {
     if (world.inTurn.has(s)) return
+    const inst = world.homeOf(s, w)
     // A session always begins with a prompt, then its execution starts — the measured order.
-    await hooks().get("session.prompt")({ sessionID: s, messageID: `m${++world.calls}`, prompt: { text: `do task ${world.calls}` } })
-    world.prompted.add(s)
-    fake().emit({ type: "session.execution.started", durable: { seq: world.calls }, data: { sessionID: s } })
+    await prompt(s, inst, `do task ${world.calls}`)
+    inst.fake.emit({ type: "session.execution.started", durable: { seq: world.calls }, data: { sessionID: s } })
     world.inTurn.add(s)
     await flush()
   }
@@ -206,49 +263,104 @@ async function apply(world, action) {
   switch (action.op) {
     case "options":
       world.options.maxInput = action.maxInput
+      world.writers = action.writers ?? 1
       return
     case "prompt":
       if (world.inTurn.has(action.s)) return
-      return ensureTurn(action.s)
+      return ensureTurn(action.s, action.w)
     case "tool": {
-      await ensureTurn(action.s)
-      const id = `c${++world.calls}`
-      const input = { command: action.exit ? "npx eslint ." : "ls" }
-      await hooks().get("tool.execute.before")({ sessionID: action.s, id, tool: "shell", input })
-      fake().emit({ type: "session.tool.called", durable: { seq: world.calls }, data: { sessionID: action.s, id, input } })
-      await hooks().get("tool.execute.after")({
-        sessionID: action.s,
-        id,
-        tool: "shell",
-        input,
-        status: "completed",
-        result: { output: { exit: action.exit, output: "x".repeat(action.size) }, metadata: { exit: action.exit } },
-      })
+      await ensureTurn(action.s, action.w)
+      const finish = await tool(action.s, world.homeOf(action.s), action)
+      await finish()
       return flush()
     }
-    case "text":
-      await ensureTurn(action.s)
-      fake().emit({
+    case "text": {
+      await ensureTurn(action.s, action.w)
+      const inst = world.homeOf(action.s)
+      inst.fake.emit({
         type: "session.text.ended",
         durable: { seq: ++world.calls },
         data: { sessionID: action.s, assistantMessageID: `a${world.calls}`, text: `I tried again (${world.calls}).` },
       })
       return flush()
-    case "end":
+    }
+    case "end": {
       if (!world.inTurn.has(action.s)) return
-      fake().emit({ type: "session.execution.succeeded", durable: { seq: ++world.calls }, data: { sessionID: action.s } })
+      world.homeOf(action.s).fake.emit({ type: "session.execution.succeeded", durable: { seq: ++world.calls }, data: { sessionID: action.s } })
       world.inTurn.delete(action.s)
       return flush()
+    }
+    case "delegate": {
+      // A subagent runs in a session of its own. Its records belong to the root's log; the
+      // three orders are the ones the API allows: `session.created` naming the parent first,
+      // the child's own instruction first (the measured race), or no `session.created` at
+      // all, so the parent's `subagent` result is the only route to the link.
+      await ensureTurn(action.s, action.w)
+      const inst = world.homeOf(action.s)
+      const root = world.children.get(action.s)?.root ?? action.s
+      const run = async (child, parent) => {
+        world.home.set(child, world.home.get(action.s))
+        world.children.set(child, { parent, root, linked: false })
+        const created = () => {
+          inst.fake.emit({
+            type: "session.created",
+            durable: { seq: ++world.calls },
+            data: { sessionID: child, parentID: parent, location: { directory: world.directory } },
+          })
+          world.children.get(child).linked = true
+        }
+        if (action.order === "created") created()
+        await flush()
+        await prompt(child, inst, "You are a subagent spawned by another session.")
+        if (action.order === "prompt") created()
+        await flush()
+        inst.fake.emit({ type: "session.execution.started", durable: { seq: ++world.calls }, data: { sessionID: child } })
+        const finish = await tool(child, inst, { exit: 2, size: 120 })
+        await finish()
+        await flush()
+        return () => inst.fake.emit({ type: "session.execution.succeeded", durable: { seq: ++world.calls }, data: { sessionID: child } })
+      }
+      // The parent's `subagent` call is open for the whole delegation and reports the child's
+      // id when it finishes — in a later action, `linked`.
+      const call = await tool(action.s, inst, { name: "subagent", input: { agent: "explore", description: "look around", prompt: "go" } })
+      const home = world.home.get(action.s)
+      world.children.set(`${action.child}#call`, { call, home, generation: world.generation[home] })
+      const endChild = await run(action.child, action.s)
+      if (action.nested) {
+        const endNested = await run(action.nested, action.child)
+        endNested()
+        await flush()
+        // A nested child is reported by its own parent's `subagent` result, at once.
+        const nestedCall = await tool(action.child, inst, { name: "subagent", input: { agent: "explore", description: "deeper", prompt: "go" } })
+        await nestedCall({ output: "done", metadata: { sessionID: action.nested } })
+        world.children.get(action.nested).linked = true
+      }
+      endChild()
+      return flush()
+    }
+    case "linked": {
+      const pendingCall = world.children.get(`${action.child}#call`)
+      if (!pendingCall || !world.children.has(action.child)) return
+      world.children.delete(`${action.child}#call`)
+      // If the parent's server died since, the call died with it and its result never arrives
+      // — even if the parent session was prompted again on the server that came back.
+      if (world.generation[pendingCall.home] !== pendingCall.generation) return
+      if (!world.inTurn.has(action.s)) return
+      await pendingCall.call({ output: "done", metadata: { sessionID: action.child } })
+      world.children.get(action.child).linked = true
+      return flush()
+    }
     case "retro": {
+      const inst = world.homeOf(action.invoker, action.w)
       const name = action.all ? "retro-all" : "retro"
-      await fake().commands.get(name).execute({ sessionID: action.invoker, prompt: { text: "" } })
+      await inst.fake.commands.get(name).execute({ sessionID: action.invoker, prompt: { text: "" } })
       return flush()
     }
     case "decide": {
       const open = world.lessons("lessons").filter((l) => ["new", "later", undefined, null].includes(l.status))
       if (!open.length) return
       const lesson = open[Math.floor(action.pick * open.length)]
-      await fake().tools.get("retro_decide").execute(
+      await world.on(action.w).fake.tools.get("retro_decide").execute(
         { id: lesson.id, status: action.status, note: "decided in the model test" },
         { sessionID: "ses_review" },
       )
@@ -257,33 +369,42 @@ async function apply(world, action) {
     case "model":
       world.mode = action.mode
       return
-    case "restart":
-      // A restart ends every session with the server: no end event reaches anybody.
-      await world.instance.cleanup?.()
-      world.inTurn.clear()
-      return world.start()
+    case "restart": {
+      // A restart ends every session on that server: no end event reaches anybody.
+      const w = Math.min(action.w ?? 0, world.writers - 1)
+      await world.instances[w].cleanup?.()
+      for (const s of [...world.inTurn]) if ((world.home.get(s) ?? 0) === w) world.inTurn.delete(s)
+      return world.start(w)
+    }
     case "crash": {
       // `/retro` starts, the model never answers, and the process dies mid-call. The old
       // instance is abandoned rather than cleaned up: a dead process runs no `finally`.
+      const w = Math.min(action.w ?? 0, world.writers - 1)
       const before = world.mode
       world.mode = "hang"
-      void fake().commands.get("retro").execute({ sessionID: action.invoker, prompt: { text: "" } })
+      world.home.set(action.invoker, world.home.get(action.invoker) ?? w)
+      void world.instances[world.home.get(action.invoker)].fake.commands
+        .get("retro")
+        .execute({ sessionID: action.invoker, prompt: { text: "" } })
       await flush(8)
       world.mode = before
-      world.inTurn.clear()
-      return world.start()
+      const dead = world.home.get(action.invoker)
+      for (const s of [...world.inTurn]) if ((world.home.get(s) ?? 0) === dead) world.inTurn.delete(s)
+      return world.start(dead)
     }
     case "replace": {
       // Somebody else replaced the file while the plugin was down: a hand edit, a restore from
       // a backup. What was in the old file is no longer the plugin's to answer for; the new
       // file is. Replacing a log under a running plugin that is writing to it is outside the
-      // contract (log.md: the plugin is the only writer of its logs), so the plugin is stopped
-      // first and started after.
+      // contract (log.md: the plugin is the only writer of its logs), so every instance is
+      // stopped first and started after.
       if (world.inTurn.has(action.s) || !existsSync(world.logPath(action.s))) return
-      await world.instance.cleanup?.()
+      for (const inst of world.instances) await inst.cleanup?.()
       world.inTurn.clear()
       const lines = [
-        { v: 1, n: 1, t: 1, k: "prompt", text: `a different task, replaced at ${world.calls}` },
+        // Unique per replacement: a byte-identical file *is* the same log (log.md: identity is
+        // the first record), and the plugin is right to treat it as already read.
+        { v: 1, n: 1, t: 1, k: "prompt", text: `a different task, replacement ${++world.calls}` },
         { v: 1, n: 2, t: 2, k: "tool", id: `r${world.calls}`, tool: "shell", input: { command: "make" }, status: "completed", exit: 2 },
         { v: 1, n: 3, t: 3, k: "session", event: "end", outcome: "succeeded" },
       ]
@@ -291,7 +412,8 @@ async function apply(world, action) {
       world.analysed.set(action.s, new Set())
       world.seen.set(action.s, lines)
       world.replaced.add(action.s)
-      return world.start()
+      for (let w = 0; w < world.writers; w++) await world.start(w)
+      return
     }
   }
 }
@@ -309,6 +431,8 @@ function check(world) {
     throw err
   }
   const retro = join(world.directory, ".retro")
+  const isChild = (s) => world.children.has(s) && !s.includes("#")
+  const linked = (s) => isChild(s) && world.children.get(s).linked
 
   // state.md — the file is always readable, and the queue holds a session once.
   let state
@@ -320,10 +444,11 @@ function check(world) {
   const pending = state.pending.map((p) => p.session)
   if (new Set(pending).size !== pending.length) fail("state", "a session is queued once", JSON.stringify(pending))
 
+  const logs = world.logs()
+
   // log.md — step numbers are unique within a file and increase.
-  for (const s of [...POOL, "ses_review"]) {
+  for (const s of logs) {
     const records = world.readLog(s)
-    if (!records) continue
     for (let i = 1; i < records.length; i++) {
       if (!(records[i].n > records[i - 1].n)) {
         fail("log", "step numbers are unique within a file and increase", `${s}: ${records.map((r) => r.n).join(",")}`)
@@ -331,12 +456,24 @@ function check(world) {
     }
   }
 
+  // session.md — a delegation whose link the plugin was told is never a session of its own:
+  // no log under its id, not queued, not counted.
+  for (const s of world.children.keys()) {
+    if (!linked(s)) continue
+    if (logs.includes(s)) fail("session", "a delegation is never a session of its own", `${s} still has a log`)
+    if (pending.includes(s)) fail("session", "a delegation is never a session of its own", `${s} is queued`)
+    const counted = state.counted ?? {}
+    const uncounted = new Set(state.uncounted ?? [])
+    if (Object.hasOwn(counted, s) && !uncounted.has(s)) fail("session", "a delegation is never a session of its own", `${s} is counted`)
+  }
+
   // log.md — a log is pruned only when nothing can ask about it: everything material in it
-  // reached a model that answered, or it could never hold evidence at all.
-  for (const s of POOL) {
+  // reached a model that answered, or it could never hold evidence at all. A linked child's
+  // log does not vanish, it moves: its records are in the root's log now.
+  for (const s of new Set([...world.seen.keys(), ...logs])) {
     const before = world.seen.get(s)
-    const now = world.readLog(s)
-    if (before && !now) {
+    const now = logs.includes(s) ? world.readLog(s) : null
+    if (before && !now && !linked(s)) {
       if (!skippable(before)) {
         const analysed = world.analysed.get(s) ?? new Set()
         const unread = before.filter((r) => isMaterial(r) && !analysed.has(r.n)).map((r) => r.n)
@@ -344,16 +481,18 @@ function check(world) {
           fail("log", "a log is pruned only when nothing is owed for it", `${s} vanished with steps ${unread.join(",")} never analysed`)
         }
       }
-      // A new file under this id starts its own numbering, so what was read of the old one
-      // says nothing about it.
-      world.analysed.delete(s)
     }
+    if (before && !now) world.analysed.delete(s) // a new file under this id numbers afresh
     if (now) world.seen.set(s, now)
     else world.seen.delete(s)
   }
 
-  // lesson.md — evidence of an open lesson resolves to real records (decision 18).
-  for (const lesson of world.lessons("lessons")) {
+  const lessons = world.lessons("lessons")
+  const archived = world.lessons("archive")
+
+  // lesson.md — evidence of an open lesson resolves to real records (decision 18), except
+  // evidence released while the lesson was closed, which is history.
+  for (const lesson of lessons) {
     if (!["new", "later", undefined, null].includes(lesson.status)) continue
     const evidence = Array.isArray(lesson.evidence) ? lesson.evidence : [lesson.evidence].filter(Boolean)
     for (const e of evidence) {
@@ -367,9 +506,22 @@ function check(world) {
     }
   }
 
+  // lesson.md — recurrence is the number of independent sessions the problem appeared in.
+  for (const lesson of [...lessons, ...archived]) {
+    const evidence = Array.isArray(lesson.evidence) ? lesson.evidence : [lesson.evidence].filter(Boolean)
+    const distinct = new Set(evidence.map((e) => e?.session).filter(Boolean)).size
+    if ((lesson.recurrence ?? 1) !== distinct) {
+      fail(
+        "lesson",
+        "recurrence is the number of independent sessions in the evidence",
+        `${lesson.id}: recurrence ${lesson.recurrence}, sessions ${evidence.map((e) => e.session).join(",")}`,
+      )
+    }
+  }
+
   // lesson.md — a rejected lesson never returns.
   const rejected = new Set((state.rejected ?? []).map((r) => r.id))
-  for (const lesson of world.lessons("lessons")) {
+  for (const lesson of lessons) {
     if (rejected.has(lesson.id)) fail("lesson", "a rejected lesson never returns", lesson.id)
   }
 
@@ -382,36 +534,44 @@ function check(world) {
   const pluginLog = existsSync(join(retro, "plugin.log")) ? readFileSync(join(retro, "plugin.log"), "utf8") : ""
   const thrown = pluginLog.split("\n").find((l) => /TypeError|ReferenceError|RangeError|SyntaxError|is not a function|Cannot read/.test(l))
   if (thrown) fail("selfcheck", "a hook or command never throws", thrown.trim())
-  for (const delivered of world.instance.fake.synthetic) {
-    if (/`\/retro(-all)?` failed/.test(delivered.text)) fail("selfcheck", "a command never fails", delivered.text.slice(0, 200))
+  for (const inst of world.instances) {
+    for (const delivered of inst.fake.synthetic) {
+      if (/`\/retro(-all)?` failed/.test(delivered.text)) fail("selfcheck", "a command never fails", delivered.text.slice(0, 200))
+    }
   }
 }
 
 /**
- * The strongest invariant only holds once the world is calm: every turn over, the model
- * answering. Then `/retro`, repeated until it stops spending anything, must leave nothing
- * owed — every material step of every log was analysed, or the log was given up on after
- * three failed attempts, or it could never hold evidence.
+ * The strongest invariant only holds once the world is calm: every turn over, every
+ * delegation reported, the model answering. Then `/retro`, repeated until it stops spending
+ * anything, must leave nothing owed — every material step of every log was analysed, or the
+ * log was given up on after three failed attempts, or it could never hold evidence.
  */
 async function quiesce(world) {
   world.mode = "ok"
+  for (const [key, call] of [...world.children.entries()]) {
+    if (!key.endsWith("#call")) continue
+    const child = key.slice(0, -5)
+    const parent = world.children.get(child)?.parent
+    if (parent && world.inTurn.has(parent)) await apply(world, { op: "linked", s: parent, child })
+  }
   for (const s of [...world.inTurn]) await apply(world, { op: "end", s })
   let last = -1
   for (let i = 0; i < 40 && world.generated !== last; i++) {
     last = world.generated
-    await apply(world, { op: "retro", invoker: `ses_quiet_${i}` })
+    await apply(world, { op: "retro", invoker: `ses_quiet_${i}`, w: i % world.writers })
     if (DEBUG) {
       const st = world.state()
-      debug(`quiesce ${i}: pending ${JSON.stringify(st.pending)} extracted ${JSON.stringify(Object.fromEntries(Object.entries(st.extracted ?? {}).filter(([k]) => POOL.includes(k))))}`)
-      for (const s of POOL) {
+      debug(`quiesce ${i}: pending ${JSON.stringify(st.pending)}`)
+      for (const s of world.logs()) {
         const records = world.readLog(s)
-        if (records) debug(`  ${s}: ${records.map((r) => `${r.n}${r.k[0]}`).join(" ")}  mark ${JSON.stringify(st.looked?.[s] ?? null)}`)
+        debug(`  ${s}: ${records.map((r) => `${r.n}${r.k[0]}`).join(" ")}  mark ${JSON.stringify(st.looked?.[s] ?? null)}`)
       }
     }
     check(world)
   }
   const state = world.state()
-  for (const s of POOL) {
+  for (const s of world.logs()) {
     const records = world.readLog(s)
     if (!records || skippable(records)) continue
     const retired = state.extracted?.[s]?.ok === false && !state.pending.some((p) => p.session === s)
@@ -434,15 +594,17 @@ async function run(actions) {
   const thaw = freezeTime()
   const world = createWorld()
   try {
-    await world.start()
+    const writers = actions.find((a) => a.op === "options")?.writers ?? 1
+    world.writers = writers
+    for (let w = 0; w < writers; w++) await world.start(w)
     for (let i = 0; i < actions.length; i++) {
       try {
         debug(`step ${i}: ${JSON.stringify(actions[i])}`)
         await apply(world, actions[i])
         if (DEBUG) {
-          for (const s of POOL) {
+          for (const s of world.logs()) {
             const records = world.readLog(s)
-            if (records) debug(`  ${s}: ${records.map((r) => `${r.n}${r.k[0]}`).join(" ")}  mark ${JSON.stringify(world.state().looked?.[s] ?? null)}`)
+            debug(`  ${s}: ${records.map((r) => `${r.n}${r.k[0]}`).join(" ")}  mark ${JSON.stringify(world.state().looked?.[s] ?? null)}`)
           }
         }
         check(world)
@@ -456,10 +618,12 @@ async function run(actions) {
   } catch (err) {
     return err
   } finally {
-    try {
-      await world.instance?.cleanup?.()
-    } catch {
-      /* a crashed instance may not clean up */
+    for (const inst of world.instances) {
+      try {
+        await inst?.cleanup?.()
+      } catch {
+        /* a crashed instance may not clean up */
+      }
     }
     thaw()
     world.dispose()
@@ -541,6 +705,11 @@ const FOUND = {
     { op: "retro", invoker: "ses_review", all: false },
     { op: "tool", s: "ses_a", exit: 2, size: 406 },
     { op: "retro", invoker: "ses_a", all: false },
+  ],
+  "an interrupted turn with a subagent still running is not a dead tool hook": [
+    { op: "options", maxInput: 32000, writers: 1 },
+    { op: "delegate", s: "ses_a", child: "ses_a_sub4", nested: null, order: "prompt", w: 0 },
+    { op: "end", s: "ses_a" },
   ],
   "a log replaced by a smaller one is settled, and one command reads it once": [
     { op: "options", maxInput: 32000 },

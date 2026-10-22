@@ -613,3 +613,21 @@ test("a reopened lesson keeps the fingerprint from when the problem was first re
   const back2 = other.list().find((l) => l.id === "lint-skill-no-config")
   assert.equal(back2.targetFingerprint, "evicted-first", "restoring an open question moves no baseline either")
 })
+
+test("folding a delegation's evidence into its root counts the two as one session", () => {
+  // Found by the model test: a child whose `session.created` was missed was analysed as a
+  // session of its own, lifting a lesson that already cited its parent to recurrence 2. When
+  // the link arrived the evidence was folded into the root's log — one session — and the
+  // count stayed at two for good.
+  const s = sandbox()
+  const store = s.store()
+  store.record([{ ...lesson(), steps: [2, 4] }], { session: "ses_root" })
+  store.record([{ ...lesson(), steps: [1, 2] }], { session: "ses_child" })
+  assert.equal(store.list()[0].recurrence, 2, "as far as anyone knew, two sessions")
+
+  store.remapEvidence("ses_child", "ses_root", new Map([[1, 7], [2, 8]]))
+
+  const [folded] = store.list()
+  assert.equal(folded.recurrence, 1, "they were one")
+  assert.deepEqual(folded.evidence, [{ session: "ses_root", steps: [2, 8] }])
+})

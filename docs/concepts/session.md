@@ -16,6 +16,13 @@ whose start event this process never saw also makes it live — after a restart 
 has already gone by, and the hook is the older fact. Live is a property of this process's
 memory, not of the file: a restart knows nothing is live until a hook arrives.
 
+**One plugin instance per project is the contract.** OpenCode's service loads one instance
+per location, so this is the normal case. A second instance on the same `.retro/` — a
+second server — is tolerated for data: nothing it writes is clobbered and no decision is
+lost (state.md). But it does not know which of the other's sessions are working, and can
+settle and prune the log of a session that is live over there. The model test walks that
+case on request (`RETRO_MODEL_WRITERS=2`), and it is the one case it still fails.
+
 **Over.** Not live. A session is over when its last turn ended, or when the process that
 would know restarted. "Over" never means "will not be prompted again": a session is over
 between turns. A turn resumed by a hand-over, or by anything posted to a session over the

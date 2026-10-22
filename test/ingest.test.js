@@ -337,7 +337,7 @@ test("counts are the self-check's evidence, and forgetting a session clears them
   ingest.event({ type: "session.tool.called", durable: { seq: 2 }, data: { sessionID: "s", id: "c1" } })
   ingest.event({ type: "session.text.ended", durable: { seq: 3 }, data: { sessionID: "s", text: "hi" } })
 
-  assert.deepEqual(ingest.counts("s"), { prompts: 1, handovers: 0, toolHook: 1, toolEvents: 1, steps: 0, texts: 1, records: 3 })
+  assert.deepEqual(ingest.counts("s"), { prompts: 1, handovers: 0, toolHook: 1, toolEvents: 1, unfinished: 0, steps: 0, texts: 1, records: 3 })
   assert.deepEqual(ingest.sessions(), ["s"])
   ingest.forget("s")
   assert.deepEqual(ingest.sessions(), [])

@@ -86,6 +86,8 @@ told to the extractor and filters its answer, and the store refuses to reopen an
   `a second look at a session reads only what is new since the first`
   `lessons already concluded from this session are put in front of the extractor`
 - Lessons extracted from a delegation before its parent was known keep their evidence
-  when the delegation is folded into the root, at any depth.
+  when the delegation is folded into the root, at any depth, and the two count as one
+  session.
   `lessons extracted from an orphan child keep their evidence when the child is folded into its parent`
   `evidence remapped into a middle delegation follows it into the root`
+  `folding a delegation's evidence into its root counts the two as one session`

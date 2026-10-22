@@ -50,6 +50,9 @@ last analysis of the session whichever path ran it.
   `a successful read clears the failure the mark was carrying`
   `a working session read by /retro is reported as read even when it was never queued`
   `a log given up on and then queued again is not reported as beyond reading`
+- A call the turn ended in the middle of accounts for its event: an interrupted turn with a
+  subagent still running is not a dead tool hook.
+  `an interrupted turn with a subagent still running is not a dead tool hook`
 - A turn whose input is a hand-over does not report a dead prompt hook.
   `a review session driven by a hand-over is not reported as a dead prompt hook`
 - The surface check names exactly the `ctx` members the plugin calls.
