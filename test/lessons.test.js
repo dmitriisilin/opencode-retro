@@ -1,6 +1,6 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { existsSync, mkdtempSync, readFileSync, readdirSync, renameSync, writeFileSync, mkdirSync } from "node:fs"
+import { existsSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync, mkdirSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { DEFAULT_CAP, DEFAULT_HALF_LIFE, concludedIn, createStore, freshness, score, staleSessions } from "../src/lessons.js"
@@ -630,4 +630,48 @@ test("folding a delegation's evidence into its root counts the two as one sessio
   const [folded] = store.list()
   assert.equal(folded.recurrence, 1, "they were one")
   assert.deepEqual(folded.evidence, [{ session: "ses_root", steps: [2, 8] }])
+})
+
+test("a file that does not read as a lesson is never written over, and is named", () => {
+  const s = sandbox()
+  mkdirSync(s.lessons, { recursive: true })
+  // A frontmatter whose closing fence was lost to a stray edit: the user's text, unreadable.
+  const broken = "---\nid: lint-skill-no-config\nstatus: new\n--\n\nMy own notes on this.\n"
+  writeFileSync(join(s.lessons, "lint-skill-no-config.md"), broken)
+  const store = s.store()
+  const result = store.record([lesson()], { session: "ses_a" })
+  assert.equal(readFileSync(join(s.lessons, "lint-skill-no-config.md"), "utf8"), broken)
+  assert.deepEqual(result.created, ["lint-skill-no-config-2"])
+  assert.deepEqual(store.unreadable(), ["lessons/lint-skill-no-config.md"])
+})
+
+test("a new lesson never takes an id the archive already holds", () => {
+  const s = sandbox()
+  const store = s.store()
+  // Two problems colliding on a slug in one batch are two lessons: `x` and `x-2`.
+  store.record([lesson(), lesson({ statement: "another problem" })], { session: "ses_a" })
+  assert.ok(store.close("lint-skill-no-config-2", "rejected", { note: "no" }))
+  // The user deletes the other by hand, and the next batch collides the same way. Against
+  // open ids alone it minted `x-2` again, and closing that wrote over the rejection.
+  rmSync(join(s.lessons, "lint-skill-no-config.md"))
+  const result = store.record([lesson({ statement: "a third" }), lesson({ statement: "a fourth" })], { session: "ses_b" })
+  assert.deepEqual(result.created, ["lint-skill-no-config", "lint-skill-no-config-3"])
+  store.close("lint-skill-no-config-3", "accepted", { note: "fine" })
+  const archived = readdirSync(s.archive).sort()
+  assert.deepEqual(archived, ["lint-skill-no-config-2.md", "lint-skill-no-config-3.md"])
+  assert.equal(parseFrontmatter(readFileSync(join(s.archive, "lint-skill-no-config-2.md"), "utf8")).data.status, "rejected")
+})
+
+test("a lesson with no status that the cap evicts is archived as an open question", () => {
+  const s = sandbox()
+  mkdirSync(s.lessons, { recursive: true })
+  // Typed by hand, no status: open (lesson.md). It is the cheapest, so the cap takes it.
+  writeFileSync(join(s.lessons, "typed-by-hand.md"), "---\nid: typed-by-hand\ncost: 1\nrecurrence: 1\nconfidence: 0.1\n---\n\nMine.\n")
+  const store = s.store(1)
+  const result = store.record([lesson()], { session: "ses_a" })
+  assert.deepEqual(result.archived, ["typed-by-hand"])
+  const archived = parseFrontmatter(readFileSync(join(s.archive, "typed-by-hand.md"), "utf8"))
+  // Moved as it was, it read as decided, and its return was reported as a fix that failed.
+  assert.equal(archived.data.status, "new")
+  assert.equal(archived.body, "Mine.")
 })

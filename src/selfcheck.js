@@ -300,6 +300,7 @@ function renderStock({
   cited = 0,
   decided = 0,
   setAside = 0,
+  unreadable = [],
 } = {}) {
   const lines = []
   // "No lessons recorded yet" right after a decision read as though the decision had
@@ -311,6 +312,17 @@ function renderStock({
     lines.push(
       `- ${lessons} lesson${lessons === 1 ? "" : "s"} in \`lessons/\` — run \`/retro\` to review` +
         (top ? `, starting with \`${top}\`${topScore != null ? ` (score ${round(topScore)})` : ""}` : ""),
+    )
+  }
+  if (unreadable.length) {
+    // A lesson file whose frontmatter does not parse is invisible to `/retro`, and nothing
+    // else would say so. The plugin writes over none of them; fixing them is the user's.
+    const shown = unreadable.slice(0, 5).map((n) => `\`${n}\``).join(", ")
+    const more = unreadable.length > 5 ? ` and ${unreadable.length - 5} more` : ""
+    lines.push(
+      `- ${shown}${more} cannot be read as ${unreadable.length === 1 ? "a lesson" : "lessons"} — the frontmatter ` +
+        "between the `---` lines does not parse, so `/retro` does not see " +
+        `${unreadable.length === 1 ? "it" : "them"}. Nothing was changed; fix or remove ${unreadable.length === 1 ? "it" : "them"}.`,
     )
   }
   if (setAside) {

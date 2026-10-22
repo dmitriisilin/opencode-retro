@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto"
-import { appendFileSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs"
+import { appendFileSync, closeSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, rmSync, statSync } from "node:fs"
 import { join } from "node:path"
 
 /**
@@ -28,7 +28,13 @@ export function createShadowLog({ dir, onError }) {
     write(sessionID, record) {
       if (!ensure()) return false
       try {
-        appendFileSync(join(dir, `${sessionID}.jsonl`), JSON.stringify(record) + "\n")
+        const path = join(dir, `${sessionID}.jsonl`)
+        // A process killed mid-append leaves half a record with no newline, and the next
+        // append used to land on the same line: the parser then skipped both, so the first
+        // record after a crash — a resumed session's prompt, typically — was lost with the
+        // half-record. Measured by the model test. Starting on a fresh line costs the half.
+        const prefix = endsMidLine(path) ? "\n" : ""
+        appendFileSync(path, prefix + JSON.stringify(record) + "\n")
         return true
       } catch (err) {
         onError?.("shadowlog.write", err)
@@ -134,6 +140,23 @@ export function createShadowLog({ dir, onError }) {
         return 0
       }
     },
+  }
+}
+
+/** Whether the file exists and its last byte is not a newline. */
+function endsMidLine(path) {
+  let fd
+  try {
+    const { size } = statSync(path)
+    if (!size) return false
+    fd = openSync(path, "r")
+    const last = Buffer.alloc(1)
+    readSync(fd, last, 0, 1, size - 1)
+    return last[0] !== 0x0a
+  } catch {
+    return false // no file yet
+  } finally {
+    if (fd !== undefined) closeSync(fd)
   }
 }
 

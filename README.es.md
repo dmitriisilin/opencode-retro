@@ -1,4 +1,4 @@
-<!-- translated-from: README.md@3bc2b19a730b -->
+<!-- translated-from: README.md@eb7e67ef3055 -->
 # opencode-retro
 
 [English](README.md) | [Русский](README.ru.md) | [简体中文](README.zh-CN.md) | **Español** | [日本語](README.ja.md)
@@ -217,7 +217,7 @@ Todo lo que el plugin escribe se queda bajo `.retro/` dentro del proyecto, y en 
 
 Un log permanece en disco mientras alguna lección abierta lo cite. La evidencia de una lección nombra una sesión y un rango de pasos, y durante la revisión la pregunta «¿qué pasó realmente ahí?» tiene que tener una respuesta que no sea un resumen. Cuando todas las lecciones que citan un log han sido decididas, el log se elimina. El crecimiento lo marca el número de lecciones abiertas, que está acotado, y no la edad del proyecto.
 
-No hay nada que añadir al `.gitignore` del proyecto. En la primera ejecución el plugin escribe `.retro/.gitignore`, y git lo aplica a todo lo que hay debajo: las sesiones, el estado, la autocomprobación, el log del plugin y los avisos de actualización de prompts quedan ignorados, mientras que `lessons/`, `archive/` y los archivos de prompt vigentes no. Ese archivo se siembra una vez y a partir de entonces es del proyecto.
+No hay nada que añadir al `.gitignore` del proyecto. En la primera ejecución el plugin escribe `.retro/.gitignore`, y git lo aplica a todo lo que hay debajo: las sesiones, el estado, la autocomprobación, el log del plugin, los avisos de actualización de prompts y cualquier archivo `.tmp` a medio escribir que deje un fallo quedan ignorados, mientras que `lessons/`, `archive/` y los archivos de prompt vigentes no. Ese archivo se siembra una vez y a partir de entonces es del proyecto.
 
 La separación es el diseño, no una comodidad. Las lecciones y el archivo son conocimiento sobre el proyecto: se leen, aparecen en la revisión y viajan con el repositorio. Los prompts son su configuración, que conviene compartir con quien más trabaje aquí. El resto solo haría ruido en un diff.
 

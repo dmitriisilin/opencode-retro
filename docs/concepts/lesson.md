@@ -73,8 +73,19 @@ told to the extractor and filters its answer, and the store refuses to reopen an
 - A lesson the user asked to come back to is never evicted, even if that leaves the open
   set over the cap.
   `a lesson marked later is never archived out from under the user`
+- An evicted lesson is archived with `status: new`, a hand-written one with no status
+  included, so its return is a restore and never a reopened decision.
+  `a lesson with no status that the cap evicts is archived as an open question`
 - A lesson with no status is open, so a hand-written file is not invisible.
   `a hand-written lesson with no status is open, not invisible`
+- A file in `lessons/` or `archive/` that does not read as a lesson — a frontmatter broken
+  by a stray edit — is the user's: never written over, moved or removed, and named in the
+  self-check, since `/retro` cannot see it.
+  `a file that does not read as a lesson is never written over, and is named`
+  `a lesson file broken by hand is left as the user left it`
+- A new lesson's id is free in `lessons/` and `archive/` alike, by id and by file name, so
+  closing it can never write over a decision already recorded.
+  `a new lesson never takes an id the archive already holds`
 - Two copies of one closed lesson in a single extraction reopen it once.
   `two copies of a closed lesson in one extraction reopen it once, not twice`
 - Freshness decays in sessions: a lesson unseen for `halfLife` sessions scores half.

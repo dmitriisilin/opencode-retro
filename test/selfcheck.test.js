@@ -267,3 +267,13 @@ test("the stock line counts what is queued, so the review reports its own backlo
 
   assert.match(activeStatus(report, "store").detail, /0 lesson\(s\), 2 session\(s\) queued/)
 })
+
+test("a lesson file that cannot be read is named, with what to do about it", () => {
+  // Invisible to `/retro` and written over by nothing: without this line, a stray edit that
+  // broke a frontmatter would make the lesson quietly disappear.
+  const check = createSelfCheck({ versions: {}, repo: "r" })
+  check.stock({ lessons: 2, unreadable: ["lessons/lint-skill-no-config.md"] })
+  const text = check.render()
+  assert.match(text, /`lessons\/lint-skill-no-config\.md` cannot be read as a lesson/)
+  assert.match(text, /Nothing was changed; fix or remove it\./)
+})

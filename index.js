@@ -147,6 +147,7 @@ export default {
           ...queueFacts(),
           cited: log.list().filter((id) => citedSessions().has(id)).length,
           decided: store.listArchive().length,
+          unreadable: store.unreadable(),
           // Logs that failed three analyses: still on disk, and nothing will read them — but
           // only while nothing owes them. A session left open can be prompted again, and that
           // queues its log afresh; announcing it as beyond reading next to the line saying it

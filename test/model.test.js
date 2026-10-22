@@ -1,6 +1,6 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs"
+import { appendFileSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import plugin from "../index.js"
@@ -16,8 +16,9 @@ import { parseFrontmatter } from "../src/frontmatter.js"
  * one or two sequences in their heads; the space is combinatorial, so each cycle walked into
  * corners the last one had not, and cycle 5 found twelve defects in code that had not
  * changed. This walks the space instead: random histories of turns, hooks, delegations,
- * `/retro`, decisions, restarts, crashes mid-answer, replaced logs, a second plugin instance
- * on the same project, and a model that sometimes answers nothing — through the real entry
+ * `/retro`, decisions, restarts, crashes mid-answer and mid-append, replaced logs, lesson
+ * files and prompts edited by hand, a second plugin instance on the same project, and a
+ * model that sometimes answers nothing — through the real entry
  * point, against the shared fake — and checks the invariants after every step. A failure is
  * shrunk to the shortest history that still fails, which is a ready-made regression test.
  *
@@ -77,9 +78,19 @@ const advanceTimers = () => {
   }
 }
 function freezeTime() {
-  const real = { now: Date.now, setTimeout: globalThis.setTimeout, clearTimeout: globalThis.clearTimeout }
+  const real = { Date: globalThis.Date, now: Date.now, setTimeout: globalThis.setTimeout, clearTimeout: globalThis.clearTimeout }
   let clock = 1_800_000_000_000
-  Date.now = () => (clock += 7)
+  // `new Date()` reads the real clock, not `Date.now`, and a recorded date that differs per
+  // run reaches the model's prompt — the same history then answered differently on replay.
+  const RealDate = real.Date
+  globalThis.Date = class extends RealDate {
+    constructor(...args) {
+      super(...(args.length ? args : [clock += 7]))
+    }
+    static now() {
+      return (clock += 7)
+    }
+  }
   timers.clear()
   globalThis.setTimeout = (fn) => {
     const t = { fn, unref() {}, ref() {} }
@@ -89,7 +100,7 @@ function freezeTime() {
   globalThis.clearTimeout = (t) => void timers.delete(t)
   return () => {
     timers.clear()
-    Date.now = real.now
+    globalThis.Date = real.Date
     globalThis.setTimeout = real.setTimeout
     globalThis.clearTimeout = real.clearTimeout
   }
@@ -145,6 +156,9 @@ function generate(seed, steps) {
     else if (roll < 0.86) actions.push({ op: "crash", invoker: "ses_review", w: w() })
     else if (roll < 0.88) actions.push({ op: "slow", invoker: r() < 0.6 ? "ses_review" : s, w: w() })
     else if (roll < 0.91) actions.push({ op: "replace", s })
+    else if (roll < 0.925) actions.push({ op: "torn", s })
+    else if (roll < 0.945) actions.push({ op: "edit", pick: r(), how: pick(["delete", "later", "nostatus", "body", "break"]) })
+    else if (roll < 0.955) actions.push({ op: "reprompt", marker: `marker-${Math.floor(r() * 1e6)}` })
     else actions.push({ op: "tool", s, w: w(), exit: 2, size: 1200 })
   }
   // Every delegation the parent finished is eventually reported; ones whose parent died with
@@ -185,6 +199,13 @@ function createWorld() {
     /** session -> the records last seen in its log. */
     seen: new Map(),
     replaced: new Set(),
+    /** file -> the text a hand edit left in it, unparseable: the user's, until they fix it. */
+    broken: new Map(),
+    /** session -> half-records a crash left in its log, which no write may swallow. */
+    torn: new Map(),
+    /** Set by the model when it was called in a way an invariant forbids. */
+    violation: null,
+    marker: null,
     /** child -> { parent, root, linked }: delegations, and whether the plugin was told. */
     children: new Map(),
     generated: 0,
@@ -201,6 +222,8 @@ function createWorld() {
     const steps = [...logSection.matchAll(/^\[(\d+)\]/gm)].map((m) => Number(m[1]))
     debug(`model (${world.mode}) asked about ${session}: steps ${steps.join(",")}`)
     world.saw.add(`model call (${world.mode})`)
+    if (world.marker && !prompt.includes(world.marker)) world.violation ??= `the extractor was not given the edited prompt (${world.marker})`
+    if (world.marker) world.saw.add("an edited prompt reached the model")
     if (/elided to fit the budget/.test(prompt)) world.saw.add("an excerpt was sent")
     if (/Steps up to \d+ of this session were analysed before/.test(prompt)) world.saw.add("a re-read from the mark")
     if (world.inPrompt) world.saw.add("autoExtract analysed from a prompt hook")
@@ -212,7 +235,9 @@ function createWorld() {
       for (const n of steps) set.add(n)
       world.analysed.set(session, set)
     }
-    const h = hash(prompt)
+    // Without the temporary directory's name, or the same history would answer differently
+    // on every run and a shrunk failure would replay as a different one.
+    const h = hash(prompt.split(world.directory).join(""))
     if (!steps.length || h % 4 === 0) return '```json\n{ "lessons": [] }\n```'
     // Ids the prompt names as already recorded, concluded or rejected: a real model refers
     // back to them, by `matches` or by reusing the id, and sometimes ignores the rejection.
@@ -466,6 +491,48 @@ async function apply(world, action) {
       for (const s of [...world.inTurn]) if ((world.home.get(s) ?? 0) === dead) world.inTurn.delete(s)
       return world.start(dead)
     }
+    case "torn": {
+      // The process dies in the middle of an append: the log ends in half a record with no
+      // newline, and the server that comes back appends after it.
+      if (!existsSync(world.logPath(action.s))) return
+      const dead = world.home.get(action.s) ?? 0
+      appendFileSync(world.logPath(action.s), `{"v":1,"n":999999,"t":1,"k":"tool","id":"torn`)
+      world.torn.set(action.s, (world.torn.get(action.s) ?? 0) + 1)
+      world.saw.add("a log was torn by a crash mid-append")
+      timers.clear()
+      for (const s of [...world.inTurn]) if ((world.home.get(s) ?? 0) === dead) world.inTurn.delete(s)
+      return world.start(dead)
+    }
+    case "edit": {
+      // The user opens a lesson file, as the README invites them to.
+      const dir = join(world.directory, ".retro", "lessons")
+      if (!existsSync(dir)) return
+      const files = readdirSync(dir).filter((f) => f.endsWith(".md")).sort()
+      if (!files.length) return
+      const file = join(dir, files[Math.floor(action.pick * files.length)])
+      const text = readFileSync(file, "utf8")
+      world.saw.add(`a lesson was edited by hand (${action.how})`)
+      if (action.how === "delete") rmSync(file)
+      else if (action.how === "later") writeFileSync(file, text.replace(/^status: .*$/m, "status: later"))
+      else if (action.how === "nostatus") writeFileSync(file, text.replace(/^status: .*\n/m, ""))
+      else if (action.how === "body") writeFileSync(file, text + "\nA note the user added by hand.\n")
+      // A stray edit that breaks the frontmatter: the closing fence is gone.
+      else writeFileSync(file, text.replace(/\n---\n/, "\n--\n"))
+      // The user's own edits to a file they broke are theirs too: what is watched is whatever
+      // they left there last, for as long as it does not read as a lesson.
+      const now = existsSync(file) ? readFileSync(file, "utf8") : null
+      if (now !== null && !parseFrontmatter(now).data?.id) world.broken.set(file, now)
+      else world.broken.delete(file)
+      return
+    }
+    case "reprompt": {
+      // The user rewrites what counts as a lesson; the next analysis must be given their words.
+      const file = join(world.directory, ".retro", "prompts", "extract.md")
+      if (!existsSync(file)) return
+      writeFileSync(file, readFileSync(file, "utf8").replace(/\n*$/, `\n\nAlso: ${action.marker}\n`))
+      world.marker = action.marker
+      return
+    }
     case "replace": {
       // Somebody else replaced the file while the plugin was down: a hand edit, a restore from
       // a backup. What was in the old file is no longer the plugin's to answer for; the new
@@ -486,6 +553,7 @@ async function apply(world, action) {
       world.analysed.set(action.s, new Set())
       world.seen.set(action.s, lines)
       world.replaced.add(action.s)
+      world.torn.delete(action.s)
       for (let w = 0; w < world.writers; w++) await world.start(w)
       return
     }
@@ -556,9 +624,34 @@ function check(world) {
         }
       }
     }
+    // log.md — a log is append-only: while it is the same file, every record once in it stays.
+    if (before && now && JSON.stringify(before[0]) === JSON.stringify(now[0])) {
+      const kept = new Set(now.map((r) => JSON.stringify(r)))
+      const lost = before.filter((r) => !kept.has(JSON.stringify(r)))
+      if (lost.length) fail("log", "a log is append-only", `${s} lost ${lost.map((r) => `${r.n}${r.k}`).join(",")}`)
+    }
+    // log.md — a record written after a crash survives the half-record the crash left: the
+    // only record a torn append may lose is its own.
+    if (now) {
+      const text = readFileSync(world.logPath(s), "utf8")
+      const started = (text.match(/\{"v":/g) ?? []).length
+      if (started > now.length + (world.torn.get(s) ?? 0)) {
+        fail("log", "a crash mid-append loses at most the record being written", `${s}: ${started} records begun, ${now.length} readable`)
+      }
+    }
     if (before && !now) world.analysed.delete(s) // a new file under this id numbers afresh
+    if (!now) world.torn.delete(s)
     if (now) world.seen.set(s, now)
     else world.seen.delete(s)
+  }
+
+  if (world.violation) fail("prompts", "only the user's prose reaches the model", world.violation)
+
+  // lesson.md — a file the user broke by hand is theirs until they fix it: never written
+  // over, never moved, never deleted.
+  for (const [file, text] of world.broken) {
+    const now = existsSync(file) ? readFileSync(file, "utf8") : null
+    if (now !== text) fail("lesson", "a lesson file the plugin cannot read is left as the user left it", `${file}: ${now === null ? "gone" : "rewritten"}`)
   }
 
   const lessons = world.lessons("lessons")
@@ -833,6 +926,24 @@ const FOUND = {
     { op: "end", s: "ses_c" },
     { op: "replace", s: "ses_c" },
     { op: "retro", invoker: "ses_review", all: false },
+  ],
+  "a crash mid-append loses only its own half-record, not the prompt after it": [
+    { op: "options", maxInput: 32000, writers: 1, autoExtract: false, prolific: false },
+    { op: "tool", s: "ses_c", w: 0, exit: 0, size: 374 },
+    { op: "torn", s: "ses_c" },
+    { op: "prompt", s: "ses_c", w: 0 },
+  ],
+  "a lesson file broken by hand is left as the user left it": [
+    { op: "options", maxInput: 4000, writers: 1, autoExtract: false, prolific: true },
+    { op: "prompt", s: "ses_c", w: 0 },
+    { op: "tool", s: "ses_a", w: 0, exit: 0, size: 613 },
+    { op: "crash", invoker: "ses_review", w: 0 },
+    { op: "tool", s: "ses_c", w: 0, exit: 2, size: 56 },
+    { op: "text", s: "ses_c", w: 0 },
+    { op: "retro", invoker: "ses_c", all: true, w: 0 },
+    { op: "edit", pick: 0.41373699461109936, how: "break" },
+    { op: "retro", invoker: "ses_c", all: false, w: 0 },
+    { op: "retro", invoker: "ses_a", all: false, w: 0 },
   ],
 }
 

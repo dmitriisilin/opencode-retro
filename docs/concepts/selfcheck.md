@@ -26,7 +26,7 @@ flight; the trigger cannot be judged before the session ends.
 
 **Stock.** What is waiting for the human: open lessons, logs not analysed yet, logs whose
 analysis failed, logs of working sessions read as far as they go, logs kept because a
-lesson cites them, logs given up on. Kept in its own section, because it is the one part a
+lesson cites them, logs given up on, and lesson files that cannot be read. Kept in its own section, because it is the one part a
 person has to act on. A queue entry is not "not analysed": a working session read by
 `/retro` stays queued until it is over, because reading is not settling, and a failed
 analysis is a failure, not something nobody looked at. The extraction line reports the
@@ -34,6 +34,8 @@ last analysis of the session whichever path ran it.
 
 ## Invariants
 
+- A lesson file that cannot be read is named in the stock, with what to do about it.
+  `a lesson file that cannot be read is named, with what to do about it`
 - The report is written from the first prompt, not once the session is over.
   `the report is written from the first prompt, not once the session is over`
 - A finished session proves the hooks ran, with numbers.

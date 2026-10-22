@@ -21,12 +21,15 @@ such — it says `(untested)`.
 ## How they are exercised
 
 Beyond the tests each invariant cites, `test/model.test.js` walks random histories — turns,
-hooks, `/retro`, decisions, restarts, crashes mid-answer, replaced logs, a model that answers
-nothing or prose — through the real entry point, and checks the invariants after every step.
+hooks, delegations, `/retro`, decisions, restarts, crashes mid-answer and mid-append, slow
+models, replaced logs, lesson files and prompts edited by hand, a model that answers nothing
+or prose — through the real entry point, and checks the invariants after every step.
 A failure is shrunk to the shortest history that still fails; the ones found that way are
 kept in the same file as named tests, and cited here like any other. The audit cycles walked
 into new corners every time because the space is combinatorial; the walk is how that space
-is covered. `RETRO_MODEL_RUNS=1000 RETRO_MODEL_STEPS=60 npm test` is the deep run.
+is covered. `RETRO_MODEL_RUNS=1000 RETRO_MODEL_STEPS=60 npm test` is the deep run, and it ends
+by listing which branches its histories reached — a clean walk says nothing about a branch
+none of them got to.
 
 ## How to change them
 

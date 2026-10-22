@@ -24,6 +24,7 @@ state.json
 selfcheck.md
 plugin.log
 prompts/updates/
+*.tmp
 `
 
 export function seedGitignore({ dir, onError }) {

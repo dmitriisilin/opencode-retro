@@ -78,3 +78,7 @@ per session either way — not with the age of the project.
   `a corrupt state file starts clean instead of refusing to run`
   `a hand-edited file with the wrong shapes is repaired, not trusted`
   `a save that cannot happen is reported, never thrown at the session`
+- `state.json` and every lesson file are written whole or not at all, so a crash mid-save
+  leaves the previous file rather than a truncated one.
+  `a write replaces the whole file and leaves nothing beside it`
+  `a write that fails leaves the old file whole and no temporary behind`

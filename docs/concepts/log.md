@@ -57,6 +57,10 @@ lesson cites it, nothing is owed for it, and its session is not live.
 
 ## Invariants
 
+- A log is append-only: while it is the same file, every record once in it stays. A crash
+  in the middle of an append loses the record being written and nothing after it — the next
+  append starts on a line of its own.
+  `a crash mid-append loses only its own half-record, not the prompt after it`
 - The event stream may annotate a log, never open one.
   `a session no hook ever fired for is not ours, and gets no log at all`
   `once a hook has fired, the event stream annotates that same session`

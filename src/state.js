@@ -1,4 +1,5 @@
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs"
+import { mkdirSync, readFileSync } from "node:fs"
+import { writeAtomic } from "./atomic.js"
 import { dirname } from "node:path"
 
 /**
@@ -259,7 +260,7 @@ export function createState({ path, onError, now = () => Date.now() }) {
       }
 
       mkdirSync(dirname(path), { recursive: true })
-      writeFileSync(path, JSON.stringify(data, null, 2) + "\n")
+      writeAtomic(path, JSON.stringify(data, null, 2) + "\n")
       rebased = new Set()
     } catch (err) {
       onError?.("state.save", err)

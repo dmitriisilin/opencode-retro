@@ -1,4 +1,5 @@
-import { mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync } from "node:fs"
+import { writeAtomic } from "./atomic.js"
 import { join } from "node:path"
 import { parseFrontmatter, stringifyFrontmatter } from "./frontmatter.js"
 import { slug } from "./contract.js"
@@ -111,11 +112,43 @@ export function createStore({ dir, archive, cap = DEFAULT_CAP, halfLife = DEFAUL
     return lessons
   }
 
+  /**
+   * `.md` files in a directory that do not read as a lesson: a frontmatter broken by hand, a
+   * note the user dropped there. They are the user's, and the store writes over none of them —
+   * it used to, when the extractor named a lesson after one, and the hand edit was gone.
+   */
+  function unreadable(where) {
+    let names = []
+    try {
+      names = readdirSync(where).filter((n) => n.endsWith(".md"))
+    } catch {
+      return []
+    }
+    return names.filter((name) => {
+      try {
+        return !parseFrontmatter(readFileSync(join(where, name), "utf8")).data?.id
+      } catch {
+        return true
+      }
+    })
+  }
+
+  /** `name`, or the first `<stem>-<n>.md` not already on disk in `where`. */
+  function freeName(where, name) {
+    if (!existsSync(join(where, name))) return name
+    const stem = name.slice(0, -".md".length)
+    for (let i = 2; i < 1000; i++) {
+      const candidate = `${stem}-${i}.md`
+      if (!existsSync(join(where, candidate))) return candidate
+    }
+    return `${stem}-${Date.now()}.md`
+  }
+
   function write(lesson) {
     if (!ensure(dir)) return false
     const { body, file, ...data } = lesson
     try {
-      writeFileSync(join(dir, file ?? `${data.id}.md`), stringifyFrontmatter(data, body ?? ""))
+      writeAtomic(join(dir, file ?? `${data.id}.md`), stringifyFrontmatter(data, body ?? ""))
       return true
     } catch (err) {
       onError?.("lessons.write", err)
@@ -127,6 +160,11 @@ export function createStore({ dir, archive, cap = DEFAULT_CAP, halfLife = DEFAUL
     list,
     listArchive,
     write,
+    /** What cannot be read as a lesson, for the self-check to name: invisible otherwise. */
+    unreadable: () => [
+      ...unreadable(dir).map((n) => `lessons/${n}`),
+      ...unreadable(archive).map((n) => `archive/${n}`),
+    ],
     score: (lesson) => score(lesson, ctxFor()),
     freshness: (lesson) => freshness(lesson, ctxFor()),
     staleSessions: (lesson) => staleSessions(lesson, sessions()),
@@ -167,7 +205,7 @@ export function createStore({ dir, archive, cap = DEFAULT_CAP, halfLife = DEFAUL
           const recurrence = Math.max(1, (lesson.recurrence ?? 1) - (distinct(evidence) - distinct(folded)))
           const { file, body, ...data } = { ...lesson, evidence: folded, recurrence }
           try {
-            writeFileSync(join(where, file ?? `${data.id}.md`), stringifyFrontmatter(data, body ?? ""))
+            writeAtomic(join(where, file ?? `${data.id}.md`), stringifyFrontmatter(data, body ?? ""))
             moved++
           } catch (err) {
             onError?.(`lessons.remap ${lesson.id}`, err)
@@ -195,7 +233,7 @@ export function createStore({ dir, archive, cap = DEFAULT_CAP, halfLife = DEFAUL
       if (!ensure(archive)) return null
       const { body, file, ...data } = closed
       try {
-        writeFileSync(join(archive, file ?? `${data.id}.md`), stringifyFrontmatter(data, body ?? ""))
+        writeAtomic(join(archive, freeName(archive, file ?? `${data.id}.md`)), stringifyFrontmatter(data, body ?? ""))
         rmSync(join(dir, file ?? `${data.id}.md`))
         return closed
       } catch (err) {
@@ -223,9 +261,9 @@ export function createStore({ dir, archive, cap = DEFAULT_CAP, halfLife = DEFAUL
         closedAt: undefined,
       }
       try {
-        const name = file ?? `${data.id}.md`
-        writeFileSync(join(dir, name), stringifyFrontmatter(data, body ?? ""))
-        rmSync(join(archive, name))
+        const name = freeName(dir, file ?? `${data.id}.md`)
+        writeAtomic(join(dir, name), stringifyFrontmatter(data, body ?? ""))
+        rmSync(join(archive, file ?? `${data.id}.md`))
         // Keep the name: a hand-renamed lesson restored without it would be written under
         // its id on the next save, leaving two files with the same id in `lessons/`.
         return { ...data, body, file: name }
@@ -251,6 +289,21 @@ export function createStore({ dir, archive, cap = DEFAULT_CAP, halfLife = DEFAUL
       // on a slug are two problems, and merging them would drop one statement. An explicit
       // `matches` still merges, because then the extractor meant it.
       const mintedNow = new Set()
+
+      // A new id is free in both directories, by id and by file name. Against open ids alone,
+      // a suffixed `x-2` could be one the archive already held, and closing it later wrote over
+      // that decision — a rejection included. And a file that is not read as its own name, broken
+      // by hand or renamed, was written over by the next lesson that happened to be called that.
+      const stem = (name) => name.slice(0, -".md".length)
+      const taken = () =>
+        new Set([
+          ...byId.keys(),
+          ...archived.keys(),
+          ...existing.map((l) => stem(l.file)),
+          ...[...archived.values()].map((l) => stem(l.file)),
+          ...unreadable(dir).map(stem),
+          ...unreadable(archive).map(stem),
+        ])
 
       for (const lesson of extracted) {
         const explicit = lesson.matches ? byId.get(lesson.matches) : null
@@ -314,6 +367,7 @@ export function createStore({ dir, archive, cap = DEFAULT_CAP, halfLife = DEFAUL
             // that moves it makes "changed since" compare the file with itself, and the review
             // after a reopen is exactly when the human needs to know the target moved.
             targetFingerprint: buried.targetFingerprint ?? fingerprint?.(buried.proposal?.target),
+            file: freeName(dir, buried.file ?? `${buried.id}.md`),
           }
           if (write(back)) {
             result[evicted ? "restored" : "reopened"].push(back.id)
@@ -366,7 +420,7 @@ export function createStore({ dir, archive, cap = DEFAULT_CAP, halfLife = DEFAUL
         }
 
         const created = {
-          id: uniqueId(lesson.id, byId),
+          id: uniqueId(lesson.id, taken()),
           statement: lesson.statement,
           evidence: [{ session, steps: lesson.steps }],
           cost: lesson.cost,
@@ -401,7 +455,16 @@ export function createStore({ dir, archive, cap = DEFAULT_CAP, halfLife = DEFAUL
     for (const lesson of all.slice(cap)) {
       if (lesson.status === "later") continue // the user asked to come back to it
       try {
-        renameSync(join(dir, lesson.file), join(archive, lesson.file))
+        const name = freeName(archive, lesson.file)
+        if (lesson.status) renameSync(join(dir, lesson.file), join(archive, name))
+        else {
+          // A lesson with no status is open (a file typed by hand), and in the archive an
+          // eviction is told from a decision by `status: new`. Moved as it was, it read as
+          // decided: a recurrence reopened it as a failed fix, and a re-read was swallowed.
+          const { body, file, ...data } = { ...lesson, status: "new" }
+          writeAtomic(join(archive, name), stringifyFrontmatter(data, body ?? ""))
+          rmSync(join(dir, file))
+        }
         archived.push(lesson.id)
       } catch (err) {
         onError?.(`lessons.archive ${lesson.file}`, err)
