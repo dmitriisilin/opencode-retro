@@ -179,23 +179,35 @@ const section = (title, body) => (body?.trim() ? `## ${title}\n\n${body.trim()}`
  * ago. The hand-over asks for them one at a time for the same reason.
  */
 function renderExisting(lessons, dir) {
-  const where = dir
-    ? [
-        "",
-        `The current set is in \`${dir}\` — one file per lesson, with its \`id\` in the`,
-        "frontmatter. **Read it before you decide anything is new.** The list above was taken",
-        "when this order was written, and an analysis of another session may have recorded",
-        "something since.",
-      ].join("\n")
-    : ""
-  const how = lessons.length
-    ? "If this session ran into one of these again, list it again with `matches` set to its id: " +
-      "that is how a problem that keeps happening is told from one that happened once.\n\n"
-    : ""
-  const list = lessons.length
-    ? lessons.map((l) => `- \`${l.id}\` (seen in ${l.recurrence ?? 1}): ${l.statement}`).join("\n")
-    : "None yet, as of when this order was written."
-  return how + list + where
+  const lines = []
+  if (dir) {
+    // First, before any list. Measured on the bench: with the list first and this after it,
+    // an analysis anchored on a snapshot that read "None yet" and filed a problem another
+    // analysis had recorded seconds earlier under a different id. A reader has no reason to
+    // go looking once it has been told there is nothing there.
+    lines.push(
+      `**Read \`${dir}\` before you decide that anything is new.** One file per lesson, with`,
+      "its `id` in the frontmatter. That directory is the current set; anything below is only",
+      "what was there when this order was written, and an analysis of another session in this",
+      "same round may have recorded something since.",
+      "",
+    )
+  }
+  lines.push(
+    "If this session ran into a problem that is already recorded, report it again with " +
+      "`matches` set to its id: that is how a problem that keeps happening is told from one " +
+      "that happened once.",
+    "",
+  )
+  lines.push(
+    lessons.length
+      ? lessons.map((l) => `- \`${l.id}\` (seen in ${l.recurrence ?? 1}): ${l.statement}`).join("\n")
+      : dir
+        ? "_Nothing was recorded when this order was written. That is not the same as nothing_\n" +
+          "_being there now — see above._"
+        : "None yet.",
+  )
+  return lines.join("\n")
 }
 
 /**

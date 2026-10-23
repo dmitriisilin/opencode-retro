@@ -71,5 +71,14 @@ done
 timeout 900 "$OC" api post "/api/session/$review/command" -H "x-opencode-directory: $WORK/project" \
   -d '{"name":"retro","text":""}' > "$WORK/retro2.json" 2>&1
 echo "retro again: exit $?"
+# And wait for *this* round too, or the review check below is scored before the analysis of
+# the review session has run — which is the whole point of the second command. Measured: it
+# read `UNTESTED` twice while the order for the review session sat unanswered on disk.
+for _ in $(seq 1 90); do
+  [ -z "$(ls -A .retro/work 2>/dev/null)" ] && break
+  sleep 10
+done
+left=$(ls -A .retro/work 2>/dev/null | wc -l)
+[ "$left" != "0" ] && echo "WARNING: $left work order(s) unanswered after the second /retro"
 
 node "$HERE/score.mjs" "$HERE/traps.json" "$WORK/project/.retro" "$review" | tee "$WORK/score.txt"
