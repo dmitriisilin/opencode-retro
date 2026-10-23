@@ -255,11 +255,22 @@ export function renderWorkOrders(orders, { all = false, failures = [], left = 0 
     // sessions of their own"), and naming one we have not verified would send the agent
     // after something that may not exist. It knows its own roster; the requirement is only
     // that the subagent can read a file and call a tool.
-    "Start one subagent per work order — all of them at once if you can, with whichever " +
-      "general-purpose agent you have; it only needs to read a file and call a tool. Give " +
-      "each exactly this prompt, with its own path filled in, and nothing else:",
+    "Start one subagent per work order, with whichever general-purpose agent you have; it " +
+      "only needs to read a file and call a tool. Give each exactly this prompt, with its own " +
+      "path filled in, and nothing else:",
     "",
     `    opencode-retro work order: read <path> and do what it says.`,
+    "",
+    ...(n > 1
+      ? [
+          "**One at a time, waiting for each to record before starting the next.** They are " +
+            "not independent: a problem that appears in several of these sessions has to be " +
+            "reported as one recurring problem rather than as several new ones, and the only " +
+            "way an analysis can tell is by reading what the ones before it recorded. Run " +
+            "them at once and you get one lesson per session for one problem, each looking " +
+            "like it happened once. This is slower on purpose; nothing here is waiting on it.",
+        ]
+      : []),
     "",
     "Do not read the work orders yourself and do not analyse the logs here: each subagent reads one, " +
       "in a context of its own, and records what it found with `retro_record`. When every subagent " +

@@ -36,6 +36,8 @@ export function composeOrder({
   session,
   /** Where the log is, as the subagent will open it: absolute, so any cwd resolves it. */
   logPath,
+  /** Where the open lessons are, so a reader can see what was recorded since this was written. */
+  lessonsDir = null,
   /** The last step in the log, so the order can say how much there is to read. */
   lastN = 0,
   prompts,
@@ -114,14 +116,7 @@ export function composeOrder({
     section("What to read", scope),
     section("Already concluded from this session", renderConcluded(concluded)),
     section("Already fixed", renderFixed(store.listArchive?.() ?? [])),
-    section(
-      "Lessons already recorded",
-      existing.length
-        ? "If this session ran into one of these again, list it again with `matches` set to its id: " +
-            "that is how a problem that keeps happening is told from one that happened once.\n\n" +
-            renderExisting(existing)
-        : renderExisting(existing),
-    ),
+    section("Lessons already recorded", renderExisting(existing, lessonsDir)),
     section("Rejected — do not propose these again", renderRejected(state.rejected)),
     OUTPUT_CONTRACT,
   ]
@@ -170,11 +165,37 @@ export function recordAnswer({
 
 const section = (title, body) => (body?.trim() ? `## ${title}\n\n${body.trim()}` : null)
 
-function renderExisting(lessons) {
-  if (!lessons.length) return "None yet."
-  return lessons
-    .map((l) => `- \`${l.id}\` (seen in ${l.recurrence ?? 1}): ${l.statement}`)
-    .join("\n")
+/**
+ * What is already recorded, and where to find the current set.
+ *
+ * The list is a snapshot taken when the order was written, and in a round with several logs
+ * that is not enough: measured on the friction bench, three sessions that hit the same two
+ * traps produced five lessons with five ids and a recurrence of 1 apiece, because all three
+ * orders were written before any of them recorded and so each one said "None yet". Recurrence
+ * is the strongest signal in a lesson's score, and it never fired.
+ *
+ * So the directory is named as well. A reader that only skims the order still gets the
+ * snapshot; one that reads the directory gets what the analysis before it recorded a moment
+ * ago. The hand-over asks for them one at a time for the same reason.
+ */
+function renderExisting(lessons, dir) {
+  const where = dir
+    ? [
+        "",
+        `The current set is in \`${dir}\` — one file per lesson, with its \`id\` in the`,
+        "frontmatter. **Read it before you decide anything is new.** The list above was taken",
+        "when this order was written, and an analysis of another session may have recorded",
+        "something since.",
+      ].join("\n")
+    : ""
+  const how = lessons.length
+    ? "If this session ran into one of these again, list it again with `matches` set to its id: " +
+      "that is how a problem that keeps happening is told from one that happened once.\n\n"
+    : ""
+  const list = lessons.length
+    ? lessons.map((l) => `- \`${l.id}\` (seen in ${l.recurrence ?? 1}): ${l.statement}`).join("\n")
+    : "None yet, as of when this order was written."
+  return how + list + where
 }
 
 /**

@@ -337,7 +337,7 @@ test("counts are the self-check's evidence, and forgetting a session clears them
   ingest.event({ type: "session.tool.called", durable: { seq: 2 }, data: { sessionID: "s", id: "c1" } })
   ingest.event({ type: "session.text.ended", durable: { seq: 3 }, data: { sessionID: "s", text: "hi" } })
 
-  assert.deepEqual(ingest.counts("s"), { prompts: 1, handovers: 0, toolHook: 1, toolEvents: 1, unfinished: 0, steps: 0, texts: 1, records: 3 })
+  assert.deepEqual(ingest.counts("s"), { prompts: 1, handovers: 0, toolHook: 1, toolEvents: 1, ours: 0, unfinished: 0, steps: 0, texts: 1, records: 3 })
   assert.deepEqual(ingest.sessions(), ["s"])
   ingest.forget("s")
   assert.deepEqual(ingest.sessions(), [])
@@ -370,4 +370,30 @@ test("a paired call with no input of its own takes the one the before hook recor
   assert.equal(out[0].agent, "build")
   assert.equal(out[0].message, "m1")
   assert.equal(out[0].ms, 0)
+})
+
+test("a tool call of the plugin's own is counted but not logged", () => {
+  // The event stream sees every call; the plugin drops the hooks for its own (its tools, the
+  // subagents it asks for) because none of that is the user's work. The self-check compares
+  // the two sides, so the ones dropped on purpose have to be counted, or every `/retro` that
+  // analysed anything reported a dead tool hook. Measured on the first live run.
+  const { ingest, out } = collector()
+  ingest.prompt({ sessionID: "s", prompt: { text: "go" } })
+  ingest.toolBefore({ sessionID: "s", id: "c1", tool: "read", input: {} })
+  ingest.toolAfter({ sessionID: "s", id: "c1", tool: "read", status: "completed" })
+  ingest.ownCall("s")
+  for (const id of ["c1", "c2"]) {
+    ingest.event({ type: "session.tool.called", durable: { seq: 2 }, data: { sessionID: "s", id } })
+  }
+
+  const c = ingest.counts("s")
+  assert.equal(c.toolEvents, 2, "the event stream saw both")
+  assert.equal(c.toolHook, 1, "only one reached a hook")
+  assert.equal(c.ours, 1, "and the other is accounted for as ours")
+  assert.ok(c.toolHook + c.ours >= c.toolEvents, "so the self-check's comparison holds")
+  assert.deepEqual(
+    out.map((r) => r.k),
+    ["prompt", "tool"],
+    "and nothing of ours is in the log: one prompt, one real tool call",
+  )
 })

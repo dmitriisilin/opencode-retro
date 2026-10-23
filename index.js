@@ -283,7 +283,12 @@ export default {
       (p?.tool === "subagent" && isWorkText(p?.input?.prompt))
 
     await hook("tool", "execute.before", (p) => {
-      if (ownWork(p)) return
+      if (ownWork(p)) {
+        // Not logged, but counted: the event stream sees this call like any other, and the
+        // self-check compares the two sides. See `ingest.ownCall`.
+        ingest.ownCall(p?.sessionID)
+        return
+      }
       ingest.toolBefore(p)
     })
     await hook("tool", "execute.after", (p) => {
@@ -981,6 +986,7 @@ export default {
         session: sessionID,
         // Absolute, because the subagent's working directory is not ours to assume.
         logPath: log.path(sessionID),
+        lessonsDir: config.lessons,
         lastN,
         prompts,
         store,

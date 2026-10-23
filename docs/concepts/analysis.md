@@ -34,6 +34,19 @@ That brought a budget, a drop order, a floor, a coverage rule and a failure mode
 ("the excerpt could not reach past the mark"), all to answer a question — how much of this
 can I afford to show? — that only exists when the reader cannot turn the page itself.*
 
+**One at a time.** When a round has several logs, the analyses are asked for in sequence,
+each waiting for the one before it to record. They are not independent: a problem that
+appears in several of those sessions has to be reported as one recurring problem rather than
+as several new ones, and the only way an analysis can tell is by reading what the ones before
+it recorded. The orders also name the lessons directory, because the list each one carries is
+a snapshot taken when it was written.
+
+*Measured on the friction bench, which is what it is for: with the analyses run in parallel,
+three sessions that hit the same two traps produced five lessons under five ids with a
+recurrence of 1 apiece — every order had been written before any of them recorded, so each
+read "None yet". Recall was 4/4 and recurrence was 0, and recurrence is the strongest signal
+in a lesson's score. Sequence costs wall-clock, which this is explicitly not tuned for.*
+
 **Record.** The answer, given by calling `retro_record` with the session and its lessons.
 The tool's schema is the output contract: a malformed answer is refused by OpenCode before
 it reaches the plugin, and the subagent is told why and can try again. A record with no
@@ -97,6 +110,11 @@ the plugin's bookkeeping never turns into a lesson about the plugin.
   `the work order points at the log instead of carrying it`
   `a second look at a session reads only what is new since the first`
   `an order with no log to point at is refused`
+- A round with several orders asks for them in sequence, and every order says where the
+  current lessons are, so a problem seen in more than one session is reported as recurring.
+  `a round with several orders asks for them one at a time, and says why`
+  `already-recorded lessons are shown so the reader matches instead of re-stating`
+  `an order with nothing recorded yet still says where the lessons will be`
 - The plugin makes no model call: `/retro` issues work orders and hands them to the agent in
   its session, which starts one subagent per order.
   `/retro issues a work order per owed log and asks the agent to analyse them`

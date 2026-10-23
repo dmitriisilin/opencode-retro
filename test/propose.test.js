@@ -14,6 +14,7 @@ import {
   renderFailures,
   renderNothing,
   renderProposal,
+  renderWorkOrders,
 } from "../src/propose.js"
 import { createStore } from "../src/lessons.js"
 import { createState } from "../src/state.js"
@@ -274,4 +275,25 @@ test("an empty hand-over names the plugin's files where options.dir put them", (
   assert.match(failed, /`tools\/retro\/plugin\.log` says why/)
   assert.doesNotMatch(failed, /\.retro\//)
   assert.match(renderNothing({ dir: "tools/retro" }), /`tools\/retro\/selfcheck\.md`/)
+})
+
+test("a round with several orders asks for them one at a time, and says why", () => {
+  // Measured on the friction bench: the hand-over said "all of them at once if you can", the
+  // three analyses ran in parallel, and each one's order had been written before any of them
+  // recorded — so all three read "None yet" and reported the same problem under three
+  // different ids, each with a recurrence of 1. Recurrence is the strongest signal in a
+  // lesson's score, and the bench measured it at zero.
+  const many = renderWorkOrders([
+    { session: "ses_a", path: ".retro/work/ses_a.md" },
+    { session: "ses_b", path: ".retro/work/ses_b.md" },
+  ])
+  assert.match(many, /One at a time, waiting for each to record before starting the next/)
+  assert.match(many, /as one recurring problem rather than as several new ones/)
+  assert.match(many, /slower on purpose/)
+  assert.doesNotMatch(many, /all of them at once/, "which is what caused it")
+
+  // One order has nothing to be ordered against, and the instruction would only be noise.
+  const one = renderWorkOrders([{ session: "ses_a", path: ".retro/work/ses_a.md" }])
+  assert.match(one, /Start one subagent per work order/)
+  assert.doesNotMatch(one, /One at a time/)
 })

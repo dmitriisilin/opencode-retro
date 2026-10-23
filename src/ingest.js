@@ -51,7 +51,7 @@ export function createIngest({
         pending: new Map(),
         completed: new Set(),
         seq: new Map(),
-        counts: { prompts: 0, handovers: 0, toolHook: 0, toolEvents: 0, unfinished: 0, steps: 0, texts: 0, records: 0 },
+        counts: { prompts: 0, handovers: 0, toolHook: 0, toolEvents: 0, ours: 0, unfinished: 0, steps: 0, texts: 0, records: 0 },
       }
       sessions.set(id, s)
     }
@@ -113,7 +113,7 @@ export function createIngest({
         // The counters recorded before the link are part of the parent's evidence now. If the
         // prompt is not moved with it, the self-check reports the parent's prompt hook dead
         // because the only prompt it ever saw was the child's instruction.
-        for (const key of ["prompts", "texts", "steps", "toolHook", "toolEvents"]) {
+        for (const key of ["prompts", "texts", "steps", "toolHook", "toolEvents", "ours"]) {
           parent.counts[key] += child.counts[key]
         }
         sessions.delete(sessionID)
@@ -214,6 +214,20 @@ export function createIngest({
       // a lesson it was handed, which would have swallowed real work done after a request
       // for an analysis.
       append(sessionID, { k: "handover", about, text: text ?? "" })
+    },
+
+    /**
+     * A tool call of the plugin's own, in the user's session: its own tools, and the
+     * subagents it asks for. These are not written to any log (analysis.md), so their
+     * `tool.execute.*` hooks are deliberately dropped — but the event stream counts them like
+     * any other call, and the self-check compares the two. Counted here so the comparison can
+     * account for the ones we skipped on purpose, the same way it accounts for a call the turn
+     * ended in the middle of. Without it, a `/retro` reported BROKEN about a healthy tool hook
+     * — measured on the first live run of the subagent path.
+     */
+    ownCall(sessionID) {
+      const s = sessions.get(owner(sessionID))
+      if (s?.owned) s.counts.ours++
     },
 
     /**

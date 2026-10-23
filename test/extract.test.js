@@ -181,10 +181,25 @@ test("rejected lessons are named in the order and dropped from the record", () =
 test("already-recorded lessons are shown so the reader matches instead of re-stating", () => {
   const r = rig()
   analyse(r, { session: "ses_one" })
-  const { order } = analyse(r, { session: "ses_two" })
+  const { order } = analyse(r, { session: "ses_two", lessonsDir: r.lessonsDir })
 
   assert.match(order.text, /## Lessons already recorded/)
   assert.match(order.text, /`lint-skill-no-config` \(seen in 1\)/)
+
+  // And where to find the current set, because the list is a snapshot taken when the order
+  // was written. Measured on the friction bench: three sessions that hit the same two traps
+  // produced five lessons with five ids and a recurrence of 1 each, because all three orders
+  // were written before any of them recorded, so every one of them read "None yet".
+  assert.match(order.text, new RegExp(`The current set is in \`${r.lessonsDir}\``))
+  assert.match(order.text, /Read it before you decide anything is new/)
+  assert.match(order.text, /may have recorded\s+something since/)
+})
+
+test("an order with nothing recorded yet still says where the lessons will be", () => {
+  const r = rig()
+  const { order } = analyse(r, { lessonsDir: r.lessonsDir })
+  assert.match(order.text, /None yet, as of when this order was written/)
+  assert.match(order.text, new RegExp(`The current set is in \`${r.lessonsDir}\``))
 })
 
 test("a record with no lessons is a clean result with nothing written", () => {
