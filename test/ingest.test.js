@@ -256,7 +256,7 @@ test("an event with no session is ignored rather than crashing the stream", () =
   assert.deepEqual(out, [])
 })
 
-test("text and step events keep what the projection and the score need", () => {
+test("text and step events keep what an analysis and the score need", () => {
   const { out, ingest } = collector()
   // A hook first: a session is ours because a hook fired for it, and the event stream can
   // only annotate a log that already exists.

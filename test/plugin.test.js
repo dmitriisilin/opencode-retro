@@ -351,7 +351,7 @@ test("/retro all delivers every waiting lesson as one plan", async () => {
   await cleanup?.()
 })
 
-test("a log the model could not answer does not hold up the logs behind it", async () => {
+test("a log nobody could analyse does not hold up the logs behind it", async () => {
   // This is what a live run hit: one log came back as prose, and the queue stopped there.
   // The other logs were never read, and the message said to run `/retro` again — which
   // would have failed on the same log again.
@@ -2423,7 +2423,7 @@ test("a re-read of a session that did work is analysed even when the new materia
   await cleanup?.()
 })
 
-test("a reply to the plugin's own hand-over, with nothing done, costs no model call", async () => {
+test("a reply to the plugin's own hand-over, with nothing done, is not owed an analysis", async () => {
   // Found by a stranger's run: `/retro` with nothing to review still resumes the agent, which
   // answers. Counted as material, that answer cost a call on the next command, whose own
   // hand-over was answered in turn — a call per `/retro`, spent on the plugin talking to
