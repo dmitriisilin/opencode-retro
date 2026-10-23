@@ -446,6 +446,17 @@ export function createState({ path, onError, now = () => Date.now(), probe = nul
       const o = data.orders[session]
       return o && o.done === "unanswered" ? { ...o } : null
     },
+    /**
+     * The last order issued for this log, answered or not: how many times it has been asked
+     * about and the size it was asked about at. Kept on the order, which survives being
+     * closed, so it is still there when the next one is issued — the mark cannot carry it,
+     * because an unanswered order deliberately leaves the mark alone (analysis.md).
+     */
+    askedFor(session) {
+      refresh()
+      const o = data.orders[session]
+      return { asked: Number(o?.asked ?? 0), size: Number(o?.size ?? 0) }
+    },
     /** Every order still waiting for an answer, by session. */
     openOrders() {
       refresh()

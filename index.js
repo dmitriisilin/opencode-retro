@@ -142,9 +142,18 @@ export default {
       let queued = 0
       let failing = 0
       let partial = 0
+      // The most times any owed log has been asked about with nothing coming back. Reported
+      // instead of a verdict: the plugin does not know whether anybody came (analysis.md).
+      let asked = 0
+      let unanswered = 0
       for (const id of log.list()) {
         if (parents.has(id) || !isOwed(id)) continue
         const mark = state.looked(id)
+        const askings = state.askedFor(id).asked
+        if (askings > 1 && state.extractionOf(id)?.ok === false) {
+          unanswered++
+          asked = Math.max(asked, askings)
+        }
         if (mark.failed) failing++
         // Read in part and nothing new since: a log too long for one call, which the next
         // command reads on from where this one stopped. Calling it "not analysed yet" right
@@ -154,7 +163,7 @@ export default {
         else if (mark.open) partial++
         else queued++
       }
-      return { queued, failing, partial }
+      return { queued, failing, partial, unanswered, asked }
     }
 
     const writeSelfCheck = () => {
@@ -1013,7 +1022,13 @@ export default {
       // The order asks for everything up to `lastN`. How far the reader actually got is the
       // reader's to report (`through` on the record); unreported, the order was answered in
       // full, which is what the contract asks for.
-      const order = { id: identity, size: readSize, lastN, n: mark.n }
+      // `asked` counts the askings for this log, and only resets when the log grows: new
+      // material has not been asked about yet (analysis.md, "Asked").
+      // Against the previous order's size, not the mark: an unanswered order leaves the mark
+      // where it was on purpose, so the mark cannot say whether this is new material.
+      const previous = state.askedFor(sessionID)
+      const asked = (readSize > previous.size ? 0 : previous.asked) + 1
+      const order = { id: identity, size: readSize, lastN, n: mark.n, asked }
       state.issue(sessionID, order)
       return { ok: true, order: { session: sessionID, ...order } }
     }
@@ -1048,10 +1063,30 @@ export default {
     function settleUnanswered() {
       const failures = []
       for (const order of state.openOrders()) {
-        const result = fail(order.session, order, "no record came back from its analysis")
+        /**
+         * Reported and asked again, and **not held against the log** (analysis.md).
+         *
+         * There are two causes and the plugin cannot tell them apart: nobody came — a
+         * hand-over into a session that is still working waits in its inbox, so nothing was
+         * started and nothing spent — or a reader tried and could not record. Guessing picked
+         * the wrong one: three rounds of nobody-came retired a readable log under the words
+         * "given up after three failed analyses", when no analysis had been attempted at all.
+         *
+         * So nothing is concluded. The mark is left exactly as it was, which is what keeps the
+         * log owed, and what is reported is the one thing we know: how many times we asked.
+         */
+        const asked = order.asked ?? 1
+        const detail =
+          `asked ${asked} time${asked === 1 ? "" : "s"} and no record came back. Nothing is owed ` +
+          "of the log itself; the next `/retro` asks again. If this keeps happening, the " +
+          "hand-over is probably waiting in the inbox of a session that is still working — one " +
+          "`/retro` in a session that is not will be picked up."
         state.close(order.session, "unanswered")
         removeWork(order.session)
-        failures.push({ session: order.session, detail: result.detail })
+        state.markExtracted(order.session, { ok: false, detail })
+        lastExtraction.set(order.session, { ok: false, detail })
+        onError(`extract.${order.session}`, detail)
+        failures.push({ session: order.session, detail, asked })
       }
       return failures
     }
@@ -1143,7 +1178,7 @@ export default {
       })
       const result = {
         ok: true,
-        detail: answered.detail + (late ? " (recorded after the round was closed; the failed attempt is given back)" : ""),
+        detail: answered.detail + (late ? " (recorded after the round was closed, and applied anyway)" : ""),
         through: claimed,
       }
       state.markExtracted(session, { ok: true, detail: answered.detail })

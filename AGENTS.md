@@ -964,18 +964,28 @@ understood is just a diagnostic that was written badly.
 - [x] **Naming no agent works.** "Whichever general-purpose agent you have" was a guess;
       four bench runs and two playground runs say the agent picks something that can read a
       file and call a tool, every time. Not worth pinning a name we have not measured.
-- [ ] **A log owed by the session a command runs in.** A `/retro` posted into a session whose
-      turn has not ended leaves its hand-over in the inbox — `resume: true` does not resume a
-      session that is already working — so the order for that session's own log goes
-      unanswered. Correct as far as it goes: the order stays owed and is reported, and
-      interactively the person types again and sees it. The arithmetic is the problem: three
-      such rounds retire a log that was never unanalysable. Measured in cycle 9; not fixed in
-      the same cycle on purpose, since four of its five fixes were already same-day.
+- [x] **An unanswered order concludes nothing about the log.** The owner's question: why guess
+      at what happened when the only thing we know is that we asked? A `/retro` posted into a
+      session whose turn has not ended leaves its hand-over in the inbox — `resume: true` does
+      not resume a session that is already working — so no subagent starts and nothing is
+      spent. That was charged to the log as a failed attempt, and three rounds of it retired a
+      perfectly readable log under the words "given up after three failed analyses".
+      Now the asking is counted on the order and reported as a fact — "asked 3 times and no
+      record came back", in the hand-over and in the self-check's stock — and the log is never
+      given up on for it. The attempt counter and the three-strike retirement stay where the
+      plugin *observes* the failure: a log it cannot open, cannot parse, or cannot write an
+      order for.
+      *Three earlier attempts at this failed, all of them trying to tell "nobody came" from
+      "tried and failed" — which needs a signal, and every signal was ordering-dependent or
+      fragile. The answer was not to need one. What it gives up is the cap on a log no reader
+      ever manages to record: that is asked about again on every `/retro`, one subagent per
+      explicit command, and every report says how many times.*
 
 Known, listed so nobody discovers them as surprises:
 
-- A log owed by the session a `/retro` is running in may go unanswered, and three such
-  rounds retire it (M5, last item).
+- A log no reader ever manages to record is asked about on every `/retro`, one subagent each
+  time. Deliberate: the plugin cannot tell that from nobody having come, and it reports the
+  count rather than guessing (M5).
 - Subagent sessions of the *user's* work are unverified — see "Still unverified".
 - The `compaction` payload is unknown, and nothing depends on it.
 - How much of a log an analysis reads is the subagent's judgement, and the plugin believes

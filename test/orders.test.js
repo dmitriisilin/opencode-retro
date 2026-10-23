@@ -219,7 +219,11 @@ test("a record with no lessons settles the log as read", async () => {
   await cleanup?.()
 })
 
-test("an order nobody answered is a failed attempt, and the log is asked for again", async () => {
+test("an order nobody answered is reported and asked again, not held against the log", async () => {
+  // The plugin does not know whether anybody came. A hand-over into a session that is still
+  // working waits in its inbox, so nothing is started and nothing spent; a reader that tried
+  // and could not record looks identical from here. So nothing is concluded about the log —
+  // the mark is left exactly as it was, which is what keeps it owed.
   const dir = sandbox()
   const fake = fakeOpenCode({ directory: dir, agent: false })
   const cleanup = await plugin.setup(fake.ctx)
@@ -231,32 +235,55 @@ test("an order nobody answered is a failed attempt, and the log is asked for aga
 
   // The agent never started a subagent, or they all died. The next command settles the round.
   const second = await retro(fake)
-  const mark = state(dir).looked.ses_a
-  assert.equal(mark.failed, true)
-  assert.equal(mark.attempts, 1, "one attempt spent, two left")
+  const mark = state(dir).looked.ses_a ?? {}
+  assert.ok(!mark.failed, "the log is not marked as having failed a read")
+  assert.ok(!mark.attempts, "and nothing is spent against it")
+  assert.ok(!mark.n, "the mark has not moved: none of it was read")
   assert.equal(second.paths.length, 1, "and the log is asked about again")
   assert.equal(
     readdirSync(join(dir, ".retro", "work")).length,
     1,
     "the stale order is replaced, not piled up beside the new one",
   )
+  assert.match(state(dir).extracted.ses_a.detail, /asked 1 time and no record came back/)
   await cleanup?.()
 })
 
-test("a log is given up on after three unanswered orders, not asked for forever", async () => {
+test("a log asked about many times is never given up on for it, and says how many", async () => {
+  // Guessing here picked the wrong cause: three rounds of nobody-came retired a perfectly
+  // readable log under the words "given up after three failed analyses", when no analysis had
+  // been attempted at all. What the plugin knows is how many times it asked, so that is what
+  // it reports — and the person reading it draws the conclusion.
   const dir = sandbox()
   const fake = fakeOpenCode({ directory: dir, agent: false })
   const cleanup = await plugin.setup(fake.ctx)
 
   await work(fake, "ses_a")
-  for (let i = 0; i < 3; i++) await retro(fake)
+  for (let i = 0; i < 5; i++) await retro(fake)
 
-  // The fourth command settles the third failure and gives up rather than asking again.
   const last = await retro(fake)
-  assert.deepEqual(last.paths, [], "nothing more is asked about it")
-  assert.match(last.handover, /given up after three failed analyses/, "and the human is told, in the hand-over")
-  assert.equal(state(dir).extracted.ses_a.ok, false)
-  assert.equal(existsSync(logOf(dir, "ses_a")), true, "the log stays until it is quiet (log.md, Retired)")
+  assert.equal(last.paths.length, 1, "still asked about, however many times it has been asked")
+  assert.match(state(dir).extracted.ses_a.detail, /asked 5 times and no record came back/)
+  assert.match(last.handover, /asked 5 times/, "and the hand-over says so, rather than a verdict")
+  assert.doesNotMatch(last.handover, /given up/)
+  assert.equal(existsSync(logOf(dir, "ses_a")), true)
+  await cleanup?.()
+})
+
+test("the askings start again when the log grows, because the new material was never asked about", async () => {
+  const dir = sandbox()
+  const fake = fakeOpenCode({ directory: dir, agent: false })
+  const cleanup = await plugin.setup(fake.ctx)
+
+  await work(fake, "ses_a")
+  await retro(fake)
+  await retro(fake)
+  assert.match(state(dir).extracted.ses_a.detail, /asked 1 time/)
+
+  await work(fake, "ses_a")
+  await retro(fake)
+  await retro(fake)
+  assert.match(state(dir).extracted.ses_a.detail, /asked 1 time/, "the count is about this material")
   await cleanup?.()
 })
 
@@ -339,9 +366,8 @@ test("the plugin's own analysis is not logged as the user's work", async () => {
 
 test("a record that arrives after its round was closed is still recorded", async () => {
   // Calling `retro_propose` is how the agent says the analyses are done, so an order still
-  // open then is charged as a failed attempt — the plugin cannot tell a subagent that died
-  // from one still reading. Which makes calling it early possible, and it must not destroy
-  // the work: the reading happened, only the reporting was late.
+  // open then is closed as unanswered. Which makes calling it early possible, and it must not
+  // destroy the work: the reading happened, only the reporting was late.
   const dir = sandbox()
   const fake = fakeOpenCode({ directory: dir, agent: false })
   const cleanup = await plugin.setup(fake.ctx)
@@ -349,16 +375,15 @@ test("a record that arrives after its round was closed is still recorded", async
   await work(fake, "ses_a")
   await retro(fake)
   await propose(fake) // too early: the subagent has not reported yet
-  assert.equal(state(dir).looked.ses_a.attempts, 1, "the round was closed and the attempt charged")
+  assert.match(state(dir).extracted.ses_a.detail, /no record came back/, "the round was closed")
+  assert.ok(!(state(dir).looked.ses_a ?? {}).n, "and nothing was concluded about the log")
 
   const result = await record(fake, "ses_a", [LESSON], { dir })
   assert.equal(result.output.ok, true, result.output.detail)
   assert.match(result.output.detail, /after the round was closed/)
-  assert.match(result.output.detail, /attempt is given back/)
 
   const mark = state(dir).looked.ses_a
-  assert.ok(!mark.failed, "the failure is withdrawn: the log was read after all")
-  assert.ok(!mark.attempts, "and the attempt it was charged is not held against it")
+  assert.ok(!mark.failed)
   assert.ok(mark.n > 0, "and the mark follows the order it answered")
   assert.equal(existsSync(join(dir, ".retro", "lessons", `${LESSON.id}.md`)), true)
 

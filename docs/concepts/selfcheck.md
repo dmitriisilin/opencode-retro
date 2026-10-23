@@ -25,9 +25,13 @@ hand-over"; a shortfall of hook calls against events is not evidence while calls
 flight; the trigger cannot be judged before the session ends.
 
 **Stock.** What is waiting for the human: open lessons, logs owed an analysis, logs read in
-part (the next command reads on from the mark), logs whose analysis failed, logs kept because a lesson cites them, logs given up on, and lesson files
+part (the next command reads on from the mark), logs asked about with no answer and how many
+times, logs the plugin itself could not read, logs kept because a lesson cites them, logs
+given up on, and lesson files
 that cannot be read. Kept in its own section, because it is the one part a person has to act
-on. A failed analysis is a failure, not something nobody looked at, and is named as one. The extraction line reports the
+on. An asking that came back with nothing is reported as that and not as a verdict about the
+log — the plugin does not know whether anybody came (analysis.md) — while a read the plugin
+could not complete is a failure and is named as one. The extraction line reports the
 last analysis of the session whichever path ran it.
 
 ## Invariants
@@ -61,8 +65,8 @@ last analysis of the session whichever path ran it.
   owed, or failed. A failure that a later read recovered from is not still a failure, and a
   log that was given up on and has since grown is not beyond reading.
   `a working session read by /retro is reported as read, not as unanalysed`
-  `a log whose analysis failed is named as failed, not as not analysed yet`
-  `a successful read clears the failure the mark was carrying`
+  `a log asked about with no answer is named as that, not as not analysed yet`
+  `a successful read clears the failed-read flag the mark was carrying`
   `a log given up on and then grown is not reported as beyond reading`
 - A call the turn ended in the middle of accounts for its event: an interrupted turn with a
   subagent still running is not a dead tool hook.

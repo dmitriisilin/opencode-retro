@@ -81,11 +81,30 @@ It is clamped to the order's own range. A `through` past the last step would mar
 read that were not in the log when the order was written; one at or below the old mark says
 nothing new was read at all, which is a failed attempt rather than a settled log.
 
-**Attempt.** One work order issued for one owed log. An order that was not answered by the
-next `/retro` failed — the subagent was never started, ran out, or never called
-`retro_record`. A log gets three *on the same input*, counted on its mark; a log that grows
-is a different input and the count starts again. After three the log is retired (log.md):
-its outcome recorded as failed, the log kept until it is quiet, and the self-check names it.
+**Asked.** An order issued for a log and handed to a session, counted on the order. A fact,
+and the only thing the plugin knows about it: it wrote the order, and it asked. Nothing is
+concluded from the asking.
+
+**Unanswered.** No record came back by the time the next `/retro` runs. Reported, with how
+many times this log has been asked about, and asked again. It is **not** held against the
+log, because it says nothing about the log. There are two causes and the plugin cannot tell
+them apart: nobody came — a hand-over into a session that is still working waits in its
+inbox, so no subagent is started and nothing is spent — or a reader tried and could not
+record. Guessing picked the wrong one: three rounds of nobody-came retired a perfectly
+readable log under the words "given up after three failed analyses", when no analysis had
+been attempted at all (cycle 9). So it does not guess. It says what it did — asked, *n*
+times, no answer — and leaves the conclusion to the person reading the report.
+
+*What this gives up: a log no reader ever manages to record is asked about again on every
+`/retro`, one subagent each time. Each of those is an explicit command, and every one of them
+says how many times it has asked, so the spend is requested and visible rather than capped by
+a guess about whose fault it was.*
+
+**Attempt.** A read the plugin itself could not complete: a log it cannot open, cannot parse,
+or cannot write an order for. Observed, not inferred — which is why this one does count. A log
+gets three *on the same input*, counted on its mark; a log that grows is a different input and
+the count starts again. After three the log is retired (log.md): its outcome recorded as
+failed, the log kept until it is quiet, and the self-check names it.
 
 **Limit (`extractLimit`).** The most work orders one `/retro` issues. Unlimited by default.
 Whatever is left stays owed and is named in the hand-over.
@@ -137,11 +156,15 @@ the plugin's bookkeeping never turns into a lesson about the plugin.
   log was charged is given back — unless its log was replaced since.
   `a record that arrives after its round was closed is still recorded`
   `a record is refused once its log was replaced, even if its round is still closeable`
-- An order not answered by the next `/retro` is a failed attempt; three on the same input
-  retire the log, and both commands report it.
-  `an order nobody answered is a failed attempt, and the log is asked for again`
-  `a log is given up on after three unanswered orders, not asked for forever`
+- An order not answered by the next `/retro` is reported with how many times the log has been
+  asked about, and asked again. It never retires the log: the plugin does not know whether
+  anybody came.
+  `an order nobody answered is reported and asked again, not held against the log`
+  `a log asked about many times is never given up on for it, and says how many`
   `/retro all reports a log it could not analyse, as well as the plan`
+- A read the plugin could not complete is an attempt, and three on one input retire the log.
+  `a failed read is owed, and tried again on the next command`
+  `a session is given up on after three attempts, not billed forever`
 - One command issues at most `extractLimit` orders; the rest stay owed and are named. A
   skipped log takes no order.
   `extractLimit caps what one command analyses and leaves the rest owed`

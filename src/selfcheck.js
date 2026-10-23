@@ -315,6 +315,8 @@ function renderStock({
   queued = 0,
   partial = 0,
   failing = 0,
+  unanswered = 0,
+  asked = 0,
   cited = 0,
   decided = 0,
   setAside = 0,
@@ -361,6 +363,18 @@ function renderStock({
       `- ${failing} log${failing === 1 ? "" : "s"} whose analysis failed — asked for again on the next ` +
         "`/retro`, and given up on after three. `plugin.log` says why — usually an order that " +
         "was issued and never answered, so no subagent recorded anything for it.",
+    )
+  }
+  if (unanswered) {
+    // The one thing the plugin knows, said as a fact rather than as a verdict about the log:
+    // it cannot tell a reader that died from one that was never started, so it does not
+    // guess which (analysis.md, "Unanswered"). Guessing retired readable logs.
+    lines.push(
+      `- ${unanswered} log${unanswered === 1 ? "" : "s"} asked about with no answer${
+        asked > 1 ? `, up to ${asked} times` : ""
+      } — still owed, and asked again by the next \`/retro\`. Nothing is wrong with the ` +
+        "logs themselves. The usual cause is a hand-over waiting in the inbox of a session " +
+        "that is still working: one `/retro` in a session that is not will be picked up.",
     )
   }
   if (queued) {

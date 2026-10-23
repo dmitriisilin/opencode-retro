@@ -53,7 +53,7 @@ The log it reads is the shadow log as written: one JSON object per line, one ste
 
 The answer is a list of lessons in `.retro/lessons/`.
 
-A finished log is analysed once; an order that goes unanswered is asked for again on the next two runs and then set aside. A project in which `/retro` is never run is never analysed.
+A finished log is analysed once; an order that goes unanswered is asked for again, and `.retro/selfcheck.md` says how many times it has been asked with no answer. That is reported as a fact rather than as a verdict about the log: the plugin cannot tell a reader that failed from one that was never started, and the usual cause is a hand-over waiting in the inbox of a session that is still working. A log the plugin itself cannot read is a different matter — after three of those it is set aside and named. A project in which `/retro` is never run is never analysed.
 
 ### What guides the extraction
 

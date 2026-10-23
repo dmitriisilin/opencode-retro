@@ -1,4 +1,4 @@
-<!-- translated-from: README.en.md@79a520c15ae6 -->
+<!-- translated-from: README.en.md@9e38270f92aa -->
 # opencode-retro
 
 [Русский](README.md) | [English](README.en.md) | [简体中文](README.zh-CN.md) | **Español** | [日本語](README.ja.md)
@@ -56,7 +56,7 @@ Lo que lee es el log paralelo tal como se escribió: un objeto JSON por línea, 
 
 La respuesta es una lista de lecciones en `.retro/lessons/`.
 
-Un log terminado se analiza una vez; una orden que nadie responde se vuelve a pedir en las dos ejecuciones siguientes y luego se deja de lado. Un proyecto en el que nunca se ejecuta `/retro` no se analiza nunca.
+Un log terminado se analiza una vez; una orden que nadie responde se vuelve a pedir, y `.retro/selfcheck.md` dice cuántas veces se ha pedido sin respuesta. Eso se registra como un hecho y no como un veredicto sobre el log: el plugin no puede distinguir un lector que falló de uno que nunca se puso en marcha, y la causa habitual es una orden esperando en la bandeja de una sesión que sigue trabajando. Un log que el plugin no puede leer él mismo es otra cosa: tras tres de esos se deja de lado y se nombra. Un proyecto en el que nunca se ejecuta `/retro` no se analiza nunca.
 
 ### Qué guía la extracción
 

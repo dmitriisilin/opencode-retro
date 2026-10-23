@@ -40,9 +40,10 @@ rendered as one.
 - `size` — the largest byte count already sent, success or failure. A log no larger than
   this has nothing new in it.
 - `open` — the analysis reported reading only part of the log. Owed now.
-- `failed` — the last read of this log failed. Owed now, while attempts are left.
-- `attempts` — failed reads of the log at this `size`. Growth resets it: new material has
-  not failed anywhere yet.
+- `failed` — the plugin's last read of this log failed. Owed now, while attempts are left.
+- `attempts` — reads the plugin could not complete at this `size`. Growth resets it: new
+  material has not failed anywhere yet. An unanswered order is not counted here — it is
+  counted on the order, as an asking (analysis.md).
 - `id` — the identity of the file the mark describes (see state.md). A mark about a
   different file is void. A mark written before identities existed is voided by the one
   other safe signal: a byte count larger than the file on disk.
@@ -57,8 +58,10 @@ with whatever follows.
 **Read to its end.** A log whose mark covers its whole size with neither flag set. Not
 permanent: a session prompted again grows past its mark and is owed again.
 
-**Retired.** A log whose work order went unanswered three times at the same size. Not owed;
-its failure is recorded and named in the self-check. It is owed again if it grows.
+**Retired.** A log the plugin could not read three times at the same size — could not open,
+could not parse, could not write an order for. Not owed; its failure is recorded and named in
+the self-check. It is owed again if it grows. An order nobody answered is not one of these
+(analysis.md): it says nothing about the log, so it is reported and asked again instead.
 
 **Pruned.** Removed from disk. A log is pruned when it is quiet (session.md: unwritten for
 seven days), nothing is owed for it, and no open lesson cites it. A retired log goes the
@@ -98,7 +101,7 @@ keeps everything.
   `a read that never returns leaves the log owed, not marked as read`
 - A success clears the failure on the mark; retirement clears both flags. A flag that
   outlives either makes a log owed that nobody owes.
-  `a successful read clears the failure the mark was carrying`
+  `a successful read clears the failed-read flag the mark was carrying`
   `a log given up on after three attempts is not retried in the same command`
 - Reading a log to its end keeps the step mark, because the session may be picked up again.
   `settling keeps the step mark, because the session may be picked up again`
