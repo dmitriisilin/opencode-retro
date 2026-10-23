@@ -63,6 +63,16 @@ could not parse, could not write an order for. Not owed; its failure is recorded
 the self-check. It is owed again if it grows. An order nobody answered is not one of these
 (analysis.md): it says nothing about the log, so it is reported and asked again instead.
 
+**Why the cause is not distinguished.** Only one of those three is about the log; the others
+are about the machine or about prompt files the user deleted, and they fail every owed log at
+once. Counting them anyway is deliberate. Not counting them would leave such a log owed for
+ever, and a log that is always owed is never pruned (above) — so the choice is between losing
+a log that stopped growing while something was broken, and keeping a file nothing will ever
+read. The first is the cheaper loss on the horizon this plugin works on: the fix is in place
+for the next session, which is the one that matters. Growth lifts a retirement, which covers
+the case where the log itself was the problem — a torn write, say, with real records appended
+after it, which parses once the bad prefix has something behind it.
+
 **Pruned.** Removed from disk. A log is pruned when it is quiet (session.md: unwritten for
 seven days), nothing is owed for it, and no open lesson cites it. A retired log goes the
 same way, so a log no analysis could ever answer does not stay for ever. `keepSessions`

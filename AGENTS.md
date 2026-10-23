@@ -986,6 +986,14 @@ Known, listed so nobody discovers them as surprises:
 - A log no reader ever manages to record is asked about on every `/retro`, one subagent each
   time. Deliberate: the plugin cannot tell that from nobody having come, and it reports the
   count rather than guessing (M5).
+- A log the plugin itself cannot read is retired after three goes **whatever stopped it**, and
+  only growth lifts that. Three of the four causes are not about the log — the file could not
+  be opened, the order could not be written, no `extract.md` resolved — and they hit every
+  owed log at once, so a few runs with a deleted prompt file write off whatever has stopped
+  growing. Looked at and left alone, on the owner's call: the alternatives trade a rare
+  recovery for a log that is owed for ever and therefore never prunable, and over the horizon
+  this plugin is for, what matters is that the next session works rather than that no session
+  is ever lost. Not to be relitigated without a case from a real workspace.
 - Subagent sessions of the *user's* work are unverified — see "Still unverified".
 - The `compaction` payload is unknown, and nothing depends on it.
 - How much of a log an analysis reads is the subagent's judgement, and the plugin believes
