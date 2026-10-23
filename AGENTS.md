@@ -949,22 +949,33 @@ understood is just a diagnostic that was written badly.
       what was fixed and when (so the reading is not spent on it), and `record()` discards
       evidence older than the decision and names it in the outcome. Undated evidence still
       reopens — putting a lesson twice costs less than dropping one.
-- [ ] **Not yet run live.** Everything here is tested against a fake OpenCode; nothing has
-      been through a real `/retro` with real subagents. Until it has, the live behaviour of
-      the hand-over — whether an agent reliably starts one subagent per order, reads none of
-      them itself, and calls `retro_propose` once rather than after each record — is
-      unverified. That is the next thing to do, in `spike/playground/`, and the release
-      checklist's stranger's-first-hour run is not meaningful before it.
-- [ ] **Which agent a subagent should be is unmeasured.** The only names this project has
-      seen from OpenCode are `build` (primary) and `explore`. The hand-over therefore names
-      none and asks for "whichever general-purpose agent you have", which is a guess about
-      what the agent will do with that latitude. Worth replacing with a measured name — and
-      worth checking whether a read-only agent such as `explore` can call a plugin tool at
-      all, since `retro_record` is how an analysis answers.
+- [x] **Run live, in cycle 9.** The hand-over does what it says: the agent starts one
+      subagent per order, reads none of them itself, obeys "one at a time" (17 s between
+      records), calls `retro_propose` once, and the subagents report `through`. Four bench
+      runs; the last one passes every check — recall 4/4, recurrence 3 of 3, the review
+      counted as a review, the control clean, no unanswered order, no `plugin.log` at all.
+      The decision path too: an agent asked to record an accepted lesson checked the file
+      first, found the fix had *not* been applied, and recorded `changed: []` with a note and
+      a `discovered` saying so, rather than transcribing what it was told.
+      Five defects, in the cycle's own commits: the proposal was handed over without being
+      logged, a false `BROKEN tool hook`, recurrence unreachable in a round with a backlog,
+      the lesson snapshot placed ahead of the pointer to the live set, and the bench scoring
+      before the second round had run.
+- [x] **Naming no agent works.** "Whichever general-purpose agent you have" was a guess;
+      four bench runs and two playground runs say the agent picks something that can read a
+      file and call a tool, every time. Not worth pinning a name we have not measured.
+- [ ] **A log owed by the session a command runs in.** A `/retro` posted into a session whose
+      turn has not ended leaves its hand-over in the inbox — `resume: true` does not resume a
+      session that is already working — so the order for that session's own log goes
+      unanswered. Correct as far as it goes: the order stays owed and is reported, and
+      interactively the person types again and sees it. The arithmetic is the problem: three
+      such rounds retire a log that was never unanalysable. Measured in cycle 9; not fixed in
+      the same cycle on purpose, since four of its five fixes were already same-day.
 
 Known, listed so nobody discovers them as surprises:
 
-- The analysis path has not been exercised live since the rewrite (M5, last item).
+- A log owed by the session a `/retro` is running in may go unanswered, and three such
+  rounds retire it (M5, last item).
 - Subagent sessions of the *user's* work are unverified — see "Still unverified".
 - The `compaction` payload is unknown, and nothing depends on it.
 - How much of a log an analysis reads is the subagent's judgement, and the plugin believes
@@ -1087,21 +1098,26 @@ the order it is cheapest to check:
 3. The last audit cycle ran against code that did not change afterwards, and reported no
    defect above "documented limit". Its "wrong, but not touched" list is either empty or
    stated in the concepts as a limit.
-3a. The analysis has been run live on this build at least once: `/retro` in a real session,
-   with real subagents reading real orders. The plugin no longer performs the analysis
-   itself, so the hand-over's wording is now load-bearing in a way no test can check — an
-   agent that reads the orders itself, starts one subagent for all of them, or calls
-   `retro_propose` after each record would all pass the suite. The bench and the stranger's
-   hour below both depend on this working, so it comes first.
+3a. The analysis has been run live on this build: `/retro` in a real session, with real
+   subagents reading real orders. The plugin no longer performs the analysis itself, so the
+   hand-over's wording is load-bearing in a way no test can check — an agent that reads the
+   orders itself, starts one subagent for all of them, calls `retro_propose` after each
+   record, or ignores "one at a time" would all pass the suite, and the last of those was a
+   real finding. The bench and the stranger's hour below both depend on this working, so it
+   comes first. Done in cycle 9; redo it on any build that changes the hand-over, the
+   contract, or `retro_record`.
 4. A stranger's first hour was run on this exact build: the tarball packed and installed
    into a fresh project under `/tmp`, with no plugin options at all and no git; worked in,
    `/retro` run through the API (Gotcha 16), a prompt edited and seen to take effect, a
    decision recorded, `/retro` run again. Nothing confusing, silent or maintainer-only.
 4a. The planted-friction bench (`bench/friction/`) finds every trap, counts each recurring one
-   in more than one session, does not count the review of a lesson as its recurrence, and
-   reports no lesson against the control. A recall number, not an impression: it is the one
-   check that measures what the plugin is *for*, and its first run found two defects in the
-   analysis that every other check had passed.
+   in more than one session, does not count the review of a lesson as its recurrence, reports
+   no lesson against the control, and leaves no work order unanswered. A recall number, not an
+   impression: it is the one check that measures what the plugin is *for*, and it has earned
+   that twice — two defects on its first run, and three more in cycle 9, including a
+   recurrence of zero that every other check had passed. Read the whole scorecard, not just
+   recall: `recall 4/4` with `recurrence 0` is a plugin that finds friction and cannot tell
+   that it keeps happening, which is most of the point.
 5. The README's install instruction is true **for the version being tagged**: what npm's
    `latest` will be after the publish, and what a reader of HEAD gets before it.
 6. `npm pack --dry-run` carries `index.js`, `src/`, `prompts/`, `package.json`, `LICENSE`
