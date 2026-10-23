@@ -10,7 +10,6 @@ import { createPrompts } from "../src/prompts.js"
 import { createState } from "../src/state.js"
 import { parseShadowLog } from "../src/shadowlog.js"
 import { parseFrontmatter } from "../src/frontmatter.js"
-import { project } from "../src/projection.js"
 
 /**
  * The plugin's two halves of an analysis (docs/concepts/analysis.md): `composeOrder` writes
@@ -21,8 +20,8 @@ import { project } from "../src/projection.js"
  */
 
 const here = dirname(fileURLToPath(import.meta.url))
-const live = () =>
-  parseShadowLog(readFileSync(join(here, "..", "fixtures", "sessions", "lint-trap-live.jsonl"), "utf8"))
+const LIVE_LOG = join(here, "..", "fixtures", "sessions", "lint-trap-live.jsonl")
+const live = () => parseShadowLog(readFileSync(LIVE_LOG, "utf8"))
 
 function rig() {
   const root = mkdtempSync(join(tmpdir(), "retro-extract-"))
@@ -51,10 +50,11 @@ const LESSONS = (over = {}) => [
 ]
 
 /** One analysis, both halves: the order a subagent would read, then the answer it gives. */
-const analyse = (r, { records = live(), session = "ses_live", lessons = LESSONS(), ...rest } = {}) => {
-  const order = composeOrder({ records, session, ...r, ...rest })
+const analyse = (r, { records = live(), session = "ses_live", logPath = LIVE_LOG, lessons = LESSONS(), ...rest } = {}) => {
+  const lastN = records.length ? Math.max(...records.map((x) => x.n ?? 0)) : 0
+  const order = composeOrder({ records, session, logPath, lastN, ...r, ...rest })
   if (!order.ok || order.skipped) return { order }
-  const answer = recordAnswer({ session, lessons, elided: order.elided, ...r })
+  const answer = recordAnswer({ session, lessons, ...r })
   return { order, answer }
 }
 
@@ -70,20 +70,34 @@ test("the live lint-trap session records into a lesson on disk", () => {
   assert.deepEqual(data.evidence, [{ session: "ses_live", steps: [9, 18] }])
 })
 
-test("the work order carries the log and the contract, and nothing else", () => {
+test("the work order points at the log instead of carrying it", () => {
   const { order } = analyse(rig())
 
   assert.ok(order.text.startsWith(`<!-- ${WORK_MARK} -->`), "the mark comes first, so our own work is recognisable")
   assert.match(order.text, /^id: ses_live$/m, "the session to record against")
+  assert.match(order.text, new RegExp(`^log: ${LIVE_LOG}$`, "m"), "and the file to open, absolutely")
+  assert.match(order.text, /^steps: 1 to 32$/m, "with how much there is to read")
   assert.match(order.text, /shorter and straighter/, "the user-editable prompt")
-  assert.match(order.text, /## Log/)
-  assert.match(order.text, /\[9\] skill: lint/, "the projection, addressable by step")
   assert.match(order.text, /retro_record/, "the contract is written in, not stored in the prompt file")
+  assert.match(order.text, /one JSON object\s+per line/, "and how to read a shadow log")
+
+  // The order used to hold a rendering of the log, trimmed to a budget. A subagent has read
+  // tools; deciding for it what it may see was work that bought nothing.
+  assert.doesNotMatch(order.text, /\[9\] skill: lint/, "no rendering of the log")
+  assert.doesNotMatch(order.text, /elided to fit the budget/)
+  assert.ok(order.text.length < 12_000, `an order is small now: ${order.text.length} characters`)
 
   // Retired, with the measurement in fixtures/ab-anchors/: no detector decides what the
   // reader is allowed to notice. What they knew is prose in the prompt now.
   assert.doesNotMatch(order.text, /## Anchors/)
   assert.doesNotMatch(order.text, /skill-failure/)
+})
+
+test("an order with no log to point at is refused", () => {
+  const r = rig()
+  const order = composeOrder({ records: live(), session: "ses_live", lastN: 32, logPath: null, ...r })
+  assert.equal(order.ok, false)
+  assert.match(order.detail, /no path to point an analysis at/)
 })
 
 test("the guidance the detectors used to encode is in the prompt the user can edit", () => {
@@ -122,11 +136,12 @@ test("a conversation with no tool calls is still analysed", () => {
       { k: "session", n: 4, event: "end", outcome: "succeeded" },
     ],
     session: "ses_talk",
+    logPath: "/tmp/talk.jsonl",
   })
 
   assert.ok(order.ok)
   assert.ok(!order.skipped, "a correction is evidence, and it never touches a tool")
-  assert.match(order.text, /we use the pipeline/)
+  assert.match(order.text, /^log: \/tmp\/talk\.jsonl$/m, "and the log it is in gets an order")
 })
 
 test("one prompt with work done is analysed too", () => {
@@ -216,114 +231,10 @@ test("a rejected id is dropped even when the record reaches it through `matches`
   assert.deepEqual(r.store.list(), [], "a near-duplicate is the same rejection")
 })
 
-test("a lesson drawn from an excerpt says so, so the human knows what was read", () => {
+test("a lesson from part of a log says so, so the human knows what was read", () => {
   const r = rig()
-  const answer = recordAnswer({ session: "ses_part", lessons: LESSONS(), elided: true, ...r })
-  assert.match(answer.detail, /from an excerpt: the log was over budget/)
-})
-
-test("the composed input stays inside maxInput, and says when it had to", () => {
-  // The budget bounds what one subagent is asked to read, which is what an analysis costs.
-  // It is also the reason an order fits in a single read: a file nobody can read in one call
-  // is a file that gets read in pieces, or not at all.
-  const records = [
-    { v: 1, n: 1, k: "prompt", text: "fix the lint skill" },
-    ...Array.from({ length: 200 }, (_, i) => ({
-      v: 1,
-      n: i + 2,
-      k: "tool",
-      id: `c${i}`,
-      tool: "shell",
-      input: { command: `npx eslint pass-${i}` },
-      status: "completed",
-      exit: 2,
-      output: "no config found ".repeat(60),
-    })),
-  ]
-
-  const whole = analyse(rig(), { records, session: "ses_long" })
-  assert.ok(whole.order.text.length > 20_000, "the whole thing is big enough to be worth bounding")
-  assert.doesNotMatch(whole.answer.detail, /excerpt/, "nothing was dropped, so nothing is claimed")
-
-  const bounded = analyse(rig(), { records, session: "ses_long", maxInput: 12_000 })
-
-  assert.ok(bounded.order.ok)
-  assert.ok(
-    bounded.order.text.length <= 12_000,
-    `wrote ${bounded.order.text.length} characters against a budget of 12000`,
-  )
-  assert.match(bounded.order.text, /elided to fit the budget/, "and the reader is told it is an excerpt")
-  assert.match(bounded.answer.detail, /from an excerpt: the log was over budget/, "as is the human")
-})
-
-test("a budget that leaves no room for the log still leaves room for the log", () => {
-  // The prompt, the contract and the lesson list are not negotiable, so an absurd budget
-  // cannot be honoured. It must degrade to a small excerpt rather than to an empty section.
-  const { order } = analyse(rig(), {
-    records: [
-      { v: 1, n: 1, k: "prompt", text: "do the thing" },
-      { v: 1, n: 2, k: "tool", id: "c1", tool: "shell", input: { command: "npx eslint ." }, status: "completed", exit: 2, output: "no config" },
-    ],
-    session: "ses_tiny",
-    maxInput: 10,
-  })
-
-  assert.ok(order.ok, "it still writes one")
-  assert.match(order.text, /do the thing/, "and the log is still in there")
-})
-
-test("a projection that fits the log budget still fits maxInput once the Log section is added", () => {
-  // The budget was computed from the composition with no log at all, so it never paid for
-  // the "## Log" heading and the separators a non-empty log adds. A full projection of
-  // exactly `budget` therefore composed to `maxInput + a few characters`.
-  const records = [
-    { v: 1, n: 1, k: "prompt", text: "first instruction" },
-    { v: 1, n: 2, k: "prompt", text: "second instruction" },
-    ...Array.from({ length: 10 }, (_, i) => ({
-      v: 1,
-      n: i + 3,
-      k: "tool",
-      id: `c${i}`,
-      tool: "shell",
-      input: { command: `run-${i}` },
-      status: "completed",
-      output: "y".repeat(600),
-    })),
-  ]
-
-  const full = analyse(rig(), { records, session: "ses_frame", lessons: [], maxInput: 1_000_000 })
-  const whole = full.order.text.length
-  assert.ok(whole > 3000, "big enough that the 2,000 floor is not what is being measured")
-
-  const bounded = analyse(rig(), { records, session: "ses_frame", lessons: [], maxInput: whole - 1 })
-
-  assert.ok(bounded.order.ok, bounded.order.detail)
-  assert.ok(
-    bounded.order.text.length <= whole - 1,
-    `wrote ${bounded.order.text.length} characters against a budget of ${whole - 1}`,
-  )
-})
-
-test("a small but positive log budget is spent, not rounded up to 2,000", () => {
-  // The 2,000 floor is for the case where the fixed part alone is over budget. When there
-  // is room — even only a few hundred characters — using more than it is how a bounded
-  // input went over maxInput for no reason.
-  const records = [
-    { v: 1, n: 1, k: "prompt", text: "first instruction" },
-    { v: 1, n: 2, k: "prompt", text: "second instruction" },
-    { v: 1, n: 3, k: "tool", id: "c0", tool: "shell", input: { command: "ls" }, status: "completed", output: "y".repeat(600) },
-  ]
-
-  const full = analyse(rig(), { records, session: "ses_small_room", lessons: [], maxInput: 1_000_000 })
-  const whole = full.order.text.length
-  const bounded = analyse(rig(), { records, session: "ses_small_room", lessons: [], maxInput: whole - 1 })
-
-  assert.ok(bounded.order.ok, bounded.order.detail)
-  assert.ok(
-    bounded.order.text.length <= whole - 1,
-    `wrote ${bounded.order.text.length} characters against a budget of ${whole - 1}`,
-  )
-  assert.ok(bounded.order.text.length > whole - project(records).length, "the room that was left was spent")
+  const answer = recordAnswer({ session: "ses_part", lessons: LESSONS(), partial: true, ...r })
+  assert.match(answer.detail, /from part of the log; the rest is still owed/)
 })
 
 test("lessons already concluded from this session are put in front of the extractor", () => {
@@ -352,8 +263,8 @@ test("a re-read with a reply is analysed even when it has no prompt or tool call
 
   assert.ok(order.ok)
   assert.ok(!order.skipped, "the new reply is material, so the session is read")
-  assert.match(order.text, /the command does not exist here/)
-  assert.match(order.text, /Steps up to 2 of this session were analysed before/)
+  assert.match(order.text, /Steps up to 2 were analysed before/, "and the order says where to start")
+  assert.match(order.text, /step 3 onwards — that is what to report on/)
 })
 
 test("a reply to the plugin's own hand-over, with nothing done, takes no work order", () => {
@@ -392,6 +303,6 @@ test("the review of a handed-over lesson is not counted as the problem recurring
   // Matched against the text with its line breaks flattened: a rewrap of the contract is not
   // a change of meaning, and three of these assertions have been broken by one before.
   const flat = analyse(rig()).order.text.replace(/\s+/g, " ")
-  assert.match(flat, /opencode-retro handed a lesson over"\) and checks or applies the lesson it handed over/)
+  assert.match(flat, /`handover` step with `"about": "lesson"` and checks or applies the lesson it handed over/)
   assert.match(flat, /do not report it as a recurrence, and do not count its steps as cost/)
 })

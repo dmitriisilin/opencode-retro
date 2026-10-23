@@ -71,8 +71,12 @@ test("/retro issues a work order per owed log and asks the agent to analyse them
   for (const path of paths) {
     const order = readFileSync(join(dir, path), "utf8")
     assert.match(order, /^<!-- opencode-retro work order -->/)
-    assert.match(order, /^id: ses_[ab]$/m, "each order names the session it is about")
-    assert.match(order, /npx eslint \./, "and carries that session's log")
+    const session = (order.match(/^id: (ses_[ab])$/m) ?? [])[1]
+    assert.ok(session, "each order names the session it is about")
+    // It points at the log rather than carrying it: reading is the subagent's job.
+    assert.match(order, new RegExp(`^log: ${logOf(dir, session)}$`, "m"))
+    assert.ok(existsSync(logOf(dir, session)), "at a file that is really there")
+    assert.doesNotMatch(order, /npx eslint \./, "and no rendering of the log in the order itself")
   }
 
   // Nothing is proposed in the same breath: the lessons do not exist yet.
@@ -106,7 +110,7 @@ test("the plugin never calls a model itself", async () => {
   await cleanup?.()
 })
 
-test("a record moves the mark to what its order covered", async () => {
+test("a record moves the mark to what the order asked for", async () => {
   const dir = sandbox()
   const fake = fakeOpenCode({ directory: dir, agent: false })
   const cleanup = await plugin.setup(fake.ctx)
@@ -114,13 +118,14 @@ test("a record moves the mark to what its order covered", async () => {
   await work(fake, "ses_a")
   await retro(fake)
   const order = state(dir).orders.ses_a
-  assert.ok(order.through > 0, "the order says how far it goes")
+  assert.ok(order.lastN > 0, "the order says how much there is to read")
   assert.equal(state(dir).looked?.ses_a?.n ?? 0, 0, "and the mark has not moved yet")
 
   await record(fake, "ses_a", [LESSON])
 
   const mark = state(dir).looked.ses_a
-  assert.equal(mark.n, order.through, "the mark follows the order's coverage, not the file's length")
+  assert.equal(mark.n, order.lastN, "a record with no `through` answered the order in full")
+  assert.ok(!mark.open, "so nothing of it is left owed")
   assert.equal(mark.size, order.size)
   assert.equal(state(dir).orders.ses_a.done, "answered", "and the order is closed, so it cannot be answered twice")
   await cleanup?.()

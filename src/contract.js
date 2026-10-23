@@ -8,7 +8,10 @@
  * The answer is a call to `retro_record`, whose schema (`RECORD_INPUT`) is the machine half
  * of this contract: OpenCode refuses a malformed call and tells the subagent why, so there is
  * no reply text to parse. What stays in prose is what a schema cannot say — what the fields
- * mean.
+ * mean, and how to read a shadow log.
+ *
+ * It describes the log rather than containing it. The order names the file; reading it is
+ * the subagent's job, and it has the tools for that.
  */
 export const OUTPUT_CONTRACT = `
 ---
@@ -37,14 +40,31 @@ top of this file and \`lessons\` set to what you found:
 }
 \`\`\`
 
-Everything you need is in this file. Do not edit anything, do not run commands, and do not
-read the session's files: you are judging the log, not redoing the work. When the call has
-been made, reply with one word: done.
+Read the log named above first — all of it that this order asks for. It is one JSON object
+per line, and the fields you need are:
+
+- \`n\` — the step number. This is the coordinate a lesson cites.
+- \`k\` — what the step is: \`prompt\` (a person's instruction), \`text\` (the agent's reply),
+  \`tool\` (a tool call, with \`tool\`, \`input\`, \`status\`, \`exit\` and \`output\`), \`step\`
+  (an edit, with the files it touched), \`handover\` (text this plugin wrote into the session
+  itself — see the rule on reviews below), \`session\` (a turn starting or ending).
+- \`exit\` on a tool call — **read this, not \`status\`.** A shell command that failed is
+  \`status: "completed"\` with a non-zero \`exit\`. An analysis that reads \`status\` sees a
+  clean session.
+- \`output\` may say that its middle was elided: very large tool results are clamped when
+  the log is written, and the notice says how much went.
+
+Read it in whatever way suits its size — all at once, or the head and then on. If you end up
+reading only part of it, say so with \`through\`, and the rest will be asked about again
+rather than counted as read.
+
+Do not edit anything, do not run commands, and do not go looking through the project: you
+are judging the log, not redoing the work, and not checking whether the problem is still
+there. When the call has been made, reply with one word: done.
 
 Rules:
 
-- \`steps\` are step numbers from the log above — the \`[n]\` markers. Give the first and
-  last step of the stretch the lesson is about.
+- \`steps\` are the \`n\` of the first and last step of the stretch the lesson is about.
 - \`cost\` is how many steps this problem consumed. Count them; do not estimate.
 - \`confidence\` is 0 to 1. Use below 0.5 when one more session would settle it.
 - \`matches\` is the \`id\` of an existing lesson when this is the same problem recurring,
@@ -52,11 +72,12 @@ Rules:
   into a problem that is already recorded, report it again with \`matches\` set — that is
   how recurrence is counted, and leaving it out makes a problem that happens in every session
   look as if it happened once. Already recorded is not the same as already answered.
-- Work that follows a hand-over (a step reading "opencode-retro handed a lesson over") and
-  checks or applies the lesson it handed over is the review of that lesson, not the problem
-  happening again: do not report it as a recurrence, and do not count its steps as cost.
-  Counting it would make every lesson that gets reviewed look more important for having
-  been reviewed.
+- Work that follows a \`handover\` step with \`"about": "lesson"\` and checks or applies the
+  lesson it handed over is the review of that lesson, not the problem happening again: do not
+  report it as a recurrence, and do not count its steps as cost. Counting it would make every
+  lesson that gets reviewed look more important for having been reviewed. (A \`handover\` with
+  \`"about": "work"\` is this plugin asking for an analysis — it says nothing about the
+  session, and whatever follows it is ordinary work.)
 - \`proposal\` is optional. Omit it, or use \`null\`, when you can name the problem but not
   the fix — that is a normal and useful answer.
 - \`ask\` is optional and is for when the fix depends on something only the human knows.
@@ -91,6 +112,12 @@ export const RECORD_INPUT = {
         },
         required: ["statement"],
       },
+    },
+    through: {
+      type: "number",
+      description:
+        "Only when you read part of the log: the last step number you actually read. " +
+        "Leave it out when you read everything the order asked for.",
     },
   },
   required: ["session", "lessons"],

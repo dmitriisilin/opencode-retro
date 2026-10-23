@@ -25,7 +25,7 @@ hand-over"; a shortfall of hook calls against events is not evidence while calls
 flight; the trigger cannot be judged before the session ends.
 
 **Stock.** What is waiting for the human: open lessons, logs owed an analysis, logs read in
-part (an excerpt the next command reads on from), logs whose analysis failed, logs kept because a lesson cites them, logs given up on, and lesson files
+part (the next command reads on from the mark), logs whose analysis failed, logs kept because a lesson cites them, logs given up on, and lesson files
 that cannot be read. Kept in its own section, because it is the one part a person has to act
 on. A failed analysis is a failure, not something nobody looked at, and is named as one. The extraction line reports the
 last analysis of the session whichever path ran it.

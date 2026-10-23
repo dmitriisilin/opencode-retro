@@ -44,17 +44,46 @@ export function fakeOpenCode({ options = {}, directory, reply, defaultReply = ""
   /** The paths of the work orders a hand-over lists. */
   const ordersIn = (text) => [...String(text).matchAll(/^- `([^`]+\/work\/[^`]+\.md)`$/gm)].map((m) => m[1])
 
-  /** What the agent in the session does with a work-order hand-over. */
+  /**
+   * What the agent in the session does with a work-order hand-over: one subagent per order,
+   * each of which opens the log the order points at — the order does not carry it (see
+   * `composeOrder`) — and answers through `retro_record`.
+   *
+   * `reply` is given the order and the records it found, as a subagent would have them, and
+   * returns what it would record: a JSON string, or `{ answer, through }` to report having
+   * read only part of the log.
+   */
   async function playAgent(input) {
     for (const path of ordersIn(input.text)) {
       const prompt = readFileSync(isAbsolute(path) ? path : join(directory, path), "utf8")
       const session = (prompt.match(/^id: (\S+)$/m) ?? [])[1]
-      generated.push({ prompt, session })
+      const logPath = (prompt.match(/^log: (\S+)$/m) ?? [])[1]
+      let records = []
+      try {
+        records = readFileSync(logPath, "utf8")
+          .split("\n")
+          .filter(Boolean)
+          .map((line) => {
+            try {
+              return JSON.parse(line)
+            } catch {
+              return null
+            }
+          })
+          .filter(Boolean)
+      } catch {
+        // A subagent pointed at a log it cannot open answers nothing, like any other failure.
+      }
+      generated.push({ prompt, session, logPath, records })
       // `reply` may be a function, so a test can answer one log badly and another well.
-      const answer = typeof reply === "function" ? await reply({ prompt }) : (reply ?? defaultReply)
+      const given = typeof reply === "function" ? await reply({ prompt, records, logPath }) : (reply ?? defaultReply)
+      const { answer, through } = typeof given === "object" && given !== null ? given : { answer: given }
       const parsed = parseLessons(answer)
       if (!parsed.ok) continue
-      await tools.get("retro_record").execute({ session, lessons: parsed.lessons }, { sessionID: `${input.sessionID}_sub` })
+      await tools.get("retro_record").execute(
+        { session, lessons: parsed.lessons, ...(through === undefined ? {} : { through }) },
+        { sessionID: `${input.sessionID}_sub` },
+      )
     }
     const all = /`retro_propose` with `all: true`/.test(input.text)
     const result = await tools.get("retro_propose").execute({ all }, { sessionID: input.sessionID })

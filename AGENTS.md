@@ -24,7 +24,7 @@ Motivating example: a project carries a `lint` skill borrowed from another harne
 2. **v2 only.** No v1 compatibility layer.
 3. **Shadow log.** Plugin writes its own append-only log of every tool call and prompt to `.opencode/retro/sessions/<sessionID>.jsonl` in real time. No LLM, no batching. We do *not* depend on session history surviving compaction.
 4. **No detectors in front of the model.** There were three — `repeat`, `revert`, `skill-failure` — marking suspicious step ranges in the prompt. They are gone, and `fixtures/ab-anchors/` is why: given the same log, the model found the same lessons with them and without. What they encoded was never really detection, it was *guidance about what to look for*, and guidance belongs in `prompts/extract.md`, where the user can read it, disagree with it and change it — not in 196 lines of JavaScript that decide in advance what the model is allowed to notice. So the signals the detectors knew are now prose in that prompt: a call repeated with nothing changed between attempts, an edit undone, a skill followed into a dead end, a non-zero exit hiding behind a "completed" status, a task quietly dropped, a correction the user had to repeat. Stated as a place to start, explicitly not a checklist. The one mechanical thing left is a cost guard: one prompt and no tool calls at all, and no work order is written — which claims nothing about the session, only that there is nothing in it to read. A conversation with no tool calls *is* analysed, because a wrong instruction file shows up exactly there: a wrong answer and a correction, with nothing executed.
-5. **Extraction runs when asked, in a clean context — and the plugin does not perform it.** `/retro` writes a **work order** per owed log (`.retro/work/<session>.md`: the criteria, the projection, the lesson lists, how to answer) and asks the agent in the session it was run in to start one subagent per order. Each subagent reads its order and answers by calling `retro_record`; when the records are in, the agent calls `retro_propose`. Input is unchanged: compressed projection of the shadow log (tool outputs trimmed to head/tail, prompts and assistant text in full) + existing lessons + rejected ids. Core question unchanged: *"If this session were run again, what should change so it goes shorter and straighter?"* The clean context is still the point — a subagent was not in the session it reads and has nothing of its own to defend — but it now comes from OpenCode's own agent loop rather than from a session the plugin builds. **When** it runs is still a deliberate choice: see "When the analysis runs".
+5. **Extraction runs when asked, in a clean context — and the plugin does not perform it.** `/retro` writes a **work order** per owed log (`.retro/work/<session>.md`: the criteria, which log to read and which part of it is new, the lesson lists, how to answer) and asks the agent in the session it was run in to start one subagent per order. Each subagent opens the log the order names, and answers by calling `retro_record`; when the records are in, the agent calls `retro_propose`. The order points at the log rather than carrying a rendering of it — see "The budget was the last thing left over from one model call". Core question unchanged: *"If this session were run again, what should change so it goes shorter and straighter?"* The clean context is still the point — a subagent was not in the session it reads and has nothing of its own to defend — but it now comes from OpenCode's own agent loop rather than from a session the plugin builds. **When** it runs is still a deliberate choice: see "When the analysis runs".
    *Replaces one `session.generate` call in a session of the plugin's own, with a model and a variant the plugin picked. Three things were wrong with it, and only the third was visible at the time. (a) That call returns `{ text }` and nothing else — no finish reason, no usage — so a reasoning model that spent its whole output on reasoning came back empty with no way to see why, and it took a probe against the provider's own API to find out (Gotcha 17). (b) The plugin had to choose a model and a variant, which meant an option, a fallback chain, a workspace default, a remedy to name when all of them came up empty, and a `none` variant that does not mean the same thing on every provider. (c) It had to bound the call itself, because a hang wedged whatever guarded it (Gotcha 11). All three are now OpenCode's problem, which is the right place for them: a subagent runs with the agent loop, the tools, the retries and the model of the session that asked for it. What the plugin gives up is control over the analysis model — the work is billed where the work happens — and that was never worth the three mechanisms it cost.*
 6. **No separate "incident" entity.** Log → lessons. Each lesson carries `evidence` (session id + step ranges).
 7. **Lesson ≠ proposal.** Extracting the lesson is mandatory; proposing where to apply it is optional. Targets `skill | instruction | tool | refactor | other` are prompt hints, not an enum the extractor must fit into. "Doesn't fit the ontology" is a normal outcome — the human decides.
@@ -202,9 +202,9 @@ renumbered into the parent's sequence and the orphan log is removed. Either rout
 
 Verified live — the parent's log held one ordered sequence containing
 `build/execute`, `explore/read` and `build/subagent`, with a single session end, and only
-the parent queued. The delegation is rendered in the projection as the instruction it is
-(`delegated to explore: …` plus the prompt in full) rather than a JSON blob cut at 200
-characters, which is what the default case did to it.
+the parent queued. *The projection that rendered a delegation as the instruction it is, rather
+than as a JSON blob cut at 200 characters, is gone with the rest of it: an analysis reads the
+log itself now, where the delegation's prompt is a field like any other.*
 
 **Step index.** Every *event* carries `durable: { aggregateID, seq, version }`, where
 `aggregateID` is the session and `seq` is monotonic per session. Hooks carry no `seq` at
@@ -370,8 +370,9 @@ plugin needed — and it gets the `sessionID`, so it can drive the review conver
   derived from the counted ids plus the anonymous calls (which take the maximum), rather than
   being a maximum itself. Two instances that each counted a different session each moved their
   own copy to one, and the maximum lost one — a workspace aged by less than it had lived. Each
-  `looked` mark takes the newer view, and carries `open` when the last successful read stopped
-  at an excerpt, so the next command reads the gap instead of calling the bytes "already sent".
+  `looked` mark takes the newer view, and carries `open` when the last analysis reported
+  reading only part of the log, so the next command reads on instead of calling the bytes
+  "already sent".
   A mark that does not describe the file on disk — a log pruned or replaced since — does not
   survive a merge, which is what the `rebased` tombstone used to do for one writer only. Reads
   take in what another writer saved since the last look (a stat when nothing changed), and the
@@ -389,7 +390,7 @@ recorded-date hint.
 
 | File | Reads | Writes | Owns the question |
 |---|---|---|---|
-| `.retro/prompts/extract.md` | goes into each work order, ahead of the projection, the existing lessons and the rejected ids | lessons, via `retro_record` | *If this session ran again, what should change so it goes shorter and straighter?* |
+| `.retro/prompts/extract.md` | goes into each work order, ahead of the log it names, the existing lessons and the rejected ids | lessons, via `retro_record` | *If this session ran again, what should change so it goes shorter and straighter?* |
 | `.retro/prompts/propose.md` | one lesson, or every waiting one, handed to the agent in the user's session | a hand-over, or one plan | *Is this still true, and how do I put it to the human?* |
 
 Resolution per prompt, first hit wins:
@@ -530,13 +531,16 @@ re-read all of it, pay for all of it, and re-derive the lessons that were alread
 `state.looked[session]` is the mark that stops that, and it holds two numbers because they
 answer two questions: `n`, the last step actually turned into lessons, which only moves when
 an analysis succeeded and is where the next one starts; and `size`, the largest log already
-sent, success or not, so nothing is paid for twice. **`n` is the end of what the projection
-covered, not of what it looked at.** An excerpt keeps a head and a tail with a gap between
-them, so marking the last step *seen* would jump the elided middle and nothing would ever
-read it; `projected()` reports the last step of its unbroken prefix and the mark stops there.
-The tail is read again next time, which costs a little and loses nothing. A re-read carries the session's prompts
-whatever their step — they say what it was for — and is told plainly that steps up to `n` were
-analysed before, along with what was concluded from them.
+sent, success or not, so nothing is paid for twice. **`n` is how far the analysis says it
+read.** The order asks for the whole log, so a record with no `through` moves `n` to the last
+step there was; a reader that got part way reports `through` and the rest stays owed.
+*This used to be measured rather than reported: the projection kept a head and a tail with a
+gap between them, so marking the last step* seen *would have jumped the elided middle, and
+`projected()` reported the last step of its unbroken prefix instead. With the log read by the
+reader, the only party that knows how far it got is the reader.* A re-read is told plainly
+that steps up to `n` were analysed before, that the new material starts after it, and what
+was concluded from the rest — and that the session's instructions are up there and worth
+reading for context, because they say what it was for.
 
 **And a second look at one session is not a second session.** Recurrence counts *independent*
 sessions (decision 8), so re-reading a log cannot reopen a lesson closed as accepted. Without
@@ -635,12 +639,8 @@ automatically either way — so there is no value in paying earlier.
   limit that only counted the ones that worked.
 - **Cheap when there is nothing to read.** A session of one prompt with no tool calls takes
   no order. Anything more is read, including a conversation that ran no tools at all.
-- **Bounded in size, not only in count.** One order holds at most `maxInput` characters, and
-  a log too long for one is read a part per command. *The default, 32,000, is inherited from
-  a hypothesis that has since been disproven: it was set against a measured "empty reply
-  above about 40,000 characters" on `deepseek-flash`, which turned out to be reasoning rather
-  than size (Gotcha 17). The number has not been re-derived for a subagent reading a file —
-  see "What the budget is now for".*
+- **Bounded by the reader, not by us.** An order names the log and the subagent opens it.
+  There is no budget: see "The budget was the last thing left over from one model call".
 - **Nothing runs unasked.** There used to be an `asyncExtract` option that analysed at the
   first prompt of the next session. It is gone: an analysis now needs a session to run in and
   an agent to start it, and the first prompt of a session is neither the place to spend
@@ -654,24 +654,46 @@ session's context. What was true was the cost.
 Rejected: awaiting a model call inside a hook OpenCode awaits. That deadlocks the session —
 the server waits for the hook, the hook waits for the server.
 
-### What the budget is now for
+### The budget was the last thing left over from one model call
 
-`maxInput` bounds what one subagent is asked to read. That is still worth bounding, but the
-cliff it was measured against is gone, and two things about it are now worth stating plainly
-rather than being discovered later.
+`maxInput` is gone, with the projection, the drop order, the 2,000-character floor, the
+coverage rule and `src/projection.js` entire. The owner's question was the right one: *why
+are we solving a problem the agent already solves?*
 
-**The fixed part is charged to the same budget.** An order is the user's prompt (~4.8 KB) plus
-the contract (~2.5 KB) plus the lesson lists, and the log gets what is left. At the default
-32,000 that is ~24 KB of log — a whole long session in one order. At a small `maxInput` the
-proportions invert: at 9,000 the log gets ~1.5 KB, so a 43 KB log is read two steps at a time
-and needs fifty-odd commands to get through. Both are correct behaviour; the second is only
-surprising if you read `maxInput` as "how much log".
+Every part of that machinery answered one question — **how much of this log can I afford to
+show?** — and that question only exists for a caller that gets one shot and must hand over
+everything up front. A subagent has read tools, a context of its own and the judgement to
+use them: it can open the file, read the head, skip to the end, or read the lot, and it
+decides better than any rule written out here, because it can see what it is reading. So the
+order names the log and says which part is new, and reading it is the subagent's job.
 
-**And the number itself is open.** 32,000 was chosen to stay clear of a provider cliff that
-does not exist. What bounds an order now is what a subagent can comfortably read and reason
-over in one go, which is a different question with a different answer, and nobody has
-measured it. Raising it would mean fewer rounds on long sessions and more read per analysis;
-leaving it means the opposite. **Owner's call, and deliberately not made here.**
+What came out with it: a budget computed from the composed order, the frame measurement, the
+floor for when the fixed part alone was over budget, the drop order (tool output, then steps
+from the middle, then shorter prompts), gap notices, `through` as a measured prefix, and the
+"an excerpt could not reach past the mark" failure. About 660 lines of source and tests.
+
+What stays, because the reader genuinely cannot know it:
+
+- **which log, and which part of it is new** — the mark (`n`, `size`) in `state.json`;
+- **what has already been concluded** from this session, what lessons exist, what was
+  rejected — the plugin's bookkeeping;
+- **the criteria** (the user's prompt) and **the contract** (`retro_record`'s schema);
+- **the capture clamp** (`maxOutput`), which is about the log on disk rather than about an
+  analysis: it decides once, when a record is written, that a 2 MB tool result will not sit
+  in the log for ever.
+
+What changed hands: **coverage is now reported, not inferred.** The order asks for the whole
+log, so a record with no `through` means it was read; a reader that got part way says
+`through: n` and the rest stays owed. That is the same mark semantics as before, decided by
+the only party that knows, and it is one optional schema field instead of a projection that
+had to be measured.
+
+What was given up, and it is a real loss: **the plugin no longer knows what was read.** The
+model test's strongest invariant used to parse `[n]` markers out of the projection to assert
+that every material step reached an analysis that answered. It now believes the reader's
+report. The fake subagent in `test/model.test.js` opens the log the order points at, so the
+walk still covers partial reads, but the guarantee is "the mark moved as reported", not "we
+know these steps were seen".
 
 ## Self-check
 
@@ -820,6 +842,7 @@ understood is just a diagnostic that was written badly.
       throttled heartbeat, self-explaining prose. Shipped *with* the shadow log — an
       unverified capture layer is worse than none.
 - [x] Projection (`src/projection.js`): deterministic, 26 KB of log → 9.5 KB of text.
+      *Deleted in M5 — an analysis reads the log itself.*
 - [x] Anchor detectors (`src/anchors.js`): repeat, revert, and skill→failure. **Deleted
       after M3.5** — see decision 4 and `fixtures/ab-anchors/`. Their guidance moved into
       `prompts/extract.md`.
@@ -909,6 +932,11 @@ understood is just a diagnostic that was written badly.
 - [x] The two hand-overs are told apart in the log (`about`), because the extraction contract
       discounts work that reviews a lesson and would have discounted work done after a
       request for an analysis.
+- [x] **The order points at the log instead of carrying it.** The projection, the budget
+      (`maxInput`), the drop order, the floor and the measured coverage are gone —
+      `src/projection.js` and its tests with them. Coverage is reported by the reader
+      (`through` on a record) instead. See "The budget was the last thing left over from one
+      model call"; it was the owner's question, and the right one.
 - [ ] **Not yet run live.** Everything here is tested against a fake OpenCode; nothing has
       been through a real `/retro` with real subagents. Until it has, the live behaviour of
       the hand-over — whether an agent reliably starts one subagent per order, reads none of
@@ -927,8 +955,9 @@ Known, listed so nobody discovers them as surprises:
 - The analysis path has not been exercised live since the rewrite (M5, last item).
 - Subagent sessions of the *user's* work are unverified — see "Still unverified".
 - The `compaction` payload is unknown, and nothing depends on it.
-- `maxInput`'s default is inherited from a disproven hypothesis — see "What the budget is
-  now for". It is not wrong, it is just not re-derived.
+- How much of a log an analysis reads is the subagent's judgement, and the plugin believes
+  what it reports. A reader that answers after skimming is indistinguishable from one that
+  read carefully.
 - Whether the agent records a decision is prompted, not enforced. If it does not, the lesson
   stays open and comes back next time with the currency check noting that its target has
   changed — recoverable, but it is the one step the plugin cannot do for itself.

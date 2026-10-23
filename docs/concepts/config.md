@@ -13,7 +13,6 @@ a constant in source.
 | `dir` | where everything lives; `.retro` under the project, or an absolute path |
 | `prompts` | the prompt directory; `prompts` under `dir`, or an absolute path |
 | `maxOutput` | characters of tool output kept per captured step, head and tail |
-| `maxInput` | characters one work order may hold (see analysis.md) |
 | `heartbeatMs` | the shortest gap between self-check writes while a session works |
 | `halfLife` | sessions without a recurrence before a lesson's score halves |
 | `keepSessions` | keep every log, including ones nothing cites |

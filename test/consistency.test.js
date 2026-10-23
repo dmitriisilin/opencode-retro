@@ -88,11 +88,18 @@ test("every option the plugin reads is documented, in every language", () => {
   assert.deepEqual(undocumented, [], `settable and undocumented:\n  ${undocumented.join("\n  ")}`)
 })
 
-test("every record kind the log can hold is rendered to the extractor", () => {
+test("every record kind the log can hold is explained to the analysis", () => {
+  // The plugin used to render the log into the order, and this guard checked that every kind
+  // had a case in the renderer. Now the analysis reads the log itself, so nothing can fail to
+  // be rendered — but a kind the contract does not explain is just as invisible, because
+  // nothing tells the reader what it means. Same guard, pointed at the new place.
   const written = new Set([...read("src/ingest.js").matchAll(/k: "([a-z]+)"/g)].map((m) => m[1]))
-  const rendered = new Set([...read("src/projection.js").matchAll(/case "([a-z]+)":/g)].map((m) => m[1]))
+  const explained = read("src/contract.js")
   for (const kind of written) {
-    assert.ok(rendered.has(kind), `records of kind "${kind}" are written but never projected`)
+    assert.ok(
+      explained.includes("\\`" + kind + "\\`"),
+      `records of kind "${kind}" are written to the log but never explained in the contract`,
+    )
   }
 })
 

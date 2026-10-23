@@ -17,13 +17,22 @@ model that spent its output on reasoning came back empty with no way to see why;
 variant chosen by name does not mean the same thing on every provider (AGENTS.md decision
 5, Gotcha 17).*
 
-**Work order.** What one analysis is asked to read: a file, `work/<session>.md` in the
-plugin's directory, holding the criteria (`prompts/extract.md`, the user's), the lessons
-already recorded, concluded from this session and rejected, the projection of the log from
-its mark, and what to do with the answer. The plugin remembers each order it issued — the
-log's identity, the size it was read at, and how far the projection covers — so a record
-is applied to exactly what was read. An order is reissued by the next `/retro` while the log
-is still owed; a record answers only the order it was issued for.
+**Work order.** What one analysis is asked for: a file, `work/<session>.md` in the plugin's
+directory, holding the criteria (`prompts/extract.md`, the user's), **which log to read and
+which part of it is new**, the lessons already recorded, concluded from this session and
+rejected, and what to do with the answer.
+
+It does not contain the log. It names it, absolutely, and the subagent opens it — that is
+what read tools are for, and an agent decides better than any rule written out here whether
+to read a log whole, from the head, or from the end. The plugin remembers each order it
+issued — the log's identity, the size it was read at, and the last step in it — so a record
+is applied to the log it was issued for and no other. An order is reissued by the next
+`/retro` while the log is still owed.
+
+*Replaces an order that carried a rendering of the log, compressed to fit one model call.
+That brought a budget, a drop order, a floor, a coverage rule and a failure mode of its own
+("the excerpt could not reach past the mark"), all to answer a question — how much of this
+can I afford to show? — that only exists when the reader cannot turn the page itself.*
 
 **Record.** The answer, given by calling `retro_record` with the session and its lessons.
 The tool's schema is the output contract: a malformed answer is refused by OpenCode before
@@ -38,33 +47,22 @@ order settled that way is still applied, against the coverage of the order it an
 the attempt is given back. Only `unanswered` reopens: an order already answered must not be
 answered twice, and one voided because its log was replaced is about a session that is gone.
 
-**Projection.** The log rendered as text for the work order. Prompts, hand-overs and
-assistant text in full up to a few thousand characters each; tool output trimmed; tool calls
-and steps one line each. Deterministic: the same records always project the same way.
+**Capture clamp.** Tool output is clamped head-and-tail to `maxOutput` (8,000 characters by
+default) when the record is written, with the loss stated in the record. This is about the
+log on disk, not about any analysis: a single 2 MB tool result would otherwise sit in the
+log for as long as the log does. It is the one place the plugin still decides what an
+analysis can see, and it decides it once, at capture, where the alternative is keeping
+everything for ever.
 
-**Capture clamp.** Tool output is already clamped head-and-tail to `maxOutput` (8,000
-characters by default) when the record is written, with the loss stated in the record. The
-log is therefore an excerpt of a very large result before the projection ever sees it; the
-projection may trim it again.
+**Coverage (`through`).** How far a log was read, **as the reader reports it**. The order
+asks for everything up to the last step in the log, so that is what a record with no
+`through` means. A reader that got part way says so, the mark stops there, and the rest
+stays owed — the same thing an excerpt's coverage used to mean, reported by the one party
+that actually knows instead of inferred from what we chose to show.
 
-**Budget.** The most characters one work order may hold, `maxInput`. The log gets what is
-left after the criteria, the instructions and the lesson lists, and the order never exceeds
-it except when the fixed part alone does (see the floor below). It bounds what one subagent
-is asked to read, which is what it costs. Those fixed parts are not negotiable: if they
-alone exceed `maxInput`, a small (2,000-character) log section is still written rather than
-none, and the order goes over the budget by that floor.
-
-**Excerpt.** A projection that had to drop something to fit. It drops in the order that
-loses least — less tool output, then whole tool steps from the middle outward, then
-shorter prompts — and never drops a prompt, a hand-over or an assistant reply entirely.
-Every gap says how many steps went, so the reader knows it is reading an excerpt and so
-does the human (`from an excerpt` in the outcome).
-
-**Coverage (`through`).** The last step of an excerpt's unbroken prefix. An excerpt keeps
-a head and a tail with a gap between; it *covers* only the head. The mark advances to the
-coverage, never to the last step seen, so the gap is read next time rather than skipped.
-A projection that covers no step past the mark has covered nothing new: no order is issued
-for it, and it counts as a failed attempt.
+It is clamped to the order's own range. A `through` past the last step would mark steps as
+read that were not in the log when the order was written; one at or below the old mark says
+nothing new was read at all, which is a failed attempt rather than a settled log.
 
 **Attempt.** One work order issued for one owed log. An order that was not answered by the
 next `/retro` failed — the subagent was never started, ran out, or never called
@@ -91,31 +89,22 @@ the plugin's bookkeeping never turns into a lesson about the plugin.
 
 - Tool output is clamped head-and-tail when captured, and says how much went missing.
   `output is clamped head-and-tail with the loss stated`
-- A work order never exceeds `maxInput` when the fixed part fits; the log takes the rest
-  and is cut to fit. When the fixed part alone is over budget, the smallest useful log is
-  written rather than none.
-  `the composed input stays inside maxInput, and says when it had to`
-  `prompts are shortened before a projection is allowed over budget`
-  `a budget that leaves no room for the log still leaves room for the log`
-- An excerpt loses tool output before it loses steps, and steps from the middle before
-  the ends; prompts and replies are never dropped.
-  `a log over budget loses tool output before it loses steps`
-  `when trimming is not enough, steps go from the middle and the gap says how many`
-- Step numbers are left alone in an excerpt, so evidence still points at real steps.
-  `the numbering is left alone, so evidence still points at real steps`
-- An excerpt reports how far it covers, not how far it looked.
-  `an excerpt reports how far it actually goes, not how far it looked`
-  `a truncation reports only the steps that survived the cut`
-- A projection that covers no step past the mark is not issued, is reported, and is charged
-  against the log's attempts.
-  `an excerpt that cannot reach past the mark is reported, not settled as done`
+- An order points at its log and does not contain it, and it says which steps are new.
+  `the work order points at the log instead of carrying it`
+  `a second look at a session reads only what is new since the first`
+  `an order with no log to point at is refused`
 - The plugin makes no model call: `/retro` issues work orders and hands them to the agent in
   its session, which starts one subagent per order.
   `/retro issues a work order per owed log and asks the agent to analyse them`
   `the plugin never calls a model itself`
+- A record with no `through` answered the order in full; one with `through` moves the mark
+  only that far and leaves the rest owed.
+  `a record moves the mark to what the order asked for`
+  `a log read in part is read again without growing, and is not pruned first`
+- A reported coverage no further than the mark is a failed attempt, not a settled log.
+  `a read that got no further than the mark is reported, not settled as done`
 - A record is applied to the order it answers, and to nothing else: a record for a session
   with no order, or for a log replaced since the order, is refused and changes nothing.
-  `a record moves the mark to what its order covered`
   `a record with no order behind it is refused`
   `a record for a log replaced since its order is refused`
 - A record with no lessons is an answer: the log is read, and the session went straight.

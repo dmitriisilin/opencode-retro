@@ -1,5 +1,4 @@
 import { OUTPUT_CONTRACT, normaliseLessons } from "./contract.js"
-import { projected } from "./projection.js"
 
 /**
  * Extraction, the plugin's half: shadow log -> work order, and record -> lessons
@@ -21,17 +20,27 @@ import { projected } from "./projection.js"
 export const WORK_MARK = "opencode-retro work order"
 
 /**
- * The work order for one log: what a subagent is asked to read. Returns `{ skipped }` for a
- * log that cannot hold evidence, `{ ok: false }` when there is nothing to write it from, and
- * otherwise `{ ok: true, text, through, elided }`.
+ * The work order for one log: which log to read, what is new in it, and what the plugin
+ * knows that the reader cannot. Returns `{ skipped }` for a log that cannot hold evidence,
+ * `{ ok: false }` when there is nothing to write it from, and otherwise `{ ok: true, text }`.
+ *
+ * It does **not** contain the log. It used to, compressed to fit one model call, with a
+ * budget, a drop order and a coverage rule to go with it — all of which existed because a
+ * one-shot call had to be handed everything at once. A subagent has read tools and a context
+ * of its own: it can open the file, read the head, skip to the end, or read the whole thing,
+ * and it is better at deciding which than any rule we could write from out here. What is
+ * ours is which log, which part of it is new, and the bookkeeping it cannot see.
  */
 export function composeOrder({
   records,
   session,
+  /** Where the log is, as the subagent will open it: absolute, so any cwd resolves it. */
+  logPath,
+  /** The last step in the log, so the order can say how much there is to read. */
+  lastN = 0,
   prompts,
   store,
   state,
-  maxInput = Infinity,
   /** The last step of this session already turned into lessons; 0 for a first look. */
   analysedUpTo = 0,
   /** Lessons already decided from this very session, so the same ground is not covered twice. */
@@ -43,7 +52,11 @@ export function composeOrder({
   // This used to require three tool calls, which was the wrong proxy and would have thrown
   // away the clearest lessons of all. An instruction file that is wrong produces a wrong
   // answer with no tool call at all; a correction is a second prompt and nothing more. Both
-  // live in the text, which is why the projection keeps prompts and replies whole.
+  // live in the text, which is why a conversation that ran no tools is still analysed.
+  //
+  // `records` is the slice of the log that is new, plus the session's prompts whatever their
+  // step — the one thing this function still needs the records for, now that the order points
+  // at the log instead of carrying it.
   //
   // A re-read is a different case. Its slice carries the session's prompts and drops the tool
   // calls already turned into lessons, so a session that had done plenty could present as one
@@ -72,6 +85,7 @@ export function composeOrder({
 
   const prompt = prompts.resolve("extract")
   if (!prompt) return { ok: false, detail: "no extract prompt could be resolved" }
+  if (!logPath) return { ok: false, detail: "the log has no path to point an analysis at" }
 
   const existing = store.list().filter((l) => l.status !== "rejected")
 
@@ -81,81 +95,54 @@ export function composeOrder({
    * steps are new is what stops the same lessons being derived again from material that was
    * already turned into them and decided on.
    */
-  const continued =
+  const scope =
     analysedUpTo > 0
-      ? `Steps up to ${analysedUpTo} of this session were analysed before and what came of them ` +
-        `is below. What follows is the rest of it. The session's instructions are repeated in ` +
-        `full, because they say what it was for; everything else is new since that analysis.`
-      : null
+      ? [
+          `Read \`${logPath}\`.`,
+          "",
+          `Steps up to ${analysedUpTo} were analysed before and what came of them is below, so the ` +
+            `lessons from them already exist. What is new is step ${analysedUpTo + 1} onwards — that is ` +
+            "what to report on. Read the earlier steps too if you need them for context: the " +
+            "session's instructions are up there, and they say what it was for.",
+        ].join("\n")
+      : `Read \`${logPath}\`. All of it is new; nothing from this session has been analysed before.`
 
-  const compose = (log) =>
-    [
-      `<!-- ${WORK_MARK} -->`,
-      prompt.text,
-      section("Session", `id: ${session}`),
-      section("Log", [continued, log].filter(Boolean).join("\n\n")),
-      section("Already concluded from this session", renderConcluded(concluded)),
-      section(
-        "Lessons already recorded",
-        existing.length
-          ? "If this session ran into one of these again, list it again with `matches` set to its id: " +
-              "that is how a problem that keeps happening is told from one that happened once.\n\n" +
-              renderExisting(existing)
-          : renderExisting(existing),
-      ),
-      section("Rejected — do not propose these again", renderRejected(state.rejected)),
-      OUTPUT_CONTRACT,
-    ]
-      .filter(Boolean)
-      .join("\n\n")
+  const text = [
+    `<!-- ${WORK_MARK} -->`,
+    prompt.text,
+    section("Session", [`id: ${session}`, `log: ${logPath}`, `steps: 1 to ${lastN || "?"}`].join("\n")),
+    section("What to read", scope),
+    section("Already concluded from this session", renderConcluded(concluded)),
+    section(
+      "Lessons already recorded",
+      existing.length
+        ? "If this session ran into one of these again, list it again with `matches` set to its id: " +
+            "that is how a problem that keeps happening is told from one that happened once.\n\n" +
+            renderExisting(existing)
+        : renderExisting(existing),
+    ),
+    section("Rejected — do not propose these again", renderRejected(state.rejected)),
+    OUTPUT_CONTRACT,
+  ]
+    .filter(Boolean)
+    .join("\n\n")
 
-  /**
-   * The log gets whatever the budget leaves after everything else.
-   *
-   * It bounds what one subagent is asked to read, which is what an analysis costs, and keeps
-   * a work order within what a read tool returns in one call. It is a character count rather
-   * than a token count on purpose. Tokenisation is
-   * model-specific and would need a dependency to estimate; characters are exact, and the
-   * budget only has to be comfortably under a cliff, not next to it.
-   */
-  const overhead = compose("").length
-  // A non-empty Log section brings its heading, a separator and, on a re-read, the blank
-  // line between the continuation note and the log. Measuring the composition with a
-  // one-character log gives exactly that frame, whether or not the section already exists.
-  // Without it the budget was a few characters too generous, and a projection that fitted
-  // `budget` produced a prompt a few characters over `maxInput`.
-  const frame = compose("x").length - overhead - 1
-  const room = maxInput - overhead - frame
-  // Spend only the room that is actually left. `max(2000, room)` used to ignore a positive
-  // room smaller than 2,000 and send more than `maxInput` anyway; 2,000 is only a floor for
-  // the case where the fixed part alone is over budget, where nothing can be honoured and a
-  // small excerpt beats an empty one.
-  const budget = Number.isFinite(maxInput) ? (room > 0 ? room : 2000) : Infinity
-
-  const log = projected(records, { budget })
-  return {
-    ok: true,
-    text: compose(log.text),
-    // How far through the log this order goes. An excerpt covers only up to its first gap,
-    // so the mark stops there and the elided middle is read next time rather than skipped.
-    through: log.through,
-    elided: /\d+ steps? elided to fit the budget/.test(log.text),
-  }
+  return { ok: true, text, lastN }
 }
 
 /**
  * A record, folded into the store: the rejected filtered out, the rest recorded by problem.
  */
-export function recordAnswer({ session, lessons: raw, store, state, fingerprint, elided = false }) {
+export function recordAnswer({ session, lessons: raw, store, state, fingerprint, partial = false }) {
   const rejected = new Set(state.rejected.map((r) => r.id))
   const lessons = normaliseLessons(raw).filter((l) => !rejected.has(l.id) && !rejected.has(l.matches))
   const recorded = store.record(lessons, { session, fingerprint })
   return {
     lessons,
     recorded,
-    // Said out loud: a lesson drawn from an excerpt is still a lesson, but the human should
-    // know the reader did not see the whole session.
-    detail: summarise(recorded, lessons.length) + (elided ? " (from an excerpt: the log was over budget)" : ""),
+    // Said out loud: a lesson from part of a log is still a lesson, but the human should know
+    // the reader said it did not get to the end.
+    detail: summarise(recorded, lessons.length) + (partial ? " (from part of the log; the rest is still owed)" : ""),
   }
 }
 

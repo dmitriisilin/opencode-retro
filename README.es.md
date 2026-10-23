@@ -1,4 +1,4 @@
-<!-- translated-from: README.en.md@9b031af4ca31 -->
+<!-- translated-from: README.en.md@79a520c15ae6 -->
 # opencode-retro
 
 [Русский](README.md) | [English](README.en.md) | [简体中文](README.zh-CN.md) | **Español** | [日本語](README.ja.md)
@@ -36,7 +36,9 @@ Cada llamada a herramienta y cada prompt se añaden a un log paralelo en `.retro
 
 Cuando una sesión termina, su log se conserva y no ocurre nada más hasta que se pide. El análisis cuesta una llamada al modelo, y nada en este plugin la gasta sin que se lo pidan.
 
-`/retro` es el momento en que ocurre. Para cada log acumulado escribe una **orden de trabajo** —un archivo en `.retro/work/` que contiene ese log, los criterios y cómo responder— y pide al agente de la sesión en la que lo ejecutaste que haga leer cada una a un subagente propio. Todo log pendiente recibe una orden en un solo comando; `options.extractLimit` limita cuántas, y lo que queda se informa para que otro `/retro` tome el siguiente lote. Un log demasiado largo para una sola orden se lee por partes, una parte por comando, cada una desde donde se detuvo la anterior; hasta que se termina, `selfcheck.md` lo señala como leído en parte.
+`/retro` es el momento en que ocurre. Para cada log acumulado escribe una **orden de trabajo** —un archivo en `.retro/work/` que nombra ese log, dice qué parte de él es nueva y lleva los criterios y cómo responder— y pide al agente de la sesión en la que lo ejecutaste que haga leer cada una a un subagente propio. Todo log pendiente recibe una orden en un solo comando; `options.extractLimit` limita cuántas, y lo que queda se informa para que otro `/retro` tome el siguiente lote.
+
+La orden no contiene el log: lo señala. Leerlo es tarea del subagente, y él está mejor situado para decidir cómo —de una vez, o la cabeza y luego el resto— que cualquier regla que el plugin pudiera aplicar desde fuera. Un subagente que solo llega a una parte lo dice, y el resto sigue pendiente: `selfcheck.md` señala ese log como leído en parte, y el siguiente `/retro` pregunta por lo que falta.
 
 Cada orden la lee un subagente, en un contexto propio. El plugin no llama a ningún modelo ni elige ninguno: la lectura ocurre con el modelo y los ajustes de tu sesión, con el propio bucle de agente de OpenCode. El agente que hizo el trabajo analizado queda excluido a propósito, porque defendería sus propias decisiones; un subagente no estuvo en esa sesión y no tiene nada propio que defender.
 
@@ -48,7 +50,7 @@ Solo se omite sin llamada la sesión que no puede contener evidencia de nada: un
 
 No hay nada que configurar para nada de esto: ningún modelo, ninguna clave de API, ningún proveedor. El trabajo se ejecuta donde ya se ejecuta tu sesión.
 
-Una orden lleva una vista comprimida de la sesión: la salida de las herramientas se recorta mucho y los prompts y las respuestas se conservan completos hasta unos miles de caracteres cada uno. Responde a una sola pregunta:
+Lo que lee es el log paralelo tal como se escribió: un objeto JSON por línea, un paso por objeto, con cada resultado de herramienta recortado por cabeza y cola a `maxOutput` en el momento en que se capturó, para que un único resultado enorme no se quede en el log para siempre. El análisis responde a una sola pregunta:
 
 > Si esta sesión volviera a ejecutarse, ¿qué debería cambiar en el proyecto para que fuera más corta y más recta?
 
@@ -183,7 +185,6 @@ Todo lo demás es opcional:
 - `proposeLimit` — lecciones en un `/retro all`, por omisión diez.
 - `extractLimit` — órdenes de trabajo que emite un `/retro`, sin límite por omisión.
 - `maxOutput` — caracteres de salida de herramienta que se guardan en el log paralelo por paso, por omisión 8000.
-- `maxInput` — caracteres que puede contener una orden de trabajo, por omisión 32000. Un log largo se recorta para encajar: primero menos salida de herramientas, después pasos enteros desde el centro, y cada hueco dice cuántos faltan. Esto acota cuánto se le pide leer a un subagente, que es lo que cuesta un análisis. Lo recortado lo lee el siguiente `/retro`, una parte por comando.
 - `heartbeatMs` — el intervalo mínimo entre escrituras de la autocomprobación mientras una sesión trabaja, por omisión 60000.
 - `keepSessions` — conservar todos los logs, incluidos los que nadie cita; desactivado por omisión.
 

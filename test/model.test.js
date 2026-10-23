@@ -124,7 +124,7 @@ function generate(seed, steps) {
   // mostly defers: that is what fills the open set past its cap, a branch the ordinary
   // histories almost never reached.
   const prolific = r() < 0.2
-  const actions = [{ op: "options", maxInput: r() < 0.5 ? 4000 : 32000, writers, prolific }]
+  const actions = [{ op: "options", partial: r() < 0.5, writers, prolific }]
   const delegations = []
   let next = 0
   for (let i = 0; i < steps; i++) {
@@ -206,6 +206,8 @@ function createWorld() {
     /** session -> the instance it runs on. A session exists on one server. */
     home: new Map(),
     mode: "ok",
+    /** Whether a subagent reads only part of a log and reports how far it got. */
+    partial: false,
     inTurn: new Set(),
     calls: 0,
     /** session -> step numbers that reached a model which answered. */
@@ -242,24 +244,36 @@ function createWorld() {
     world.generated++
     const prompt = input.prompt
     const session = (prompt.match(/id: (ses_\w+)/) ?? [])[1]
-    const logSection = prompt.split("## Log")[1]?.split("\n## ")[0] ?? ""
-    const steps = [...logSection.matchAll(/^\[(\d+)\]/gm)].map((m) => Number(m[1]))
-    debug(`subagent (${world.mode}) read the order for ${session}: steps ${steps.join(",")}`)
+    // The order points at the log; the subagent opens it. `records` is what the fake read
+    // there, and `analysedUpTo` is what the order said was already analysed — so the steps
+    // this analysis is answering about are the ones past it.
+    const from = Number((prompt.match(/Steps up to (\d+) were analysed before/) ?? [])[1] ?? 0)
+    const all = input.records.filter((r) => (r.n ?? 0) > from).map((r) => r.n).sort((a, b) => a - b)
+    /**
+     * A subagent that reads only part of a long log, and reports how far it got. Half the
+     * new steps, and only when there are enough of them to leave something behind: the
+     * branch being covered is a mark left open with the rest of the log still owed.
+     */
+    const through = world.partial && all.length >= 4 ? all[Math.floor(all.length / 2)] : null
+    const steps = through === null ? all : all.filter((n) => n <= through)
+    if (through !== null) world.saw.add("part of a log was read, and said so")
+    debug(`subagent (${world.mode}) read the order for ${session}: steps ${steps.join(",")}${through === null ? "" : ` (through ${through})`}`)
     world.saw.add(`a work order was read (${world.mode})`)
     if (world.marker && !prompt.includes(world.marker)) world.violation ??= `the order did not carry the edited prompt (${world.marker})`
     if (world.marker) world.saw.add("an edited prompt reached the order")
-    if (/elided to fit the budget/.test(prompt)) world.saw.add("an excerpt was sent")
-    if (/Steps up to \d+ of this session were analysed before/.test(prompt)) world.saw.add("a re-read from the mark")
+    if (from > 0) world.saw.add("a re-read from the mark")
     if (world.mode === "silent") return "I think the session went fine overall."
     if (session) {
       const set = world.analysed.get(session) ?? new Set()
       for (const n of steps) set.add(n)
       world.analysed.set(session, set)
     }
+    /** Everything this answer returns carries the coverage it is claiming. */
+    const answered = (answer) => (through === null ? answer : { answer, through })
     // Without the temporary directory's name, or the same history would answer differently
     // on every run and a shrunk failure would replay as a different one.
     const h = hash(prompt.split(world.directory).join(""))
-    if (!steps.length || h % 4 === 0) return '```json\n{ "lessons": [] }\n```'
+    if (!steps.length || h % 4 === 0) return answered('```json\n{ "lessons": [] }\n```')
     // Ids the prompt names as already recorded, concluded or rejected: a real model refers
     // back to them, by `matches` or by reusing the id, and sometimes ignores the rejection.
     const known = [...prompt.matchAll(/^- `([a-z0-9-]+)`/gm)].map((m) => m[1])
@@ -280,7 +294,7 @@ function createWorld() {
         why: "seen in the log",
       })
     }
-    return "```json\n" + JSON.stringify({ lessons }) + "\n```"
+    return answered("```json\n" + JSON.stringify({ lessons }) + "\n```")
   }
 
   world.start = async (w) => {
@@ -395,7 +409,10 @@ async function act(world, action) {
 
   switch (action.op) {
     case "options":
-      world.options.maxInput = action.maxInput
+      // What used to be `maxInput` — the budget that made an order an excerpt — is now a
+      // subagent that reads part of a log and says so. Same branch to cover: a mark left
+      // open, and the rest of the log still owed.
+      world.partial = Boolean(action.partial)
       world.prolific = Boolean(action.prolific)
       world.writers = action.writers ?? 1
       return
@@ -965,7 +982,7 @@ test(`random histories never break an invariant in docs/concepts (${ONLY_SEED ??
  */
 const FOUND = {
   "a log given up on stays on disk, even when another log's success runs the pruning": [
-    { op: "options", maxInput: 4000 },
+    { op: "options", partial: true },
     { op: "tool", s: "ses_a", exit: 2, size: 1200 },
     { op: "crash", invoker: "ses_review" },
     { op: "model", mode: "silent" },
@@ -974,14 +991,14 @@ const FOUND = {
     { op: "retro", invoker: "ses_review", all: true },
   ],
   "a session skipped as one exchange is read from its start once it does real work": [
-    { op: "options", maxInput: 4000 },
+    { op: "options", partial: true },
     { op: "text", s: "ses_a" },
     { op: "crash", invoker: "ses_review" },
     { op: "prompt", s: "ses_a" },
     { op: "retro", invoker: "ses_c", all: false },
   ],
   "material that arrives after failures gets attempts of its own": [
-    { op: "options", maxInput: 32000 },
+    { op: "options", partial: false },
     { op: "model", mode: "silent" },
     { op: "tool", s: "ses_a", exit: 0, size: 611 },
     { op: "end", s: "ses_a" },
@@ -991,12 +1008,12 @@ const FOUND = {
     { op: "retro", invoker: "ses_a", all: false },
   ],
   "an interrupted turn with a subagent still running is not a dead tool hook": [
-    { op: "options", maxInput: 32000, writers: 1 },
+    { op: "options", partial: false, writers: 1 },
     { op: "delegate", s: "ses_a", child: "ses_a_sub4", nested: null, order: "prompt", w: 0 },
     { op: "end", s: "ses_a" },
   ],
   "a log replaced by a smaller one is settled, and one command reads it once": [
-    { op: "options", maxInput: 32000 },
+    { op: "options", partial: false },
     { op: "tool", s: "ses_c", exit: 2, size: 1200 },
     { op: "tool", s: "ses_c", exit: 2, size: 1200 },
     { op: "end", s: "ses_c" },
@@ -1004,13 +1021,13 @@ const FOUND = {
     { op: "retro", invoker: "ses_review", all: false },
   ],
   "a crash mid-append loses only its own half-record, not the prompt after it": [
-    { op: "options", maxInput: 32000, writers: 1, prolific: false },
+    { op: "options", partial: false, writers: 1, prolific: false },
     { op: "tool", s: "ses_c", w: 0, exit: 0, size: 374 },
     { op: "torn", s: "ses_c" },
     { op: "prompt", s: "ses_c", w: 0 },
   ],
   "a lesson file broken by hand is left as the user left it": [
-    { op: "options", maxInput: 4000, writers: 1, prolific: true },
+    { op: "options", partial: true, writers: 1, prolific: true },
     { op: "prompt", s: "ses_c", w: 0 },
     { op: "tool", s: "ses_a", w: 0, exit: 0, size: 613 },
     { op: "crash", invoker: "ses_review", w: 0 },

@@ -33,7 +33,9 @@ Every tool call and every prompt is appended to a shadow log at `.retro/sessions
 
 When a session ends its log is kept, and nothing further happens until asked. An analysis costs a model call, and nothing in this plugin spends that unprompted.
 
-`/retro` is the moment it happens. For every log that has accumulated it writes a **work order** — a file in `.retro/work/` holding that log, the criteria, and how to answer — and asks the agent in the session you ran it in to have each one read by a subagent of its own. Every waiting log gets an order in one command; `options.extractLimit` caps how many, and anything left over is reported so another `/retro` takes the next batch. A log too long for one order is read a part at a time, one part per command, each continuing from where the last one stopped; `selfcheck.md` lists it as read in part until it is done.
+`/retro` is the moment it happens. For every log that has accumulated it writes a **work order** — a file in `.retro/work/` naming that log, saying which part of it is new, and carrying the criteria and how to answer — and asks the agent in the session you ran it in to have each one read by a subagent of its own. Every waiting log gets an order in one command; `options.extractLimit` caps how many, and anything left over is reported so another `/retro` takes the next batch.
+
+The order does not contain the log; it points at it. Reading it is the subagent's job, and it is better placed to decide how — all at once, or the head and then on — than any rule the plugin could apply from outside. A subagent that gets only part way through says so, and the rest stays owed: `selfcheck.md` lists the log as read in part until it is done, and the next `/retro` asks about the remainder.
 
 Each order is read by one subagent, in a context of its own. The plugin calls no model and picks none: the reading happens on your session's model and your session's settings, with OpenCode's own agent loop. The agent that did the work being analysed is deliberately excluded, since it would defend its own decisions — a subagent was not in that session and has nothing of its own to defend.
 
@@ -45,7 +47,7 @@ A session is skipped without a call only when it cannot contain evidence of anyt
 
 There is nothing to configure for any of this: no model, no API key, no provider. The work runs where your session already runs.
 
-An order carries a compressed view of the session. Tool output is trimmed hard; prompts and replies are kept in full up to a few thousand characters each. It answers one question:
+The log it reads is the shadow log as written: one JSON object per line, one step per object, with each tool result clamped head-and-tail to `maxOutput` at the moment it was captured so that a single enormous result cannot sit in the log for ever. The analysis answers one question:
 
 > If this session ran again, what should change in the project so that it goes shorter and straighter?
 
@@ -179,7 +181,6 @@ Everything else is optional:
 - `proposeLimit` — lessons in one `/retro all`, default ten.
 - `extractLimit` — work orders issued by one `/retro`, unlimited by default.
 - `maxOutput` — characters of tool output stored in the shadow log per step, default 8000.
-- `maxInput` — characters one work order may hold, default 32000. A long log is trimmed to fit: less tool output first, then whole steps from the middle, each gap saying how many went. This bounds what one subagent is asked to read, which is what an analysis costs. What was trimmed away is read by the next `/retro`, a part per command.
 - `heartbeatMs` — the shortest gap between self-check writes while a session works, default 60000.
 - `keepSessions` — keep every log, including ones nothing cites; off by default.
 

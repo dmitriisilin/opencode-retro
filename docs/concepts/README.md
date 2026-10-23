@@ -42,7 +42,7 @@ is wrong, out loud, rather than to make the code work and leave the concept behi
 |---|---|
 | [session.md](session.md) | session, turn, quiet, foreign, delegation, root |
 | [log.md](log.md) | shadow log, record, owner, step number, the mark, owed, retired, pruned |
-| [analysis.md](analysis.md) | projection, budget, excerpt, coverage, attempt, failure |
+| [analysis.md](analysis.md) | analysis, work order, record, coverage, attempt, failure |
 | [lesson.md](lesson.md) | lesson, evidence, recurrence, score, archive, reopen, restore, cap |
 | [handover.md](handover.md) | proposal, currency, decision, what a decision records |
 | [prompts.md](prompts.md) | prompt, layer, seed, base, news, the contract, fallback |

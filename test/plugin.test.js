@@ -516,9 +516,13 @@ test("a second look at a session reads only what is new since the first", async 
   }
 
   await fake.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
-  const first = fake.generated.at(-1).prompt
-  assert.match(first, /old early-1/, "the whole session, the first time")
-  assert.doesNotMatch(first, /Steps up to/, "and no claim that anything came before")
+  const first = fake.generated.at(-1)
+  assert.match(first.prompt, /All of it is new/, "the whole session, the first time")
+  assert.doesNotMatch(first.prompt, /Steps up to/, "and no claim that anything came before")
+  assert.ok(
+    first.records.some((r) => r.input?.command === "old early-1"),
+    "and the log the order pointed at is the one with that work in it",
+  )
 
   const markAfterFirst = savedState(directory).looked[session].n
   assert.ok(markAfterFirst > 0, "how far the lessons got is remembered")
@@ -534,11 +538,11 @@ test("a second look at a session reads only what is new since the first", async 
   await fake.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
   const second = fake.generated.at(-1).prompt
 
-  assert.match(second, new RegExp(`Steps up to ${markAfterFirst} of this session were analysed before`))
-  assert.match(second, /new late-1/, "the new work is there")
-  assert.doesNotMatch(second, /old early-1/, "and the material already turned into lessons is not")
-  assert.match(second, /the original instruction/, "but the instructions stay, or the excerpt says nothing about why")
-  assert.match(second, /and now this/)
+  // The order no longer carries the log, so what it has to get right is the *scope*: which
+  // steps have already become lessons, and therefore where the new material starts.
+  assert.match(second, new RegExp(`Steps up to ${markAfterFirst} were analysed before`))
+  assert.match(second, new RegExp(`step ${markAfterFirst + 1} onwards — that is what to report on`))
+  assert.match(second, /Read the earlier steps too if you need them/, "the instructions are up there, and they say why")
   assert.ok(savedState(directory).looked[session].n > markAfterFirst, "and the mark moved on")
 
   await cleanup?.()
@@ -577,11 +581,11 @@ test("a working session is not read again until its log has grown", async () => 
   await cleanup?.()
 })
 
-test("an excerpted log is read again without growing, and is not pruned first", async () => {
-  // `through` stops at the first gap so the elided middle is not skipped. But the growth gate
-  // compared bytes sent, not steps covered: the whole file had been read and sent, so the log
-  // looked finished, and a successful extraction then pruned a file whose middle had never
-  // been analysed. The next command must read it again even though nothing was appended.
+test("a log read in part is read again without growing, and is not pruned first", async () => {
+  // A reader that gets part way through a long log says so, and the rest stays owed. The
+  // hazard the mark has to avoid is the growth gate: the whole file was there to be read, so
+  // by size the log looks finished, and a successful analysis would then prune a file most of
+  // which nobody read. The next command must read it again even though nothing was appended.
   const directory = sandbox()
   const session = "ses_excerpt"
   const logPath = join(directory, ".retro", "sessions", `${session}.jsonl`)
@@ -605,21 +609,22 @@ test("an excerpted log is read again without growing, and is not pruned first", 
   records.push({ v: 1, n: 102, t: 102, k: "text", text: "the end of the session" })
   writeFileSync(logPath, records.map((r) => JSON.stringify(r)).join("\n") + "\n")
 
+  // A subagent that reads twenty steps past the mark each time and reports how far it got.
   const fake = fakeOpenCode({
     directory,
-    options: { maxInput: 9000 },
-    reply: JSON.stringify({ lessons: [] }),
+    reply: ({ prompt }) => {
+      const from = Number((prompt.match(/Steps up to (\d+) were analysed before/) ?? [])[1] ?? 0)
+      return { answer: JSON.stringify({ lessons: [] }), through: Math.min(from + 20, 102) }
+    },
   })
   const cleanup = await plugin.setup(fake.ctx)
   await fake.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
 
   assert.equal(fake.generated.length, 1, "the log was read")
-  const first = fake.generated[0].prompt
-  assert.match(first, /steps elided to fit the budget/, "as an excerpt")
   const mark = savedState(directory).looked[session]
-  assert.equal(mark.open, true, "and the gap is remembered")
-  assert.ok(mark.n < 102, "the mark stops at the gap, not at the end that was also sent")
-  assert.ok(existsSync(logPath), "a log with an unread gap is not pruned as finished work")
+  assert.equal(mark.open, true, "and what is left is remembered")
+  assert.equal(mark.n, 20, "the mark follows what the reader said it read, not the file's length")
+  assert.ok(existsSync(logPath), "a log with unread steps is not pruned as finished work")
 
   await fake.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
 
@@ -629,21 +634,15 @@ test("an excerpted log is read again without growing, and is not pruned first", 
     "and it got further than the first read, so the gap is being worked through",
   )
 
-  // And it keeps working through the gap, command after command, until the whole log has
-  // been covered. This also crosses the failure-retry budget, which a successful excerpt
-  // must not spend: the log is being read, just not in one piece.
-  //
-  // How many commands that takes is (maxInput − the fixed part of an order) worth of log at
-  // a time, and the fixed part here — the user's prompt plus the contract — is over 7,000
-  // characters of the 9,000 budget. So the bound is generous on purpose: it is not a claim
-  // about the rate, only that the gap is worked through and the log then goes. The rate is a
-  // real cost of a small `maxInput`, and the number to turn up if it matters.
-  for (let i = 0; i < 80 && savedState(directory).looked[session]?.open; i++) {
+  // And it keeps going, command after command, until the whole log has been covered. This
+  // also crosses the failure-retry budget, which a successful partial read must not spend:
+  // the log is being read, just not in one go.
+  for (let i = 0; i < 20 && savedState(directory).looked[session]?.open; i++) {
     age(directory, session)
     await fake.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
-    if (savedState(directory).looked[session]?.open) assert.ok(existsSync(logPath), "never pruned while the gap is owed")
+    if (savedState(directory).looked[session]?.open) assert.ok(existsSync(logPath), "never pruned while part of it is owed")
   }
-  assert.ok(!existsSync(logPath), "the excerpt was finished and only then pruned")
+  assert.ok(!existsSync(logPath), "the log was finished and only then pruned")
 
   await cleanup?.()
 })
@@ -1254,11 +1253,13 @@ test("a session that runs again is owed a second analysis, from where the first 
   await fake.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
   assert.equal(fake.generated.length, 2, "and it was read")
 
-  const second = fake.generated.at(-1).prompt
-  assert.match(second, new RegExp(`Steps up to ${mark} of this session were analysed before`))
-  assert.match(second, /second-command/, "the new work is there")
-  assert.doesNotMatch(second, /first-command/, "and the material already turned into lessons is not")
-  assert.match(second, /the instruction for turn 1/, "prompts stay, because they say what it was for")
+  const second = fake.generated.at(-1)
+  assert.match(second.prompt, new RegExp(`Steps up to ${mark} were analysed before`))
+  assert.match(second.prompt, new RegExp(`step ${mark + 1} onwards — that is what to report on`))
+  assert.ok(
+    second.records.some((r) => r.input?.command === "second-command"),
+    "and the log it points at has the new work in it",
+  )
 
   await cleanup?.()
 })
@@ -1327,8 +1328,10 @@ test("a log smaller than its mark is read again, not mistaken for already read",
 
   await fake.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
   assert.equal(fake.generated.length, 2, "a log shorter than the mark is new material, not old news")
-  assert.match(fake.generated.at(-1).prompt, /new-command/)
-  assert.doesNotMatch(fake.generated.at(-1).prompt, /old-command/)
+  const reread = fake.generated.at(-1)
+  assert.match(reread.prompt, /All of it is new/, "read from its own start, not from the old mark")
+  assert.ok(reread.records.some((r) => r.input?.command === "new-command"))
+  assert.ok(!reread.records.some((r) => r.input?.command === "old-command"), "the old log is gone")
 
   await cleanup?.()
 })
@@ -1365,7 +1368,9 @@ test("a log whose numbering starts over is read from its own start, even if it i
 
   await fake.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
   assert.equal(fake.generated.length, 2, "the new log is read, not filtered away by the old step mark")
-  assert.match(fake.generated.at(-1).prompt, /new-command/)
+  const fresh = fake.generated.at(-1)
+  assert.match(fresh.prompt, /All of it is new/, "from its own start")
+  assert.ok(fresh.records.some((r) => r.input?.command === "new-command"))
 
   await cleanup?.()
 })
@@ -1724,9 +1729,10 @@ test("a mark belongs to one log: a replaced file is read from its own start, wha
   await fake.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
 
   assert.equal(fake.generated.length, 2, "the replacement is read")
-  const sent = fake.generated.at(-1).prompt
-  assert.match(sent, /new-1/, "from its own start")
-  assert.doesNotMatch(sent, /Steps up to/, "with no claim that any of it was analysed before")
+  const sent = fake.generated.at(-1)
+  assert.match(sent.prompt, /All of it is new/, "from its own start")
+  assert.doesNotMatch(sent.prompt, /Steps up to/, "with no claim that any of it was analysed before")
+  assert.ok(sent.records.some((r) => r.id === "new-1"))
 
   await cleanup?.()
 })
@@ -1839,39 +1845,46 @@ test("an entry that used its three attempts is retired and reported, not skipped
   await cleanup?.()
 })
 
-test("an excerpt that cannot reach past the mark is reported, not settled as done", async () => {
+test("a read that got no further than the mark is reported, not settled as done", async () => {
+  // How far a log was read is the reader's to report, and a reader that says it got no
+  // further than the steps already analysed has read nothing new. Taking that as an answer
+  // would mark the whole file read while the new material never reached anyone — so it is a
+  // failed attempt, counted, and the log stays owed.
   const directory = sandbox()
-  const session = "ses_stuck_excerpt"
+  const session = "ses_no_progress"
   mkdirSync(join(directory, ".retro", "sessions"), { recursive: true })
   const logPath = join(directory, ".retro", "sessions", `${session}.jsonl`)
-  const write = (lines) => writeFileSync(logPath, lines.map((l) => JSON.stringify(l)).join("\n") + "\n")
-  write([
-    { v: 1, n: 1, t: 1, k: "prompt", text: "fix the lint trap" },
-    { v: 1, n: 2, t: 2, k: "tool", id: "c1", tool: "shell", input: { command: "npx eslint ." }, status: "completed", exit: 2 },
-    { v: 1, n: 3, t: 3, k: "tool", id: "c2", tool: "shell", input: { command: "npx eslint --fix ." }, status: "completed", exit: 2 },
-  ])
+  writeFileSync(
+    logPath,
+    [
+      { v: 1, n: 1, t: 1, k: "prompt", text: "fix the lint trap" },
+      { v: 1, n: 2, t: 2, k: "tool", id: "c1", tool: "shell", input: { command: "npx eslint ." }, status: "completed", exit: 2 },
+      { v: 1, n: 3, t: 3, k: "tool", id: "c2", tool: "shell", input: { command: "npx eslint --fix ." }, status: "completed", exit: 2 },
+    ]
+      .map((l) => JSON.stringify(l))
+      .join("\n") + "\n",
+  )
 
   const first = fakeOpenCode({ directory, reply: REPLY })
   const cleanup = await plugin.setup(first.ctx)
   await first.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
-  assert.equal(first.generated.length, 1, "first read")
-  assert.equal(savedState(directory).looked[session].n, 3)
+  assert.equal(savedState(directory).looked[session].n, 3, "the first read covered the file")
   assert.ok(!owed(directory).includes(session))
-  assert.ok(existsSync(logPath), "a lesson cites it, so it is kept")
 
-  appendFileSync(logPath, JSON.stringify({ v: 1, n: 4, t: 4, k: "tool", id: "huge", tool: "shell", input: { command: "x".repeat(100_000) }, status: "completed", exit: 2 }) + "\n")
+  appendFileSync(logPath, JSON.stringify({ v: 1, n: 4, t: 4, k: "tool", id: "c3", tool: "shell", input: { command: "npx eslint ." }, status: "completed", exit: 2 }) + "\n")
   appendFileSync(logPath, JSON.stringify({ v: 1, n: 5, t: 5, k: "text", text: "THE NEW MATERIAL" }) + "\n")
 
-  const small = fakeOpenCode({ directory, options: { maxInput: 8000 }, reply: REPLY })
-  const cleanup2 = await plugin.setup(small.ctx)
-  await small.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
+  // The subagent answers, but says it read only as far as step 3 — which is the mark.
+  const stuck = fakeOpenCode({ directory, reply: { answer: REPLY, through: 3 } })
+  const cleanup2 = await plugin.setup(stuck.ctx)
+  await stuck.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
 
   const state = savedState(directory)
+  assert.equal(state.looked[session].n, 3, "the mark does not move")
   assert.ok(owed(directory).includes(session), "the unread material stays owed")
   assert.equal(state.looked[session].attempts, 1, "the attempt is counted, so it cannot loop for ever")
-  assert.match(small.synthetic[0].text, /could not reach past step 3/, "and the failure is said out loud")
-  assert.equal(state.looked[session].open, undefined, "it was not mistaken for an excerpt owed now")
-  assert.ok(existsSync(logPath), "and the log is kept for the retry")
+  assert.ok(!state.looked[session].open, "and it is not mistaken for a partial read with progress in it")
+  assert.ok(existsSync(logPath), "the log is kept for the retry")
   await cleanup?.()
   await cleanup2?.()
 })
@@ -2023,9 +2036,13 @@ test("a replaced log whose first record cannot be read is still a different log"
   write(replacement)
 
   await fake.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
-  const sent = fake.generated.at(-1).prompt
-  assert.match(sent, /new-command-2/, "the replacement is read from its own start")
-  assert.doesNotMatch(sent, /Steps up to/, "with no claim that any of it was analysed before")
+  const sent = fake.generated.at(-1)
+  assert.ok(
+    sent.records.some((r) => r.input?.command === "new-command-2"),
+    "the replacement is the log that gets read",
+  )
+  assert.match(sent.prompt, /All of it is new/, "from its own start")
+  assert.doesNotMatch(sent.prompt, /Steps up to/, "with no claim that any of it was analysed before")
 
   await cleanup?.()
 })
@@ -2398,7 +2415,10 @@ test("a re-read of a session that did work is analysed even when the new materia
 
   await fake.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
   assert.equal(fake.generated.length, 2, "the new reply is read, not skipped as one quiet exchange")
-  assert.match(fake.generated.at(-1).prompt, /the command does not exist in this repository/)
+  assert.ok(
+    fake.generated.at(-1).records.some((r) => /the command does not exist in this repository/.test(r.text ?? "")),
+    "and it is in the log the order points at",
+  )
 
   await cleanup?.()
 })
@@ -2517,9 +2537,9 @@ test("a session picked up after its log was pruned is read from the start of its
 
   await turn(fake, "ses_back", 2, "second-command")
   await fake.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
-  const read = fake.generated.at(-1).prompt
-  assert.match(read, /second-command/, "the new log is read")
-  assert.doesNotMatch(read, /were analysed before/, "from its own start, not from the old file's mark")
+  const read = fake.generated.at(-1)
+  assert.ok(read.records.some((r) => r.input?.command === "second-command"), "the new log is read")
+  assert.doesNotMatch(read.prompt, /were analysed before/, "from its own start, not from the old file's mark")
 
   await cleanup?.()
 })
@@ -2554,9 +2574,9 @@ test("two instances on one project neither lose nor prune each other's work", as
 
   await turn(a, "ses_on_a", 2, "second-command")
   await b.commands.get("retro").execute({ sessionID: "ses_on_b", prompt: { text: "" } })
-  const second = b.generated.at(-1).prompt
-  assert.match(second, /second-command/, "what A wrote next is read")
-  assert.match(second, /were analysed before/, "from where B's first read stopped")
+  const second = b.generated.at(-1)
+  assert.ok(second.records.some((r) => r.input?.command === "second-command"), "what A wrote next is read")
+  assert.match(second.prompt, /were analysed before/, "from where B's first read stopped")
 
   // A saves its own view of the state; B's marks survive it.
   await a.hooks.get("session.prompt")({ sessionID: "ses_other", messageID: "x", prompt: { text: "hi" } })

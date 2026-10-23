@@ -6,8 +6,6 @@ export const DEFAULTS = {
   prompts: "prompts",
   /** Per-entry cap on captured tool output. Head and tail are kept, the middle is elided. */
   maxOutput: 8000,
-  /** Characters one work order may hold: what one subagent is asked to read, so its cost. */
-  maxInput: 32_000,
   /** Lower bound between heartbeat writes. See AGENTS.md "Three timestamps". */
   heartbeatMs: 60_000,
   /**
@@ -55,7 +53,6 @@ export function resolveConfig(ctx) {
     state: join(dir, "state.json"),
     pluginLog: join(dir, "plugin.log"),
     maxOutput: options.maxOutput ?? DEFAULTS.maxOutput,
-    maxInput: options.maxInput ?? DEFAULTS.maxInput,
     heartbeatMs: options.heartbeatMs ?? DEFAULTS.heartbeatMs,
     halfLife: options.halfLife ?? DEFAULTS.halfLife,
     keepSessions: options.keepSessions ?? DEFAULTS.keepSessions,

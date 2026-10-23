@@ -365,7 +365,11 @@ export default {
           input: RECORD_INPUT,
           output: DECIDE_OUTPUT,
           execute: async (input) => {
-            const result = applyRecord({ session: String(input?.session ?? ""), lessons: input?.lessons })
+            const result = applyRecord({
+              session: String(input?.session ?? ""),
+              lessons: input?.lessons,
+              through: Number(input?.through),
+            })
             return { output: { ok: result.ok, detail: result.detail }, content: result.detail }
           },
         })
@@ -922,10 +926,12 @@ export default {
         analysedUpTo: mark.n,
         concluded: concludedFrom(sessionID),
         session: sessionID,
+        // Absolute, because the subagent's working directory is not ours to assume.
+        logPath: log.path(sessionID),
+        lastN,
         prompts,
         store,
         state,
-        maxInput: config.maxInput,
       })
 
       if (composed.skipped) {
@@ -938,18 +944,6 @@ export default {
       }
       if (!composed.ok) return failed(composed.detail)
 
-      // Only as far as the excerpt actually goes. One that cannot reach past the mark —
-      // the re-sent prompts filling the budget before the first gap — covers nothing new,
-      // and asking for it would record the whole file as read while the new material never
-      // reached anyone.
-      const through = Math.min(composed.through ?? lastN, lastN)
-      if (lastN > mark.n && through <= mark.n) {
-        return failed(
-          `the excerpt could not reach past step ${mark.n} of the log within maxInput, so ` +
-            "nothing new could be asked for — raise maxInput or shorten the prompts",
-        )
-      }
-
       try {
         mkdirSync(config.work, { recursive: true })
         writeFileSync(workPath(sessionID), composed.text)
@@ -957,7 +951,10 @@ export default {
         onError("extract.order", err)
         return failed(`the work order could not be written: ${err?.message ?? err}`)
       }
-      const order = { id: identity, size: readSize, through, lastN, n: mark.n, elided: composed.elided }
+      // The order asks for everything up to `lastN`. How far the reader actually got is the
+      // reader's to report (`through` on the record); unreported, the order was answered in
+      // full, which is what the contract asks for.
+      const order = { id: identity, size: readSize, lastN, n: mark.n }
       state.issue(sessionID, order)
       return { ok: true, order: { session: sessionID, ...order } }
     }
@@ -1012,7 +1009,7 @@ export default {
      * A subagent's answer, through `retro_record`: applied to the order it answers, and to
      * nothing else (analysis.md, "Record").
      */
-    function applyRecord({ session, lessons }) {
+    function applyRecord({ session, lessons, through }) {
       /**
        * An answer that arrives after its order was settled as unanswered is still accepted —
        * the reading happened, only the reporting was late. That is what makes calling
@@ -1037,14 +1034,34 @@ export default {
         removeWork(session)
         return { ok: false, detail: `the log of \`${session}\` was replaced since its order was written; it will be asked for again.` }
       }
-      const answered = recordAnswer({ session, lessons, store, state, fingerprint, elided: order.elided })
-      // `open` is the other half of the coverage rule: stopping at the gap is only useful if
-      // the next command reads on from there without waiting for the log to grow.
-      const open = order.through < order.lastN && order.through > order.n
+      /**
+       * How far the log was read. The order asked for all of it, so that is the default;
+       * a reader that got only part way says so with `through`, and the rest stays owed.
+       *
+       * Reported, not measured — the plugin no longer renders what is read, so it cannot
+       * know. It is clamped to the order's own range: a `through` past `lastN` would mark
+       * steps as read that were not in the log when the order was written, and one at or
+       * below the old mark says nothing new was read at all, which is a failed attempt
+       * rather than a settled log.
+       */
+      const claimed = Number.isFinite(through) ? Math.min(Math.trunc(through), order.lastN) : order.lastN
+      if (claimed <= order.n && order.lastN > order.n) {
+        const detail =
+          `\`${session}\` was read only as far as step ${claimed}, which is no further than the ` +
+          `${order.n} already analysed. Nothing was recorded; the log will be asked about again.`
+        fail(session, order, "the analysis reported reading nothing new")
+        state.close(session, "unanswered")
+        removeWork(session)
+        return { ok: false, detail }
+      }
+      const partial = claimed < order.lastN
+      const answered = recordAnswer({ session, lessons, store, state, fingerprint, partial })
+      // `open` is what makes a partial read useful: the next command reads on from the mark
+      // without waiting for the log to grow.
       state.look(session, {
         size: order.size,
-        ...(order.through > 0 ? { n: order.through } : {}),
-        open,
+        ...(claimed > 0 ? { n: claimed } : {}),
+        open: partial,
         failed: false,
         attempts: 0,
         id: order.id,
@@ -1052,7 +1069,7 @@ export default {
       const result = {
         ok: true,
         detail: answered.detail + (late ? " (recorded after the round was closed; the failed attempt is given back)" : ""),
-        through: order.through,
+        through: claimed,
       }
       state.markExtracted(session, { ok: true, detail: answered.detail })
       state.close(session, "answered")

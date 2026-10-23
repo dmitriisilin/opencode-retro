@@ -39,7 +39,7 @@ rendered as one.
   as far as that analysis *covered* (see analysis.md). The next read starts after it.
 - `size` — the largest byte count already sent, success or failure. A log no larger than
   this has nothing new in it.
-- `open` — a successful analysis covered a prefix and left a gap. Owed now.
+- `open` — the analysis reported reading only part of the log. Owed now.
 - `failed` — the last read of this log failed. Owed now, while attempts are left.
 - `attempts` — failed reads of the log at this `size`. Growth resets it: new material has
   not failed anywhere yet.
@@ -89,8 +89,8 @@ keeps everything.
   `a working session is not read again until its log has grown`
 - The plugin's own hand-over does not make a log owed.
   `the plugin's own hand-over does not make a log owed`
-- An excerpt is owed now: read again without growth, and not pruned first.
-  `an excerpted log is read again without growing, and is not pruned first`
+- A log read only in part is owed now: read again without growth, and not pruned first.
+  `a log read in part is read again without growing, and is not pruned first`
 - A failed read is owed: tried again on the next command, up to three times at one size.
   `a failed read is owed, and tried again on the next command`
 - Nothing is marked as read until the read completes. A read that never returns leaves the

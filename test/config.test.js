@@ -39,7 +39,6 @@ test("an absolute dir or prompt path is used as given", () => {
 test("every settable option is carried through, and omitted ones take the default", () => {
   const options = {
     maxOutput: 100,
-    maxInput: 1234,
     heartbeatMs: 5,
     halfLife: 3,
     keepSessions: true,
@@ -51,7 +50,6 @@ test("every settable option is carried through, and omitted ones take the defaul
 
   const plain = resolveConfig({ location, options: {} })
   assert.equal(plain.maxOutput, DEFAULTS.maxOutput)
-  assert.equal(plain.maxInput, DEFAULTS.maxInput)
   assert.equal(plain.heartbeatMs, DEFAULTS.heartbeatMs)
   assert.equal(plain.halfLife, DEFAULTS.halfLife)
   assert.equal(plain.keepSessions, DEFAULTS.keepSessions)
