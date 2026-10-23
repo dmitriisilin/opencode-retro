@@ -184,7 +184,7 @@ test("a prompt, a tool call and a session end produce a lesson, then /retro hand
   // The model is chosen when the analysis session is created, not per call: session.generate
   // takes no model. And the session must not be left behind in the user's list.
   assert.equal(fresh.sessions.length, 1)
-  assert.deepEqual(fresh.sessions[0].model, MODEL)
+  assert.deepEqual(fresh.sessions[0].model, { ...MODEL, variant: "none" }, "reasoning off, see the variant tests")
   assert.equal(fresh.live.size, 0, "the analysis session was removed afterwards")
 
   const [delivered] = fresh.synthetic
@@ -227,7 +227,7 @@ test("with no model configured, the workspace default is used", async () => {
   await fresh.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
 
   assert.equal(fresh.generated.length, 1, "the analysis ran without options.model")
-  assert.deepEqual(fresh.sessions[0].model, { providerID: "fake", id: "fake-model" }, "from ctx.model.default()")
+  assert.deepEqual(fresh.sessions[0].model, { providerID: "fake", id: "fake-model", variant: "none" }, "from ctx.model.default()")
   assert.doesNotMatch(fresh.synthetic[0].text, /could not analyse/, "and did not report a failure")
 
   await cleanup?.()
@@ -347,7 +347,7 @@ test("a log survives while a lesson cites it, and goes once that lesson is decid
   await cleanup2?.()
 })
 
-test("autoExtract analyses at the start of the next session, and is off by default", async () => {
+test("asyncExtract analyses at the start of the next session, and is off by default", async () => {
   const directory = sandbox()
   const session = "ses_auto"
 
@@ -376,11 +376,11 @@ test("autoExtract analyses at the start of the next session, and is off by defau
   await quiet.hooks.get("session.prompt")({ sessionID: "ses_later", messageID: "m2", prompt: { text: "next" } })
   assert.equal(quiet.generated.length, 0, "by default a new session analyses nothing")
 
-  const on = fakeOpenCode({ directory, options: { model: MODEL, autoExtract: true } })
+  const on = fakeOpenCode({ directory, options: { model: MODEL, asyncExtract: true } })
   const stop3 = await plugin.setup(on.ctx)
   await on.hooks.get("session.prompt")({ sessionID: "ses_later2", messageID: "m3", prompt: { text: "next" } })
   await new Promise((r) => setTimeout(r, 50)) // the drain is deliberately not awaited
-  assert.equal(on.generated.length, 1, "with autoExtract the queue is analysed unprompted")
+  assert.equal(on.generated.length, 1, "with asyncExtract the queue is analysed unprompted")
 
   await stop?.()
   await stop2?.()
@@ -1327,7 +1327,7 @@ test("the model the user is actually working with is the one used for analysis",
   await fake.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
 
   assert.equal(fake.generated.length, 1)
-  assert.deepEqual(fake.sessions[0].model, { providerID: "anthropic", id: "claude-sonnet" })
+  assert.deepEqual(fake.sessions[0].model, { providerID: "anthropic", id: "claude-sonnet", variant: "none" })
   await cleanup?.()
 })
 
@@ -2811,3 +2811,42 @@ test("a plugin reloaded in the middle of a turn does not call the prompt hook de
 
   await stopAfter?.()
 })
+
+test("the analysis asks for the model's no-reasoning variant", async () => {
+  // Measured on deepseek-flash through OpenCode, the same 40 KB prompt: by default 38 s and an
+  // empty reply — the reasoning used the whole output and no answer came; with `none`, 2 s and
+  // a valid answer. The "empty reply" this plugin had documented as a model quirk was this.
+  const directory = sandbox()
+  const fake = fakeOpenCode({ directory, options: { model: MODEL }, variants: { [MODEL.id]: ["none", "high"] } })
+  const cleanup = await plugin.setup(fake.ctx)
+  await workSession(fake, "ses_a")
+  await fake.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
+  assert.equal(fake.generated.length, 1)
+  assert.equal(fake.generated[0].variant, "none")
+  await cleanup?.()
+})
+
+test("a model without that variant is analysed as it is, and not asked again", async () => {
+  const directory = sandbox()
+  const fake = fakeOpenCode({ directory, options: { model: MODEL }, variants: { [MODEL.id]: [] } })
+  const cleanup = await plugin.setup(fake.ctx)
+  await workSession(fake, "ses_a")
+  await workSession(fake, "ses_b")
+  await fake.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
+  assert.deepEqual(fake.generated.map((g) => g.variant), [null, null], "both analysed, on the default variant")
+  assert.equal(fake.sessions.filter((s) => s.model?.variant === "none").length, 1, "asked once, then remembered")
+  assert.equal(fake.live.size, 0, "and no session was left behind by the refused attempt")
+  await cleanup?.()
+})
+
+test("a variant named in options.model is used as given", async () => {
+  // Someone who wants the model to reason over their logs can say so, and is not overruled.
+  const directory = sandbox()
+  const fake = fakeOpenCode({ directory, options: { model: { ...MODEL, variant: "high" } }, variants: { [MODEL.id]: ["none", "high"] } })
+  const cleanup = await plugin.setup(fake.ctx)
+  await workSession(fake, "ses_a")
+  await fake.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
+  assert.equal(fake.generated[0].variant, "high")
+  await cleanup?.()
+})
+

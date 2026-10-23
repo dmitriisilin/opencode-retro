@@ -9,7 +9,7 @@ test("defaults are the documented layout, in one place", () => {
   assert.equal(DEFAULTS.dir, ".retro")
   assert.equal(DEFAULTS.prompts, "prompts")
   assert.equal(DEFAULTS.keepSessions, false, "machine state is not kept unless asked")
-  assert.equal(DEFAULTS.autoExtract, false, "nothing spends money unprompted")
+  assert.equal(DEFAULTS.asyncExtract, false, "nothing spends money unprompted")
   assert.equal(DEFAULTS.extractLimit, Infinity, "a half-analysed backlog only moves the work")
 })
 
@@ -46,7 +46,7 @@ test("every settable option is carried through, and omitted ones take the defaul
     extractTimeoutMs: 250,
     proposeLimit: 2,
     extractLimit: 4,
-    autoExtract: true,
+    asyncExtract: true,
   }
   const got = resolveConfig({ location, options })
   for (const [key, value] of Object.entries(options)) assert.deepEqual(got[key], value, key)

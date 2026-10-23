@@ -21,10 +21,7 @@ projection may trim it again.
 **Budget.** The most characters one analysis may send, `maxInput`. The log gets what is
 left after the prompt, the contract and the lesson lists, and the composed input never
 exceeds it except when the fixed part alone does (see the floor below). It is a bound on
-cost, **not** a guarantee of an answer: on the model this was built against, an empty reply
-is more likely the larger the input, and has been observed at 40,254 characters, at 31,993
-and at 19,181 — the same content answered at 26,034 and 32,034 on other occasions. No
-number is safe; the empty reply is handled by the retry, not by the budget. Those fixed parts are not negotiable: if
+cost, not on the answer. Those fixed parts are not negotiable: if
 they alone exceed `maxInput`, no request can honour it, so a small (2,000-character) log
 section is still sent rather than none, and the request goes over the budget by that floor.
 The guarantee therefore applies whenever the fixed part fits, which is every normal run.
@@ -54,16 +51,28 @@ It counts attempts rather than successes, because a failed attempt is what costs
 call; a log skipped as one exchange never reaches the model, so it does not spend one.
 Whatever is left stays owed and is named in the command's message.
 
-**Auto-extraction (`autoExtract`).** Off by default. Nothing is analysed without a command.
-When on, the next owed log is analysed at the next prompt instead — one per prompt, so a
-backlog of four costs four prompts and never an unbounded spend in a hook. Only one of
-these runs at a time: a prompt that arrives while an analysis is in flight does not start a
-second.
+**Async extraction (`asyncExtract`).** Off by default. Nothing is analysed without a command.
+When on, the next owed log is analysed in the background when a prompt arrives: the prompt
+hook starts the analysis and returns at once, so the session's start is not held, and the
+analysis runs in a session of its own, outside the user's context. One per prompt, so a
+backlog of four costs four prompts and never an unbounded spend in a hook. Only one of these
+runs at a time: a prompt that arrives while an analysis is in flight does not start a second.
+What it shares with the work is the provider: two requests to the model at once.
 
-**Empty reply.** This model's way of declining an input, more often the larger it is. It
-is answered by halving the budget and asking again, and once more at a quarter if the
-second reply is empty too — at most three calls, each changing the one thing that
-correlates with the failure. A log that cannot be answered at a quarter of the budget is
+**Variant.** The analysis asks for the model's no-reasoning variant, `none`, when the model
+has one, unless `options.model.variant` names another. It is one structured answer, and a
+reasoning model left to think spent its whole output on reasoning and returned no answer:
+on `deepseek-flash`, through OpenCode, the same 40 KB prompt came back empty after 38 s by
+default and valid after 2 s with `none` — directly against the API, 90 to 272 s and 14 to
+45 thousand reasoning tokens, against 3 to 4 s and about 400 tokens. A model with no such
+variant fails loudly before anything is paid for; it is then analysed on its default, and
+not asked again.
+
+**Empty reply.** A reply with no text, no error. It was taken for the model declining
+large inputs, and halving the input was built for that; the cause was reasoning (see
+Variant), and the retry stays as a cheap second chance. It is answered by halving the
+budget and asking again, and once more at a quarter if the second reply is empty too — at
+most three calls. A log that cannot be answered at a quarter of the budget is
 reported as a failure with the model's own silence as the reason, and the attempt counts.
 A caller with no finite budget has nothing to halve, so there an empty reply is reported
 rather than retried.
@@ -98,6 +107,11 @@ proves nothing.
 - A projection that covers no step past the mark is a failed read: it is reported, never
   marked as read, and charged against the log's attempts.
   `an excerpt that cannot reach past the mark is reported, not settled as done`
+- The analysis runs on the model's no-reasoning variant when it has one, on the default when
+  it has none, and on the variant `options.model` names when it names one.
+  `the analysis asks for the model's no-reasoning variant`
+  `a model without that variant is analysed as it is, and not asked again`
+  `a variant named in options.model is used as given`
 - An empty reply is answered by asking again with less, at half and then at a quarter,
   and never more than that.
   `an empty reply is answered by asking again with less, not by asking again`
@@ -117,9 +131,9 @@ proves nothing.
   `extractLimit caps what one command analyses and leaves the rest owed`
   `the per-command log limit is unlimited by default and can be capped`
   `a log skipped as one exchange does not spend the command's limit`
-- With `autoExtract` the next owed log is analysed at the next prompt; without it, only
+- With `asyncExtract` the next owed log is analysed at the next prompt; without it, only
   a command analyses anything.
-  `autoExtract analyses at the start of the next session, and is off by default`
+  `asyncExtract analyses at the start of the next session, and is off by default`
 - The model is `options.model` when set, otherwise the one the user's own session is
   running on (learned from primary model requests — a subagent's or the analysis session's
   do not set it), otherwise the workspace default; with none of them the analysis refuses

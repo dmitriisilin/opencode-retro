@@ -206,7 +206,7 @@ export function assess(session) {
       detail: "this session's log is waiting; `/retro` analyses it",
       meaning:
         "analysis is not automatic — it costs a model call, so it happens when you ask. " +
-        "`/retro` analyses everything waiting, in one go. `options.autoExtract` moves it to " +
+        "`/retro` analyses everything waiting, in one go. `options.asyncExtract` moves it to " +
         "the start of the next session instead.",
     })
   } else if (x.ok && x.skipped) {

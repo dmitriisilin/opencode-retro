@@ -21,7 +21,7 @@ a constant in source.
 | `extractTimeoutMs` | how long one analysis may take before it is given up on |
 | `proposeLimit` | lessons in one `/retro all` |
 | `extractLimit` | attempts one `/retro` makes; unlimited by default |
-| `autoExtract` | analyse at the start of the next session instead of when asked |
+| `asyncExtract` | analyse at the start of the next session instead of when asked |
 
 **The layout.** Everything the plugin writes is under `dir`, in plain text: the prompts,
 `sessions/`, `lessons/`, `archive/`, `selfcheck.md`, `state.json`, `plugin.log`, and the

@@ -52,6 +52,18 @@ export const VERSION = (() => {
  * The API facts this relies on are all verified against OpenCode 2.0.32; see AGENTS.md
  * "OpenCode v2 plugin API" and fixtures/payloads/.
  */
+/**
+ * The variant asked for when analysing, if the model has it: reasoning off.
+ *
+ * The analysis is one structured answer about a log, and a reasoning model left to think
+ * spent its whole output on thinking and returned no answer at all. Measured on
+ * `deepseek/deepseek-flash` with the same 40 KB prompt: by default, 38 s through OpenCode and
+ * an empty reply (directly against the API, 90–272 s and 14–45 thousand reasoning tokens);
+ * with `none`, 2–4 s, a valid answer six times in six, about 400 tokens. The "empty reply"
+ * that AGENTS.md Gotcha 17 once blamed on the size of the input was this.
+ */
+const QUIET_VARIANT = "none"
+
 /** How long a log must go unwritten before it may be pruned (session.md, "Quiet"). */
 const QUIET_MS = 7 * 24 * 60 * 60 * 1000
 
@@ -109,6 +121,8 @@ export default {
     const lastVerified = new Map()
     let lastBeat = 0
     let draining = false
+    /** Models that have no `none` variant, so the analysis stops asking for one. */
+    const noQuietVariant = new Set()
     /** Learned from session.model.request; see resolveModel. */
     let lastSessionModel = null
     /**
@@ -249,9 +263,9 @@ export default {
       ingest.prompt(p)
       observe(rootOf(p.sessionID))
       // Analysis is what `/retro` does, not something a new session triggers: a model call
-      // costs money and nothing here spends it unprompted. `autoExtract` restores the old
+      // costs money and nothing here spends it unprompted. `asyncExtract` restores the old
       // behaviour for anyone who wants lessons ready before they ask.
-      if (config.autoExtract) void drainOne(p.sessionID)
+      if (config.asyncExtract) void drainOne(p.sessionID)
     })
 
     // The model the user actually works with, so extraction can default to it instead of
@@ -483,10 +497,26 @@ export default {
      * no history — the clean context extraction needs.
      */
     async function analyse({ prompt, model }) {
+      const ref = model?.providerID && model?.id ? { providerID: model.providerID, id: model.id } : null
+      const key = ref ? `${ref.providerID}/${ref.id}` : null
+      // The model's no-reasoning variant, unless the user named one or this model has none.
+      const chosen = model?.variant ?? (ref && !noQuietVariant.has(key) ? QUIET_VARIANT : null)
+      try {
+        return await generateOnce(prompt, ref, chosen)
+      } catch (err) {
+        if (!chosen || model?.variant || !/variant unavailable/i.test(String(err?.message ?? err))) throw err
+        // No such variant on this model: OpenCode says so loudly, before any call is paid
+        // for. Remembered, so the next analysis does not ask again.
+        noQuietVariant.add(key)
+        return await generateOnce(prompt, ref, null)
+      }
+    }
+
+    async function generateOnce(prompt, ref, variant) {
       const session = await ctx.session.create({
         title: "opencode-retro analysis",
         location: ctx.location,
-        ...(model?.providerID && model?.id ? { model: { providerID: model.providerID, id: model.id } } : {}),
+        ...(ref ? { model: { ...ref, ...(variant ? { variant } : {}) } } : {}),
       })
       try {
         return await ctx.session.generate({ sessionID: session.id, prompt })
@@ -816,7 +846,7 @@ export default {
     }
 
     /**
-     * `autoExtract`: one owed log per prompt, never the session that was just prompted, and
+     * `asyncExtract`: one owed log per prompt, never the session that was just prompted, and
      * one at a time — a prompt that arrives while an analysis is in flight does not start a
      * second.
      */

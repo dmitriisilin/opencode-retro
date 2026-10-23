@@ -6,7 +6,7 @@
  * did. `reply` may be a string or a function, and the function may return a promise — which
  * is how a model that hangs mid-answer is simulated.
  */
-export function fakeOpenCode({ options = {}, directory, reply, defaultReply = "" } = {}) {
+export function fakeOpenCode({ options = {}, directory, reply, defaultReply = "", variants = null } = {}) {
   const commands = new Map()
   const tools = new Map()
   const hooks = new Map()
@@ -14,6 +14,7 @@ export function fakeOpenCode({ options = {}, directory, reply, defaultReply = ""
   const generated = []
   const live = new Set()
   const sessions = []
+  const byId = new Map()
   let created = 0
 
   // A push-driven event stream, so the end-of-session trigger can actually be fired.
@@ -45,11 +46,17 @@ export function fakeOpenCode({ options = {}, directory, reply, defaultReply = ""
       create: async (input) => {
         const session = { id: `ses_analysis_${++created}`, ...input }
         sessions.push(input)
+        byId.set(session.id, input)
         live.add(session.id)
         return session
       },
       generate: async (input) => {
-        generated.push(input)
+        // As OpenCode does: a variant the model does not have fails at generate, loudly.
+        const model = byId.get(input.sessionID)?.model
+        if (model?.variant && variants && !(variants[model.id] ?? []).includes(model.variant)) {
+          throw new Error(`Variant unavailable for ${model.providerID}/${model.id}: ${model.variant}`)
+        }
+        generated.push({ ...input, variant: model?.variant ?? null })
         // `reply` may be a function, so a test can answer one log badly and another well.
         return { text: typeof reply === "function" ? await reply(input) : (reply ?? defaultReply) }
       },

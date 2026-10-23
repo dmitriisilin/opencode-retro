@@ -41,9 +41,9 @@ Sessions that have not finished are read as well, including the one the command 
 
 A session is skipped without a call only when it cannot contain evidence of anything: one instruction, one answer, nothing done. A conversation with no tool calls at all is still analysed, because that is exactly where a wrong instruction file shows up — a wrong answer and a correction, with nothing executed.
 
-`options.autoExtract` moves the analysis of a finished session to the start of the next session instead, for anyone who would rather have lessons ready before asking.
+`options.asyncExtract` analyses a finished session in the background when the next session starts, instead of waiting for `/retro`, for anyone who would rather have lessons ready before asking. The new session is not held up: the analysis is started and left to run in a session of its own, outside the working context, one log per prompt.
 
-By default the analysis uses the model your own sessions run on, falling back to the workspace default. This works on OpenCode's free-tier models too, so nothing needs configuring. `options.model` pins a different one, which is worth doing if the analysis should run somewhere cheaper than the work — or if it keeps coming back empty. Some models answer a long log with nothing at all; the plugin records that as a failure and retries on the next `/retro`, and `selfcheck.md` names it, but a model that does it often is worth replacing for this one job.
+By default the analysis uses the model the recorded sessions run on, falling back to the workspace default, and asks for that model's no-reasoning variant (`none`) when it has one. The analysis is one structured answer, and a reasoning model left to think can spend its whole output on reasoning and return no answer at all. This works on OpenCode's free-tier models too, so nothing needs configuring. `options.model` pins a different model, which is worth doing if the analysis should run somewhere cheaper than the work, and `options.model.variant` names the variant to use instead.
 
 That call receives a compressed view of the session. Tool output is trimmed hard; prompts and replies are kept in full up to a few thousand characters each. It answers one question:
 
@@ -174,9 +174,9 @@ OpenCode fetches the plugin from npm; name it in `opencode.json`:
 }
 ```
 
-`options.model` is optional. Without it the plugin uses the model your sessions run on, falling back to the workspace default. `.retro/selfcheck.md` reports whether an analysis ran, and why it failed if it did not.
+`options.model` is optional. Without it the plugin uses the model the sessions run on, falling back to the workspace default. `.retro/selfcheck.md` reports whether an analysis ran, and why it failed if it did not.
 
-**Check what npm actually has first.** Every version below `0.1.0` is a name placeholder: it loads without error, registers no command, creates no `.retro/`, and reports nothing — so following this snippet before the first real release leaves you with a session that looks normal and a plugin that is not there. If `npm view opencode-retro version` is below `0.1.0`, point `package` at an absolute path to a checkout instead; that is also how you run it while working on the plugin. A relative path leaves session startup hanging without an error, and an exact version can be pinned (`opencode-retro@0.1.0`) once there is one.
+**Check what npm actually has first.** Every version below `0.1.0` is a name placeholder: it loads without error, registers no command, creates no `.retro/`, and reports nothing — so following this snippet before the first real release leaves a session that looks normal and a plugin that is not there. If `npm view opencode-retro version` is below `0.1.0`, point `package` at an absolute path to a checkout instead; that is also how the plugin is run while working on it. A relative path leaves session startup hanging without an error, and an exact version can be pinned (`opencode-retro@0.1.0`) once there is one.
 
 Everything else is optional:
 
@@ -186,11 +186,11 @@ Everything else is optional:
 - `proposeLimit` — lessons in one `/retro all`, default ten.
 - `extractLimit` — logs analysed by one `/retro`, unlimited by default.
 - `maxOutput` — characters of tool output stored in the shadow log per step, default 8000.
-- `maxInput` — characters one analysis may send, default 32000. A long log is trimmed to fit: less tool output first, then whole steps from the middle, each gap saying how many went. This bounds the cost, not the answer: on some models the reply comes back empty rather than as an error, more often the longer the input, so an empty reply is asked again at half the size and then at a quarter. A log that still gets no answer is tried again on the next `/retro`, and `.retro/selfcheck.md` names it as failed.
+- `maxInput` — characters one analysis may send, default 32000. A long log is trimmed to fit: less tool output first, then whole steps from the middle, each gap saying how many went. This bounds the cost. An empty reply is asked again at half the size and then at a quarter; a log that still gets no answer is tried again on the next `/retro`, and `.retro/selfcheck.md` names it as failed.
 - `extractTimeoutMs` — how long one analysis may take before it is given up on, default 90000.
 - `heartbeatMs` — the shortest gap between self-check writes while a session works, default 60000.
 - `keepSessions` — keep every log, including ones nothing cites; off by default.
-- `autoExtract` — analyse at the start of the next session instead of waiting to be asked; off by default.
+- `asyncExtract` — analyse at the start of the next session instead of waiting to be asked; off by default.
 
 ### What appears on disk
 
@@ -208,7 +208,7 @@ Everything the plugin writes stays under `.retro/` in the project, and nowhere e
   selfcheck.md       whether the plugin is working
   state.json
   plugin.log         errors from hooks, commands and background work
-  .gitignore         seeded once, then yours
+  .gitignore         seeded once, then the project's
 ```
 
 A log is removed once three things are true: it has been read to the end, no open lesson cites it, and nothing has been written to it for seven days. A lesson's evidence names a session and a range of steps, and during review the question "what actually happened there?" has to have an answer that is not a summary, so a cited log stays. The seven days are what make removal safe without knowing whether a session is still running: a session that keeps writing keeps its log, and one picked up after a quiet week starts a new log, read from its start. A log nobody has read is never removed, however old. Growth is bounded by the number of open lessons, which is capped, and by a week of sessions, rather than by the age of the project.
@@ -240,7 +240,7 @@ Those checks run on every review and cost nothing: the API surface the plugin de
 ## Requirements
 
 - OpenCode v2, `@opencode/plugin` 2.0.18 or newer. Verified against 2.0.32.
-- Nothing beyond OpenCode itself. The analysis runs on your own model by default; an inexpensive one is enough.
+- Nothing beyond OpenCode itself. The analysis runs on the sessions' own model by default; an inexpensive one is enough.
 - No runtime dependencies.
 
 ## License

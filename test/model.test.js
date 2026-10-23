@@ -130,7 +130,7 @@ function generate(seed, steps) {
   // mostly defers: that is what fills the open set past its cap, a branch the ordinary
   // histories almost never reached.
   const prolific = r() < 0.2
-  const actions = [{ op: "options", maxInput: r() < 0.5 ? 4000 : 32000, writers, autoExtract: r() < 0.25, prolific }]
+  const actions = [{ op: "options", maxInput: r() < 0.5 ? 4000 : 32000, writers, asyncExtract: r() < 0.25, prolific }]
   const delegations = []
   let next = 0
   for (let i = 0; i < steps; i++) {
@@ -250,7 +250,7 @@ function createWorld() {
     if (world.marker) world.saw.add("an edited prompt reached the model")
     if (/elided to fit the budget/.test(prompt)) world.saw.add("an excerpt was sent")
     if (/Steps up to \d+ of this session were analysed before/.test(prompt)) world.saw.add("a re-read from the mark")
-    if (world.inPrompt) world.saw.add("autoExtract analysed from a prompt hook")
+    if (world.inPrompt) world.saw.add("asyncExtract analysed from a prompt hook")
     if (world.mode === "hang") return new Promise(() => {})
     if (world.mode === "empty") return ""
     if (world.mode === "prose") return "I think the session went fine overall."
@@ -392,7 +392,7 @@ async function act(world, action) {
   switch (action.op) {
     case "options":
       world.options.maxInput = action.maxInput
-      world.options.autoExtract = Boolean(action.autoExtract)
+      world.options.asyncExtract = Boolean(action.asyncExtract)
       world.prolific = Boolean(action.prolific)
       world.writers = action.writers ?? 1
       return
@@ -1006,13 +1006,13 @@ const FOUND = {
     { op: "retro", invoker: "ses_review", all: false },
   ],
   "a crash mid-append loses only its own half-record, not the prompt after it": [
-    { op: "options", maxInput: 32000, writers: 1, autoExtract: false, prolific: false },
+    { op: "options", maxInput: 32000, writers: 1, asyncExtract: false, prolific: false },
     { op: "tool", s: "ses_c", w: 0, exit: 0, size: 374 },
     { op: "torn", s: "ses_c" },
     { op: "prompt", s: "ses_c", w: 0 },
   ],
   "a lesson file broken by hand is left as the user left it": [
-    { op: "options", maxInput: 4000, writers: 1, autoExtract: false, prolific: true },
+    { op: "options", maxInput: 4000, writers: 1, asyncExtract: false, prolific: true },
     { op: "prompt", s: "ses_c", w: 0 },
     { op: "tool", s: "ses_a", w: 0, exit: 0, size: 613 },
     { op: "crash", invoker: "ses_review", w: 0 },

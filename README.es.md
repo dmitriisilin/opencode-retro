@@ -1,4 +1,4 @@
-<!-- translated-from: README.en.md@f75a2b2a6cd3 -->
+<!-- translated-from: README.en.md@5225720a2d78 -->
 # opencode-retro
 
 [Русский](README.md) | [English](README.en.md) | [简体中文](README.zh-CN.md) | **Español** | [日本語](README.ja.md)
@@ -44,9 +44,9 @@ Las sesiones que aún no han terminado también se leen, incluida aquella en la 
 
 Solo se omite sin llamada la sesión que no puede contener evidencia de nada: una instrucción, una respuesta, nada hecho. Una conversación sin ninguna llamada a herramientas sí se analiza, porque es justo ahí donde se manifiesta un archivo de instrucciones equivocado: una respuesta errónea y una corrección, sin nada ejecutado.
 
-`options.autoExtract` traslada el análisis de una sesión terminada al inicio de la sesión siguiente, para quien prefiera tener las lecciones listas antes de pedirlas.
+`options.asyncExtract` analiza en segundo plano una sesión terminada cuando empieza la siguiente, en vez de esperar a `/retro`, para quien prefiera tener las lecciones listas antes de pedirlas. La sesión nueva no se retrasa: el análisis se lanza y sigue por su cuenta en una sesión propia, fuera del contexto de trabajo, un log por prompt.
 
-Por omisión el análisis usa el modelo con el que se ejecutan tus propias sesiones y, si todavía no lo ha visto, el modelo por omisión del espacio de trabajo. Esto funciona también con los modelos de la capa gratuita de OpenCode, así que no hace falta configurar nada. `options.model` fija otro, lo que conviene si el análisis debe ejecutarse en algo más barato que el trabajo, o si vuelve vacío una y otra vez. Algunos modelos responden a un log largo con nada en absoluto; el plugin lo registra como un fallo y lo reintenta en el siguiente `/retro`, y `selfcheck.md` lo señala, pero un modelo que lo hace a menudo conviene sustituirlo para esta tarea.
+Por omisión el análisis usa el modelo con el que se ejecutan las sesiones registradas y, si todavía no lo ha visto, el modelo por omisión del espacio de trabajo, y le pide su variante sin razonamiento (`none`) cuando la tiene. El análisis es una única respuesta estructurada, y un modelo de razonamiento al que se deja pensar puede gastar toda su salida en razonar y no devolver respuesta alguna. Esto funciona también con los modelos de la capa gratuita de OpenCode, así que no hace falta configurar nada. `options.model` fija otro modelo, lo que conviene si el análisis debe ejecutarse en algo más barato que el trabajo, y `options.model.variant` indica la variante que usar en su lugar.
 
 Esa llamada recibe una vista comprimida de la sesión: la salida de las herramientas se recorta mucho y los prompts y las respuestas se conservan completos hasta unos miles de caracteres cada uno. Responde a una sola pregunta:
 
@@ -178,9 +178,9 @@ OpenCode descarga el plugin desde npm; basta con nombrarlo en `opencode.json`:
 }
 ```
 
-`options.model` es opcional. Sin él, el plugin usa el modelo con el que se ejecutan tus sesiones y, si todavía no lo ha visto, recurre al modelo por omisión del espacio de trabajo. `.retro/selfcheck.md` informa de si se ejecutó un análisis y de por qué falló si no lo hizo.
+`options.model` es opcional. Sin él, el plugin usa el modelo con el que se ejecutan las sesiones y, si todavía no lo ha visto, recurre al modelo por omisión del espacio de trabajo. `.retro/selfcheck.md` informa de si se ejecutó un análisis y de por qué falló si no lo hizo.
 
-**Mira primero qué hay realmente en npm.** Toda versión por debajo de `0.1.0` es un reservador de nombre: carga sin error, no registra ningún comando, no crea `.retro/` y no informa de nada. Es decir, seguir este fragmento antes del primer lanzamiento real te deja con una sesión de aspecto normal y un plugin que no está. Si `npm view opencode-retro version` está por debajo de `0.1.0`, apunta `package` a la ruta absoluta de una copia local; así se ejecuta también mientras se trabaja en el propio plugin. Una ruta relativa deja el arranque de la sesión colgado sin dar ningún error, y se puede fijar una versión exacta (`opencode-retro@0.1.0`) cuando haya alguna que fijar.
+**Mira primero qué hay realmente en npm.** Toda versión por debajo de `0.1.0` es un reservador de nombre: carga sin error, no registra ningún comando, no crea `.retro/` y no informa de nada. Es decir, seguir este fragmento antes del primer lanzamiento real deja una sesión de aspecto normal y un plugin que no está. Si `npm view opencode-retro version` está por debajo de `0.1.0`, apunta `package` a la ruta absoluta de una copia local; así se ejecuta también mientras se trabaja en el propio plugin. Una ruta relativa deja el arranque de la sesión colgado sin dar ningún error, y se puede fijar una versión exacta (`opencode-retro@0.1.0`) cuando haya alguna que fijar.
 
 Todo lo demás es opcional:
 
@@ -190,11 +190,11 @@ Todo lo demás es opcional:
 - `proposeLimit` — lecciones en un `/retro all`, por omisión diez.
 - `extractLimit` — logs que analiza un `/retro`, sin límite por omisión.
 - `maxOutput` — caracteres de salida de herramienta que se guardan en el log paralelo por paso, por omisión 8000.
-- `maxInput` — caracteres que puede enviar un análisis, por omisión 32000. Un log largo se recorta para encajar: primero menos salida de herramientas, luego pasos enteros del medio, y cada hueco dice cuántos se fueron. Esto acota el coste, no la respuesta: algunos modelos devuelven una respuesta vacía en lugar de un error, con más frecuencia cuanto más larga es la entrada, así que una respuesta vacía se vuelve a pedir con la mitad del tamaño y luego con un cuarto. Un log que sigue sin respuesta se reintenta en el siguiente `/retro`, y `.retro/selfcheck.md` lo señala como fallido.
+- `maxInput` — caracteres que puede enviar un análisis, por omisión 32000. Un log largo se recorta para encajar: primero menos salida de herramientas, después pasos enteros desde el centro, y cada hueco dice cuántos faltan. Esto acota el coste. Una respuesta vacía se vuelve a pedir a la mitad del tamaño y luego a un cuarto; un log que sigue sin respuesta se reintenta en el siguiente `/retro`, y `.retro/selfcheck.md` lo señala como fallido.
 - `extractTimeoutMs` — cuánto puede tardar un análisis antes de abandonarlo, por omisión 90000.
 - `heartbeatMs` — el intervalo mínimo entre escrituras de la autocomprobación mientras una sesión trabaja, por omisión 60000.
 - `keepSessions` — conservar todos los logs, incluidos los que nadie cita; desactivado por omisión.
-- `autoExtract` — analizar al inicio de la sesión siguiente en vez de esperar a que se pida; desactivado por omisión.
+- `asyncExtract` — analizar al inicio de la sesión siguiente en vez de esperar a que se pida; desactivado por omisión.
 
 ### Qué aparece en disco
 
@@ -212,7 +212,7 @@ Todo lo que el plugin escribe se queda bajo `.retro/` dentro del proyecto, y en 
   selfcheck.md       si el plugin funciona
   state.json
   plugin.log         errores de hooks, comandos y trabajo en segundo plano
-  .gitignore         se siembra una vez y pasa a ser tuyo
+  .gitignore         se siembra una vez y pasa a ser del proyecto
 ```
 
 Un log se elimina cuando se cumplen tres cosas: se ha leído hasta el final, ninguna lección abierta lo cita y nadie ha escrito en él durante siete días. La evidencia de una lección nombra una sesión y un rango de pasos, y durante la revisión la pregunta «¿qué pasó realmente ahí?» tiene que tener una respuesta que no sea un resumen, así que un log citado se queda. Los siete días son lo que hace seguro eliminar sin saber si una sesión sigue en marcha: una sesión que sigue escribiendo conserva su log, y una que se retoma tras una semana en silencio empieza un log nuevo, que se lee desde el principio. Un log que nadie ha leído no se elimina nunca, por antiguo que sea. El crecimiento lo marcan el número de lecciones abiertas, que está acotado, y una semana de sesiones, no la edad del proyecto.
@@ -244,7 +244,7 @@ Esas comprobaciones se ejecutan en cada revisión y no cuestan nada: la superfic
 ## Requisitos
 
 - OpenCode v2, `@opencode/plugin` 2.0.18 o posterior. Verificado contra 2.0.32.
-- Nada más allá de OpenCode. El análisis usa por omisión tu propio modelo; uno económico es suficiente.
+- Nada más allá de OpenCode. El análisis usa por omisión el propio modelo de las sesiones; uno económico es suficiente.
 - Ninguna dependencia en tiempo de ejecución.
 
 ## Licencia

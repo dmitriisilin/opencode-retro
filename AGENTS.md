@@ -296,21 +296,20 @@ plugin needed — and it gets the `sessionID`, so it can drive the review conver
 15. **Nothing tells the user a plugin failed to load.** A bad path, a throwing `setup`, a
    module that does not import — the session just runs without us. Hence "if `selfcheck.md`
    is older than your last session, the plugin is not running".
-17. **An input the model will not answer comes back empty, not refused — and no size is safe.**
-   Measured on `deepseek/deepseek-flash` through `session.create` + `session.generate`: an
-   empty string, with no error, no refusal and no log line, at 40,254 characters, at 31,993
-   and at 19,181; the same content answered at 26,034 and 32,034 on other occasions. The
-   likelihood grows with size and there is no cliff to stay under. For this plugin it is the
-   worst failure shape there is, because long sessions are where the friction lives. So
-   `maxInput` (default 32,000 characters) bounds the *cost*, and the answer is handled by
-   asking again: at half the budget, then at a quarter, at most three calls in all, each one
-   changing the thing that correlates with the failure. A log that is still not answered
-   counts as a failed attempt, keeps its log, is tried on the next `/retro`, and is named in
-   `selfcheck.md` as failed rather than as not analysed. The projection spends its budget in
-   the order that loses least — less tool output, then whole steps from the middle outward,
-   never a prompt or an assistant reply — with each gap saying how many steps went. Found by
-   the extractor failing on a real 146 KB session log, and corrected by a stranger's run
-   that met the empty reply at 31,993 characters, under the number this note once called safe.
+17. **An empty reply was reasoning, not refusal.** Measured on `deepseek/deepseek-flash`
+   through `session.create` + `session.generate`: an empty string, with no error, at 40,254,
+   31,993 and 19,181 characters, while the same content answered at other times. It was
+   read as "the model declines large inputs", `maxInput` and a half-then-quarter retry were
+   built for it, and it was documented as a quirk. The owner asked for it to be dug into
+   instead, and directly against the DeepSeek API the same prompt came back with `content`
+   after 90 to 272 seconds of reasoning — 14 to 45 thousand reasoning tokens for a 400-token
+   answer. Through OpenCode by default: 38 s and an empty reply. With the model's `none`
+   variant (reasoning off): 2 s and a valid answer, six times in six directly. So the
+   analysis asks for `none` when the model has it (`QUIET_VARIANT` in `index.js`), falls back
+   to the default when OpenCode answers "Variant unavailable", and `options.model.variant`
+   overrides it. `session.generate` returns `{ text }` and nothing else — no finish reason,
+   no usage — which is why the cause was invisible from inside the plugin; the probe that
+   found it calls the provider's API directly with the key OpenCode already holds.
 16. **`opencode run "/retro all"` does not run the command.** The text arrives as an
    ordinary prompt and the registered command never fires; the agent in that session reads
    "/retro all" as an instruction and improvises. Observed while dogfooding: the session's
@@ -600,7 +599,7 @@ automatically either way — so there is no value in paying earlier.
   and an empty reply — which is what an over-long input produces rather than an error, see
   Gotcha 17 — is retried once at half that. Without it, the longest sessions were the ones
   that silently produced nothing.
-- **`autoExtract` restores the old behaviour** — analysis at the first prompt of the next
+- **`asyncExtract` restores the old behaviour** — analysis at the first prompt of the next
   session — for anyone who wants lessons ready before asking. It was the default until the
   owner pointed out that it spends money on a schedule the user did not choose.
 

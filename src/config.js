@@ -33,7 +33,7 @@ export const DEFAULTS = {
    * Analyse a finished session at the start of the next one, without being asked. Off:
    * a model call costs money, and nothing else in this plugin spends it unprompted.
    */
-  autoExtract: false,
+  asyncExtract: false,
 }
 
 /**
@@ -71,7 +71,7 @@ export function resolveConfig(ctx) {
     extractTimeoutMs: options.extractTimeoutMs ?? DEFAULTS.extractTimeoutMs,
     proposeLimit: options.proposeLimit ?? DEFAULTS.proposeLimit,
     extractLimit: options.extractLimit ?? DEFAULTS.extractLimit,
-    autoExtract: options.autoExtract ?? DEFAULTS.autoExtract,
+    asyncExtract: options.asyncExtract ?? DEFAULTS.asyncExtract,
   }
 }
 

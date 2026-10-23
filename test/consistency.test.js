@@ -63,7 +63,7 @@ test("the hand-over names the session logs where the plugin actually keeps them"
 
 test("every option the plugin reads is documented, in every language", () => {
   // The other direction of the same drift: extractLimit and heartbeatMs were settable and
-  // undocumented, and autoExtract appeared only in prose.
+  // undocumented, and asyncExtract appeared only in prose.
   const block = read("src/config.js").match(/export const DEFAULTS = \{([\s\S]*?)\n\}/)?.[1] ?? ""
   const declared = new Set([...[...block.matchAll(/^  ([a-zA-Z]+):/gm)].map((m) => m[1]), "model"])
   assert.ok(declared.size >= 10, "config should still be declaring options")
