@@ -122,7 +122,7 @@ test("setup registers the commands and the decision tool, and seeds the prompts"
 
   // Two commands, and that is the whole surface: one lesson, or all of them.
   assert.deepEqual([...fake.commands.keys()].sort(), ["retro", "retro-all"])
-  assert.deepEqual([...fake.tools.keys()], ["retro_decide"])
+  assert.deepEqual([...fake.tools.keys()], ["retro_decide", "retro_record", "retro_propose"])
   assert.ok(fake.hooks.has("session.prompt"))
   assert.ok(fake.hooks.has("tool.execute.before"))
   assert.ok(fake.hooks.has("tool.execute.after"))
@@ -181,54 +181,11 @@ test("a prompt, a tool call and a session end produce a lesson, then /retro hand
   assert.equal(fresh.generated.length, 1, "extraction ran")
   assert.match(fresh.generated[0].prompt, /shorter and straighter/, "through the seeded prompt")
 
-  // The model is chosen when the analysis session is created, not per call: session.generate
-  // takes no model. And the session must not be left behind in the user's list.
-  assert.equal(fresh.sessions.length, 1)
-  assert.deepEqual(fresh.sessions[0].model, { ...MODEL, variant: "none" }, "reasoning off, see the variant tests")
-  assert.equal(fresh.live.size, 0, "the analysis session was removed afterwards")
 
   const [delivered] = fresh.synthetic
   assert.match(delivered.text, /# retro — `lint-skill-no-config`/)
   assert.match(delivered.text, /how to hand this over/, "the lead-in comes from the prompt file")
-  assert.equal(delivered.resume, true, "or the user never sees it")
-
-  await cleanup?.()
-  await cleanup2?.()
-})
-
-test("with no model configured, the workspace default is used", async () => {
-  // This is the bug a live run caught and every other test missed: the resolution chain
-  // existed but was not wired into extraction, and both the unit tests (which pass a model
-  // explicitly) and this file (which configured one) were blind to it.
-  const directory = sandbox()
-  const session = "ses_nomodel"
-  const fake = fakeOpenCode({ directory, options: {} })
-  const cleanup = await plugin.setup(fake.ctx)
-
-  await fake.hooks.get("session.prompt")({ sessionID: session, messageID: "m1", prompt: { text: "do a thing" } })
-  for (const id of ["c1", "c2", "c3"]) {
-    await fake.hooks.get("tool.execute.before")({ sessionID: session, id, tool: "shell", input: { command: "x" } })
-    await fake.hooks.get("tool.execute.after")({
-      sessionID: session,
-      id,
-      tool: "shell",
-      input: { command: "x" },
-      status: "completed",
-      result: { output: { exit: 1, output: "no" }, metadata: { exit: 1 } },
-    })
-  }
-  writeFileSync(
-    join(directory, ".retro", "state.json"),
-    JSON.stringify({ version: 1, rejected: [], extracted: {}, sessions: 1, pending: [{ session, queuedAt: "now", attempts: 0 }] }),
-  )
-
-  const fresh = fakeOpenCode({ directory, options: {} })
-  const cleanup2 = await plugin.setup(fresh.ctx)
-  await fresh.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
-
-  assert.equal(fresh.generated.length, 1, "the analysis ran without options.model")
-  assert.deepEqual(fresh.sessions[0].model, { providerID: "fake", id: "fake-model", variant: "none" }, "from ctx.model.default()")
-  assert.doesNotMatch(fresh.synthetic[0].text, /could not analyse/, "and did not report a failure")
+  assert.equal(fresh.orders[0].resume, true, "the work orders reach the agent, or nobody ever reads them")
 
   await cleanup?.()
   await cleanup2?.()
@@ -347,46 +304,6 @@ test("a log survives while a lesson cites it, and goes once that lesson is decid
   await cleanup2?.()
 })
 
-test("asyncExtract analyses at the start of the next session, and is off by default", async () => {
-  const directory = sandbox()
-  const session = "ses_auto"
-
-  const work = async (fake) => {
-    await fake.hooks.get("session.prompt")({ sessionID: session, messageID: "m1", prompt: { text: "do it" } })
-    await fake.hooks.get("tool.execute.before")({ sessionID: session, id: "c1", tool: "shell", input: { command: "x" } })
-    await fake.hooks.get("tool.execute.after")({
-      sessionID: session,
-      id: "c1",
-      tool: "shell",
-      input: { command: "x" },
-      status: "completed",
-      result: { output: { exit: 1, output: "no" }, metadata: { exit: 1 } },
-    })
-    writeFileSync(
-      join(directory, ".retro", "state.json"),
-      JSON.stringify({ version: 1, rejected: [], extracted: {}, sessions: 1, pending: [{ session, queuedAt: "now", attempts: 0 }] }),
-    )
-  }
-
-  const off = fakeOpenCode({ directory, options: { model: MODEL } })
-  const stop = await plugin.setup(off.ctx)
-  await work(off)
-  const quiet = fakeOpenCode({ directory, options: { model: MODEL } })
-  const stop2 = await plugin.setup(quiet.ctx)
-  await quiet.hooks.get("session.prompt")({ sessionID: "ses_later", messageID: "m2", prompt: { text: "next" } })
-  assert.equal(quiet.generated.length, 0, "by default a new session analyses nothing")
-
-  const on = fakeOpenCode({ directory, options: { model: MODEL, asyncExtract: true } })
-  const stop3 = await plugin.setup(on.ctx)
-  await on.hooks.get("session.prompt")({ sessionID: "ses_later2", messageID: "m3", prompt: { text: "next" } })
-  await new Promise((r) => setTimeout(r, 50)) // the drain is deliberately not awaited
-  assert.equal(on.generated.length, 1, "with asyncExtract the queue is analysed unprompted")
-
-  await stop?.()
-  await stop2?.()
-  await stop3?.()
-})
-
 test("one invocation delivers exactly one lesson, the top of the open set", async () => {
   // One invocation, one lesson. The picker is unit-tested for order; what was never checked
   // is that the command actually hands over one message with one lesson in it when several
@@ -460,32 +377,8 @@ test("a log the model could not answer does not hold up the logs behind it", asy
 
   const [delivered] = fresh.synthetic
   assert.match(delivered.text, /could not analyse `ses_bad`/)
-  assert.match(delivered.text, /the model answered/, "the message says what the model said")
+  assert.match(delivered.text, /no record came back from its analysis/, "the message says what went wrong")
   assert.match(delivered.text, /lint-skill-no-config/, "and the lesson from the log that worked is still delivered")
-
-  await cleanup?.()
-  await cleanup2?.()
-})
-
-test("a reply that could not be read is kept, because the analysis session is transient", async () => {
-  const directory = sandbox()
-  const fake = fakeOpenCode({ directory, options: { model: MODEL } })
-  const cleanup = await plugin.setup(fake.ctx)
-
-  await workSession(fake, "ses_bad")
-  queue(directory, ["ses_bad"])
-
-  const fresh = fakeOpenCode({
-    directory,
-    options: { model: MODEL },
-    reply: "Sure! Here are the two problems I found:\n\n1. the lint skill",
-  })
-  const cleanup2 = await plugin.setup(fresh.ctx)
-  await fresh.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
-
-  const pluginLog = readFileSync(join(directory, ".retro", "plugin.log"), "utf8")
-  assert.match(pluginLog, /extract\.ses_bad/, "the failure names the log")
-  assert.match(pluginLog, /the lint skill/, "and the model's own words are in it")
 
   await cleanup?.()
   await cleanup2?.()
@@ -1304,57 +1197,6 @@ test("a delegation inside a delegation is folded into the root when the links ar
   await cleanup?.()
 })
 
-test("the model the user is actually working with is the one used for analysis", async () => {
-  // The middle rung of resolveModel. It existed and was untested: the suite covered a
-  // pinned `options.model` and the workspace default, and nothing in between.
-  const directory = sandbox()
-  const session = "ses_work"
-  mkdirSync(join(directory, ".retro"), { recursive: true })
-  writeFileSync(
-    join(directory, ".retro", "state.json"),
-    JSON.stringify({ version: 1, rejected: [], extracted: {}, sessions: 1, pending: [{ session, queuedAt: "now", attempts: 0 }] }),
-  )
-
-  const fake = fakeOpenCode({ directory, options: {} })
-  const cleanup = await plugin.setup(fake.ctx)
-  await fake.hooks.get("session.model.request")({
-    kind: "primary",
-    sessionID: "ses_current",
-    model: { providerID: "anthropic", id: "claude-sonnet" },
-  })
-  await workSession(fake, session)
-  // The queue above is already loaded; this only writes the log the command will read.
-  await fake.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
-
-  assert.equal(fake.generated.length, 1)
-  assert.deepEqual(fake.sessions[0].model, { providerID: "anthropic", id: "claude-sonnet", variant: "none" })
-  await cleanup?.()
-})
-
-test("a workspace default that cannot be read refuses with the remedy, not a hang", async () => {
-  const directory = sandbox()
-  const session = "ses_nomodel"
-  mkdirSync(join(directory, ".retro"), { recursive: true })
-  writeFileSync(
-    join(directory, ".retro", "state.json"),
-    JSON.stringify({ version: 1, rejected: [], extracted: {}, sessions: 1, pending: [{ session, queuedAt: "now", attempts: 0 }] }),
-  )
-
-  const fake = fakeOpenCode({ directory, options: {} })
-  fake.ctx.model.default = async () => {
-    throw new Error("no default model in this workspace")
-  }
-  const cleanup = await plugin.setup(fake.ctx)
-  await workSession(fake, session)
-  await fake.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
-
-  assert.equal(fake.generated.length, 0, "no model, no call")
-  assert.equal(fake.sessions.length, 0, "and no analysis session was left behind")
-  assert.match(fake.synthetic[0].text, /could not analyse `ses_nomodel`/i)
-  assert.match(fake.synthetic[0].text, /options\.model/, "the message names the way out")
-  await cleanup?.()
-})
-
 /* ------------------------------------- the session lifecycle: more than one turn */
 
 /**
@@ -1483,47 +1325,6 @@ test("a log smaller than its mark is read again, not mistaken for already read",
   assert.equal(fake.generated.length, 2, "a log shorter than the mark is new material, not old news")
   assert.match(fake.generated.at(-1).prompt, /new-command/)
   assert.doesNotMatch(fake.generated.at(-1).prompt, /old-command/)
-
-  await cleanup?.()
-})
-
-test("bytes appended while the model is thinking are not marked as read", async () => {
-  // The size used to be `stat` after the call, so a record the session wrote while `/retro`
-  // waited was recorded as sent without ever being sent — and the growth gate then skipped
-  // it for good. The mark has to be the bytes that were read.
-  const directory = sandbox()
-  const fake = fakeOpenCode({ directory, options: { model: MODEL } })
-  const cleanup = await plugin.setup(fake.ctx)
-  const session = "ses_writing_while_read"
-  const logPath = join(directory, ".retro", "sessions", `${session}.jsonl`)
-
-  fake.emit({ type: "session.execution.started", durable: { seq: 1 }, data: { sessionID: session } })
-  await tick()
-  await workSession(fake, session)
-
-  const before = statSync(logPath).size
-  const original = fake.ctx.session.generate
-  let appended = false
-  fake.ctx.session.generate = async (input) => {
-    if (!appended) {
-      appended = true
-      // A record written by the session while the model is answering. The last `n` in the
-      // file is 4 (prompt + three tool calls).
-      appendFileSync(
-        logPath,
-        JSON.stringify({ v: 1, n: 5, t: Date.now(), k: "tool", id: "late", tool: "shell", input: { command: "late-append" }, status: "completed" }) + "\n",
-      )
-    }
-    return original(input)
-  }
-
-  await fake.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
-  assert.equal(fake.generated.length, 1)
-  assert.equal(savedState(directory).looked[session].size, before, "only the bytes that were actually sent are marked")
-
-  await fake.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
-  assert.equal(fake.generated.length, 2, "so the appended record is read on the next pass")
-  assert.match(fake.generated.at(-1).prompt, /late-append/)
 
   await cleanup?.()
 })
@@ -2096,7 +1897,7 @@ test("/retro all reports a log it could not analyse, as well as the plan", async
   assert.deepEqual(analysed(fresh), ["ses_bad", "ses_good"], "the good log is analysed too")
   const [delivered] = fresh.synthetic
   assert.match(delivered.text, /could not analyse `ses_bad`/, "the failure is named")
-  assert.match(delivered.text, /the model answered/, "with what the model actually said")
+  assert.match(delivered.text, /no record came back from its analysis/, "with what went wrong")
   assert.match(delivered.text, /lint-skill-no-config/, "and the plan still arrives")
 
   await cleanup?.()
@@ -2810,43 +2611,5 @@ test("a plugin reloaded in the middle of a turn does not call the prompt hook de
   assert.match(readFileSync(join(directory, ".retro", "selfcheck.md"), "utf8"), /BROKEN\s+prompt hook/)
 
   await stopAfter?.()
-})
-
-test("the analysis asks for the model's no-reasoning variant", async () => {
-  // Measured on deepseek-flash through OpenCode, the same 40 KB prompt: by default 38 s and an
-  // empty reply — the reasoning used the whole output and no answer came; with `none`, 2 s and
-  // a valid answer. The "empty reply" this plugin had documented as a model quirk was this.
-  const directory = sandbox()
-  const fake = fakeOpenCode({ directory, options: { model: MODEL }, variants: { [MODEL.id]: ["none", "high"] } })
-  const cleanup = await plugin.setup(fake.ctx)
-  await workSession(fake, "ses_a")
-  await fake.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
-  assert.equal(fake.generated.length, 1)
-  assert.equal(fake.generated[0].variant, "none")
-  await cleanup?.()
-})
-
-test("a model without that variant is analysed as it is, and not asked again", async () => {
-  const directory = sandbox()
-  const fake = fakeOpenCode({ directory, options: { model: MODEL }, variants: { [MODEL.id]: [] } })
-  const cleanup = await plugin.setup(fake.ctx)
-  await workSession(fake, "ses_a")
-  await workSession(fake, "ses_b")
-  await fake.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
-  assert.deepEqual(fake.generated.map((g) => g.variant), [null, null], "both analysed, on the default variant")
-  assert.equal(fake.sessions.filter((s) => s.model?.variant === "none").length, 1, "asked once, then remembered")
-  assert.equal(fake.live.size, 0, "and no session was left behind by the refused attempt")
-  await cleanup?.()
-})
-
-test("a variant named in options.model is used as given", async () => {
-  // Someone who wants the model to reason over their logs can say so, and is not overruled.
-  const directory = sandbox()
-  const fake = fakeOpenCode({ directory, options: { model: { ...MODEL, variant: "high" } }, variants: { [MODEL.id]: ["none", "high"] } })
-  const cleanup = await plugin.setup(fake.ctx)
-  await workSession(fake, "ses_a")
-  await fake.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
-  assert.equal(fake.generated[0].variant, "high")
-  await cleanup?.()
 })
 

@@ -2,96 +2,90 @@
 
 ## Definitions
 
-**Analysis.** One model call over one session's log, in a session of the plugin's own —
-no agent, no tools, no history — asking: *if this session ran again, what should change
-so it goes shorter and straighter?* The criteria are the user's, in
-`.retro/prompts/extract.md`; the output format is the plugin's, appended at call time.
-The session is created for the call and removed after it, and it runs through
-`session.generate` rather than `generate.text`, which refuses OpenCode's free-tier models.
+**The shape of the work.** Delegated, not interactive: the person asks for a retrospective
+and comes back for the result, and nothing in it is tuned for an answer within seconds. The
+plugin is written for throughput — how much gets read, and how well — not for latency.
 
-**Projection.** The log rendered as text for the model. Prompts, hand-overs and assistant
-text in full up to a few thousand characters each; tool output trimmed; tool calls and
-steps one line each. Deterministic: the same records always project the same way.
+**Analysis.** One subagent, reading one work order, asking: *if this session ran again,
+what should change so it goes shorter and straighter?* The agent in the session `/retro` was
+run in starts it, so it runs on that session's model and that session's settings — reasoning
+included — with OpenCode's own agent loop, and in a context of its own: it was not in the
+session it reads, and has nothing of its own to defend. The plugin makes no model call and
+chooses no model. *Replaces a one-shot `session.generate` in a session of the plugin's own,
+with a model and a variant the plugin picked. That call returned only text, so a reasoning
+model that spent its output on reasoning came back empty with no way to see why; and a
+variant chosen by name does not mean the same thing on every provider (AGENTS.md decision
+5, Gotcha 17).*
+
+**Work order.** What one analysis is asked to read: a file, `work/<session>.md` in the
+plugin's directory, holding the criteria (`prompts/extract.md`, the user's), the lessons
+already recorded, concluded from this session and rejected, the projection of the log from
+its mark, and what to do with the answer. The plugin remembers each order it issued — the
+log's identity, the size it was read at, and how far the projection covers — so a record
+is applied to exactly what was read. An order is reissued by the next `/retro` while the log
+is still owed; a record answers only the order it was issued for.
+
+**Record.** The answer, given by calling `retro_record` with the session and its lessons.
+The tool's schema is the output contract: a malformed answer is refused by OpenCode before
+it reaches the plugin, and the subagent is told why and can try again. A record with no
+lessons is an answer — the session went straight.
+
+**Projection.** The log rendered as text for the work order. Prompts, hand-overs and
+assistant text in full up to a few thousand characters each; tool output trimmed; tool calls
+and steps one line each. Deterministic: the same records always project the same way.
 
 **Capture clamp.** Tool output is already clamped head-and-tail to `maxOutput` (8,000
 characters by default) when the record is written, with the loss stated in the record. The
 log is therefore an excerpt of a very large result before the projection ever sees it; the
 projection may trim it again.
 
-**Budget.** The most characters one analysis may send, `maxInput`. The log gets what is
-left after the prompt, the contract and the lesson lists, and the composed input never
-exceeds it except when the fixed part alone does (see the floor below). It is a bound on
-cost, not on the answer. Those fixed parts are not negotiable: if
-they alone exceed `maxInput`, no request can honour it, so a small (2,000-character) log
-section is still sent rather than none, and the request goes over the budget by that floor.
-The guarantee therefore applies whenever the fixed part fits, which is every normal run.
+**Budget.** The most characters one work order may hold, `maxInput`. The log gets what is
+left after the criteria, the instructions and the lesson lists, and the order never exceeds
+it except when the fixed part alone does (see the floor below). It bounds what one subagent
+is asked to read, which is what it costs. Those fixed parts are not negotiable: if they
+alone exceed `maxInput`, a small (2,000-character) log section is still written rather than
+none, and the order goes over the budget by that floor.
 
 **Excerpt.** A projection that had to drop something to fit. It drops in the order that
 loses least — less tool output, then whole tool steps from the middle outward, then
 shorter prompts — and never drops a prompt, a hand-over or an assistant reply entirely.
-Every gap says how many steps went, so the model knows it is reading an excerpt and so
+Every gap says how many steps went, so the reader knows it is reading an excerpt and so
 does the human (`from an excerpt` in the outcome).
 
 **Coverage (`through`).** The last step of an excerpt's unbroken prefix. An excerpt keeps
 a head and a tail with a gap between; it *covers* only the head. The mark advances to the
 coverage, never to the last step seen, so the gap is read next time rather than skipped.
-A projection that covers no step past the mark has covered nothing new: it is a failed read,
-not an excerpt.
+A projection that covers no step past the mark has covered nothing new: no order is issued
+for it, and it counts as a failed attempt.
 
-**Attempt.** One analysis of one owed log. A log gets three *on the same input*, counted on
-its mark; a successful excerpt is progress, not an attempt, and a log that grows is a
-different input — the count starts again, because the cap exists so a fourth try does not
-pay for the same answer, and new material has not failed anywhere yet. After three failures
-the log is retired (log.md): its outcome recorded as failed, the log kept until it is quiet,
-and the self-check names it. A log that has grown since its third failure is new work and is
-read in the same command rather than waiting for the next one.
+**Attempt.** One work order issued for one owed log. An order that was not answered by the
+next `/retro` failed — the subagent was never started, ran out, or never called
+`retro_record`. A log gets three *on the same input*, counted on its mark; a log that grows
+is a different input and the count starts again. After three the log is retired (log.md):
+its outcome recorded as failed, the log kept until it is quiet, and the self-check names it.
 
-**Limit (`extractLimit`).** The most analyses one command attempts. Unlimited by default.
-It counts attempts rather than successes, because a failed attempt is what costs a model
-call; a log skipped as one exchange never reaches the model, so it does not spend one.
-Whatever is left stays owed and is named in the command's message.
-
-**Async extraction (`asyncExtract`).** Off by default. Nothing is analysed without a command.
-When on, the next owed log is analysed in the background when a prompt arrives: the prompt
-hook starts the analysis and returns at once, so the session's start is not held, and the
-analysis runs in a session of its own, outside the user's context. One per prompt, so a
-backlog of four costs four prompts and never an unbounded spend in a hook. Only one of these
-runs at a time: a prompt that arrives while an analysis is in flight does not start a second.
-What it shares with the work is the provider: two requests to the model at once.
-
-**Variant.** The analysis asks for the model's no-reasoning variant, `none`, when the model
-has one, unless `options.model.variant` names another. It is one structured answer, and a
-reasoning model left to think spent its whole output on reasoning and returned no answer:
-on `deepseek-flash`, through OpenCode, the same 40 KB prompt came back empty after 38 s by
-default and valid after 2 s with `none` — directly against the API, 90 to 272 s and 14 to
-45 thousand reasoning tokens, against 3 to 4 s and about 400 tokens. A model with no such
-variant fails loudly before anything is paid for; it is then analysed on its default, and
-not asked again.
-
-**Empty reply.** A reply with no text, no error. It was taken for the model declining
-large inputs, and halving the input was built for that; the cause was reasoning (see
-Variant), and the retry stays as a cheap second chance. It is answered by halving the
-budget and asking again, and once more at a quarter if the second reply is empty too — at
-most three calls. A log that cannot be answered at a quarter of the budget is
-reported as a failure with the model's own silence as the reason, and the attempt counts.
-A caller with no finite budget has nothing to halve, so there an empty reply is reported
-rather than retried.
+**Limit (`extractLimit`).** The most work orders one `/retro` issues. Unlimited by default.
+Whatever is left stays owed and is named in the hand-over.
 
 **Skipped.** A session of one prompt and no tool calls is not analysed: it cannot hold
-evidence of anything. Everything else is, including a conversation that ran no tools —
-that is where a wrong instruction file shows up. On a re-read the rule is about what is
-*new*: a new prompt, a tool call, or a reply to a person is material, even a reply with no
-prompt of its own; a slice that is nothing but the prompts it carries, a hand-over the
-plugin wrote itself and the agent's answer to it with nothing done, or an end marker, still
-proves nothing.
+evidence of anything, and no order is issued for it. Everything else is, including a
+conversation that ran no tools — that is where a wrong instruction file shows up. On a
+re-read the rule is about what is *new*: a new prompt, a tool call, or a reply to a person
+is material, even a reply with no prompt of its own; a slice that is nothing but the
+prompts it carries, a hand-over the plugin wrote itself and the agent's answer to it with
+nothing done, or an end marker, still proves nothing.
+
+**The plugin's own work.** The subagents it asks for and the calls to its own tools are its
+work, not the user's: they are not written to any log, so an analysis is never analysed and
+the plugin's bookkeeping never turns into a lesson about the plugin.
 
 ## Invariants
 
 - Tool output is clamped head-and-tail when captured, and says how much went missing.
   `output is clamped head-and-tail with the loss stated`
-- The composed input never exceeds `maxInput` when the fixed part fits; the log takes the
-  rest and is cut to fit. When the fixed part alone is over budget, no request can be
-  bounded, and the smallest useful log is sent rather than none.
+- A work order never exceeds `maxInput` when the fixed part fits; the log takes the rest
+  and is cut to fit. When the fixed part alone is over budget, the smallest useful log is
+  written rather than none.
   `the composed input stays inside maxInput, and says when it had to`
   `prompts are shortened before a projection is allowed over budget`
   `a budget that leaves no room for the log still leaves room for the log`
@@ -104,62 +98,44 @@ proves nothing.
 - An excerpt reports how far it covers, not how far it looked.
   `an excerpt reports how far it actually goes, not how far it looked`
   `a truncation reports only the steps that survived the cut`
-- A projection that covers no step past the mark is a failed read: it is reported, never
-  marked as read, and charged against the log's attempts.
+- A projection that covers no step past the mark is not issued, is reported, and is charged
+  against the log's attempts.
   `an excerpt that cannot reach past the mark is reported, not settled as done`
-- The analysis runs on the model's no-reasoning variant when it has one, on the default when
-  it has none, and on the variant `options.model` names when it names one.
-  `the analysis asks for the model's no-reasoning variant`
-  `a model without that variant is analysed as it is, and not asked again`
-  `a variant named in options.model is used as given`
-- An empty reply is answered by asking again with less, at half and then at a quarter,
-  and never more than that.
-  `an empty reply is answered by asking again with less, not by asking again`
-  `an empty reply with nothing left to trim is reported, not retried for ever`
-  `a second empty reply is answered once more, at a quarter of the budget`
-- A failed log is tried again on the next command, and given up on after three.
-  `a log that failed stays owed, and is tried again on the next command`
-  `a session is given up on after three attempts, not billed forever`
-- One failing log does not hold up the ones behind it, and both commands report it.
-  `a log the model could not answer does not hold up the logs behind it`
+- The plugin makes no model call: `/retro` issues work orders and hands them to the agent in
+  its session, which starts one subagent per order.
+  `/retro issues a work order per owed log and asks the agent to analyse them`
+  `the plugin never calls a model itself`
+- A record is applied to the order it answers, and to nothing else: a record for a session
+  with no order, or for a log replaced since the order, is refused and changes nothing.
+  `a record moves the mark to what its order covered`
+  `a record with no order behind it is refused`
+  `a record for a log replaced since its order is refused`
+- A record with no lessons is an answer: the log is read, and the session went straight.
+  `a record with no lessons settles the log as read`
+- An order not answered by the next `/retro` is a failed attempt; three on the same input
+  retire the log, and both commands report it.
+  `an order nobody answered is a failed attempt, and the log is asked for again`
+  `a log is given up on after three unanswered orders, not asked for forever`
   `/retro all reports a log it could not analyse, as well as the plan`
-- An entry that used its three attempts is retired and reported, never silently skipped.
-  `an entry that used its three attempts is retired and reported, not skipped for ever`
-  `a log given up on after three attempts is not retried in the same command`
-- One command makes at most `extractLimit` attempts; the rest stay owed and are named.
-  A skipped log makes no attempt, because there is no model call to bound.
+- One command issues at most `extractLimit` orders; the rest stay owed and are named. A
+  skipped log takes no order.
   `extractLimit caps what one command analyses and leaves the rest owed`
   `the per-command log limit is unlimited by default and can be capped`
   `a log skipped as one exchange does not spend the command's limit`
-- With `asyncExtract` the next owed log is analysed at the next prompt; without it, only
-  a command analyses anything.
-  `asyncExtract analyses at the start of the next session, and is off by default`
-- The model is `options.model` when set, otherwise the one the user's own session is
-  running on (learned from primary model requests — a subagent's or the analysis session's
-  do not set it), otherwise the workspace default; with none of them the analysis refuses
-  and names the remedy.
-  `the model the user is actually working with is the one used for analysis`
-  `with no model configured, the workspace default is used`
-  `a workspace default that cannot be read refuses with the remedy, not a hang`
+- `retro_propose` hands over what the records made, after they are in.
+  `retro_propose hands over the top lesson once the records are in`
+  `retro_propose for all delivers the plan`
+- The plugin's own subagents and tool calls are not written to any log.
+  `the plugin's own analysis is not logged as the user's work`
 - A skip covers nothing: a session skipped as one exchange is read from its start once it
   does real work.
   `a session skipped as one exchange is read from its start once it does real work`
 - Attempts belong to the input they were spent on; material that arrives after failures
   gets attempts of its own.
   `material that arrives after failures gets attempts of its own`
-- One command reads each log at most once, whatever the outcome, so a command always ends.
-  `a log replaced by a smaller one is settled, and one command reads it once`
 - A session of one prompt and nothing done is skipped; anything more is read. On a re-read
-  the question is what is *new*: a new reply is material even with no prompt or tool call,
-  while a slice that is only the prompts it carries proves nothing.
+  the question is what is *new*.
   `a conversation with no tool calls is still analysed`
-  `a single exchange that did nothing costs no model call`
-  `a re-read with a reply is analysed even when it has no prompt or tool call of its own`
+  `a single exchange that did nothing takes no work order`
   `a re-read of a session that did work is analysed even when the new material is a reply alone`
-- On a re-read, only what is new counts: a person's new prompt, a tool call, or a reply to a
-  person. A reply to the plugin's own hand-over, with nothing done, is the plugin talking to
-  itself and costs no model call. A review that used tools to check the lesson is read — one
-  call, since checking can turn up friction of its own — and its check is not counted as the
-  problem recurring (lesson.md). A known cost, not a loop: the next review answers a new
-  hand-over only when there is a new lesson to hand over.
-  `a reply to the plugin's own hand-over, with nothing done, costs no model call`
+  `a reply to the plugin's own hand-over, with nothing done, takes no work order`

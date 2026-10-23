@@ -1,23 +1,26 @@
 /**
  * The output contract (AGENTS.md decision 14).
  *
- * It lives here, in source, and is wrapped around the user's prompt at call time. It is
- * never written to disk, so it cannot be edited away by accident — and the prompt file has
- * no do-not-touch region in it, because a file with one is a file someone will eventually
- * touch, and the breakage would be silent.
+ * It lives here, in source, and is written into every work order after the user's prompt.
+ * The prompt file never holds it, so an edit to the prompt cannot break it, and the file has
+ * no do-not-touch region in it — a file with one is a file someone will eventually touch.
  *
- * Not written to disk anywhere: it is wrapped around the prompt at call time and lives
- * only here, which is why a user edit cannot break the parser.
+ * The answer is a call to `retro_record`, whose schema (`RECORD_INPUT`) is the machine half
+ * of this contract: OpenCode refuses a malformed call and tells the subagent why, so there is
+ * no reply text to parse. What stays in prose is what a schema cannot say — what the fields
+ * mean.
  */
 export const OUTPUT_CONTRACT = `
 ---
 
 ## How to answer
 
-Reply with one fenced \`json\` block and nothing else. No preamble, no commentary.
+Call the \`retro_record\` tool exactly once, with \`session\` set to the session id at the
+top of this file and \`lessons\` set to what you found:
 
 \`\`\`json
 {
+  "session": "ses_…",
   "lessons": [
     {
       "id": "short-kebab-case-slug",
@@ -34,6 +37,10 @@ Reply with one fenced \`json\` block and nothing else. No preamble, no commentar
 }
 \`\`\`
 
+Everything you need is in this file. Do not edit anything, do not run commands, and do not
+read the session's files: you are judging the log, not redoing the work. When the call has
+been made, reply with one word: done.
+
 Rules:
 
 - \`steps\` are step numbers from the log above — the \`[n]\` markers. Give the first and
@@ -46,16 +53,51 @@ Rules:
   how recurrence is counted, and leaving it out makes a problem that happens in every session
   look as if it happened once. Already recorded is not the same as already answered.
 - Work that follows a hand-over (a step reading "opencode-retro handed a lesson over") and
-  checks or applies the lesson it
-  handed over is the review of that lesson, not the problem happening again: do not report it
-  as a recurrence, and do not count its steps as cost. Counting it would make every lesson
-  that gets reviewed look more important for having been reviewed.
+  checks or applies the lesson it handed over is the review of that lesson, not the problem
+  happening again: do not report it as a recurrence, and do not count its steps as cost.
+  Counting it would make every lesson that gets reviewed look more important for having
+  been reviewed.
 - \`proposal\` is optional. Omit it, or use \`null\`, when you can name the problem but not
   the fix — that is a normal and useful answer.
 - \`ask\` is optional and is for when the fix depends on something only the human knows.
-- Return \`{"lessons": []}\` when the session went straight. An empty answer is the correct
-  answer more often than not.
+- Record \`"lessons": []\` when the session went straight. An empty answer is the correct
+  answer more often than not — but it still has to be recorded, or the log is asked about
+  again.
 `
+
+/** The `retro_record` tool's input: the machine half of the contract. */
+export const RECORD_INPUT = {
+  type: "object",
+  properties: {
+    session: { type: "string", description: "The session id named at the top of the work order." },
+    lessons: {
+      type: "array",
+      description: "What this session should have taught the project. Empty when it went straight.",
+      items: {
+        type: "object",
+        properties: {
+          id: { type: "string" },
+          statement: { type: "string" },
+          steps: { type: "array", items: { type: "number" } },
+          cost: { type: "number" },
+          confidence: { type: "number" },
+          matches: { type: ["string", "null"] },
+          proposal: {
+            type: ["object", "null"],
+            properties: { target: { type: ["string", "null"] }, change: { type: "string" } },
+          },
+          ask: { type: ["string", "null"] },
+          why: { type: "string" },
+        },
+        required: ["statement"],
+      },
+    },
+  },
+  required: ["session", "lessons"],
+}
+
+/** Lessons as the store wants them, from whatever shape a record carried. */
+export const normaliseLessons = (raw) => (Array.isArray(raw) ? raw.map(normalise).filter(Boolean) : [])
 
 /**
  * Pulls lessons out of a model reply. Tolerant on purpose: a cheap model will wrap JSON in

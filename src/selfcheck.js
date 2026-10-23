@@ -412,12 +412,8 @@ export const REQUIRED_SURFACE = [
   ["tool", "transform"],
   ["session", "hook"],
   ["session", "synthetic"],
-  ["session", "create"],
-  ["session", "generate"],
-  ["session", "remove"],
   ["command", "transform"],
   ["event", "subscribe"],
-  ["model", "default"],
 ]
 
 export async function activeCheck({ ctx, config, prompts, store }) {

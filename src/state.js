@@ -52,6 +52,7 @@ export function createState({ path, onError, now = () => Date.now(), probe = nul
     counted: {},
     anonymous: 0,
     uncounted: [],
+    orders: {},
   }
 
   try {
@@ -64,6 +65,7 @@ export function createState({ path, onError, now = () => Date.now(), probe = nul
       if (!data.looked || typeof data.looked !== "object") data.looked = {}
       if (!data.counted || typeof data.counted !== "object") data.counted = {}
       if (!Array.isArray(data.uncounted)) data.uncounted = []
+      if (!data.orders || typeof data.orders !== "object" || Array.isArray(data.orders)) data.orders = {}
       // A file written before the identity list existed has only the number. Recover the
       // anonymous part rather than trusting a total we can no longer decompose.
       if (typeof data.anonymous !== "number") {
@@ -104,7 +106,7 @@ export function createState({ path, onError, now = () => Date.now(), probe = nul
     // can put any shape anywhere, and a string spread into a map becomes one entry per letter.
     const obj = (v) => (v && typeof v === "object" && !Array.isArray(v) ? v : {})
     const disk = raw
-      ? { ...raw, extracted: obj(raw.extracted), counted: obj(raw.counted), looked: obj(raw.looked) }
+      ? { ...raw, extracted: obj(raw.extracted), counted: obj(raw.counted), looked: obj(raw.looked), orders: obj(raw.orders) }
       : null
     if (disk) {
       const rejected = [...(Array.isArray(disk.rejected) ? disk.rejected : [])]
@@ -187,6 +189,15 @@ export function createState({ path, onError, now = () => Date.now(), probe = nul
         })
       }
       data.looked = looked
+
+      // Work orders: the later one of each session wins, issued or answered, whoever wrote it.
+      // An answer is kept as `done` rather than deleted, so a writer that still holds the open
+      // order cannot bring it back by saving after the answer.
+      const orders = { ...(disk.orders ?? {}) }
+      for (const [id, o] of Object.entries(data.orders ?? {})) {
+        if (!orders[id] || (o?.at ?? 0) > (orders[id]?.at ?? 0)) orders[id] = o
+      }
+      data.orders = orders
     } else if (probe) {
       for (const id of Object.keys(data.looked)) if (!describes(id, asMark(data.looked[id]))) delete data.looked[id]
     }
@@ -249,7 +260,7 @@ export function createState({ path, onError, now = () => Date.now(), probe = nul
         // loaded before the removal and saves afterwards, and the counted union would bring
         // the delegation straight back. It grows with the number of delegations — one
         // identity per session, like `counted` — not with the age of the project.
-        for (const key of ["looked", "extracted"]) {
+        for (const key of ["looked", "extracted", "orders"]) {
           for (const id of Object.keys(data[key] ?? {})) if (!compactWith(id)) delete data[key][id]
         }
       }
@@ -405,6 +416,40 @@ export function createState({ path, onError, now = () => Date.now(), probe = nul
       } finally {
         compactWith = null
       }
+    },
+
+    /**
+     * A work order issued for this session (analysis.md): the log's identity and the size it
+     * was read at, how far the order covers (`through`), the last step in it (`lastN`), the
+     * mark it was read from (`n`), and whether it is an excerpt. One per session; a newer
+     * order replaces an older one.
+     */
+    issue(session, order) {
+      refresh()
+      const before = Number(data.orders[session]?.at ?? 0)
+      data.orders[session] = { ...order, at: Math.max(now(), before + 1) }
+      save()
+    },
+    /** The order still waiting for an answer, if there is one. */
+    orderOf(session) {
+      refresh()
+      const o = data.orders[session]
+      return o && !o.done ? { ...o } : null
+    },
+    /** Every order still waiting for an answer, by session. */
+    openOrders() {
+      refresh()
+      return Object.entries(data.orders)
+        .filter(([, o]) => o && !o.done)
+        .map(([session, o]) => ({ session, ...o }))
+    },
+    /** Closed — answered, or given up on — so it is not answered or failed twice. */
+    close(session, outcome) {
+      refresh()
+      const o = data.orders[session]
+      if (!o) return
+      data.orders[session] = { ...o, done: outcome ?? true, at: Math.max(now(), Number(o.at ?? 0) + 1) }
+      save()
     },
 
     markExtracted(session, summary) {

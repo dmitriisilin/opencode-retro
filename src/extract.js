@@ -1,30 +1,36 @@
-import { OUTPUT_CONTRACT, parseLessons } from "./contract.js"
+import { OUTPUT_CONTRACT, normaliseLessons } from "./contract.js"
 import { projected } from "./projection.js"
 
 /**
- * One extraction: shadow log -> lessons (AGENTS.md decision 5).
+ * Extraction, the plugin's half: shadow log -> work order, and record -> lessons
+ * (docs/concepts/analysis.md).
  *
- * Runs with a clean context — one call through a session of its own, no agent, no tools and
- * no history —
- * because the agent that did the work would defend its own choices.
+ * The reading itself is done by a subagent the agent in the `/retro` session starts — on
+ * that session's model and settings, with OpenCode's own agent loop, in a context of its own,
+ * because the agent that did the work would defend its own choices. The plugin makes no
+ * model call. It used to, through a session of its own and `session.generate`, and that is
+ * how a reasoning model's empty replies went unexplained for weeks (AGENTS.md Gotcha 17).
  *
  * There are no detectors in front of it. There used to be three, marking suspicious step
  * ranges; `fixtures/ab-anchors/` is the measurement that retired them — the model found the
  * same lessons without them. What they knew now lives as prose in `prompts/extract.md`,
  * where the user can read it and change it.
  */
-export const DEFAULT_TIMEOUT_MS = 90_000
 
-export async function extract({
+/** The first line of every work order, which is also how the plugin knows its own subagents. */
+export const WORK_MARK = "opencode-retro work order"
+
+/**
+ * The work order for one log: what a subagent is asked to read. Returns `{ skipped }` for a
+ * log that cannot hold evidence, `{ ok: false }` when there is nothing to write it from, and
+ * otherwise `{ ok: true, text, through, elided }`.
+ */
+export function composeOrder({
   records,
   session,
-  generate,
-  model,
   prompts,
   store,
   state,
-  fingerprint,
-  timeoutMs = DEFAULT_TIMEOUT_MS,
   maxInput = Infinity,
   /** The last step of this session already turned into lessons; 0 for a first look. */
   analysedUpTo = 0,
@@ -61,24 +67,7 @@ export async function extract({
     else if (r.k === "text" && answering !== "handover") newReply = true
   }
   if (reread ? asked === 0 && toolCalls === 0 && !newReply : asked <= 1 && toolCalls === 0) {
-    return {
-      ok: true,
-      skipped: true,
-      detail: "nothing to extract (one exchange, nothing done)",
-      lessons: [],
-    }
-  }
-
-  // Reaching here with no model means `options.model`, the session's own model and
-  // `ctx.model.default()` all came up empty, so there is nothing to create the analysis
-  // session with. Refusing with the remedy named beats an empty `lessons/` nobody can
-  // account for. (Free-tier models are fine — see AGENTS.md Gotcha 10 — it is the absence
-  // of any model that stops us.)
-  if (!model?.providerID || !model?.id) {
-    return {
-      ok: false,
-      detail: 'no model could be resolved — set options.model, e.g. { "providerID": "deepseek", "id": "deepseek-flash" }',
-    }
+    return { ok: true, skipped: true, detail: "nothing to extract (one exchange, nothing done)" }
   }
 
   const prompt = prompts.resolve("extract")
@@ -101,6 +90,7 @@ export async function extract({
 
   const compose = (log) =>
     [
+      `<!-- ${WORK_MARK} -->`,
       prompt.text,
       section("Session", `id: ${session}`),
       section("Log", [continued, log].filter(Boolean).join("\n\n")),
@@ -122,14 +112,9 @@ export async function extract({
   /**
    * The log gets whatever the budget leaves after everything else.
    *
-   * Measured, not guessed: on `deepseek/deepseek-flash` through `session.generate`, an input
-   * of 39,518 characters came back with a parseable answer and the same input padded to
-   * 41,029 came back **empty** — no error, no refusal, an empty string. Whatever the limit
-   * is exactly, crossing it produces silence, and silence is the one failure this plugin
-   * cannot afford: long sessions are where the friction lives, so without a budget the
-   * sessions most worth reading are the ones that reliably yield nothing.
-   *
-   * It is a character count rather than a token count on purpose. Tokenisation is
+   * It bounds what one subagent is asked to read, which is what an analysis costs, and keeps
+   * a work order within what a read tool returns in one call. It is a character count rather
+   * than a token count on purpose. Tokenisation is
    * model-specific and would need a dependency to estimate; characters are exact, and the
    * budget only has to be comfortably under a cliff, not next to it.
    */
@@ -147,111 +132,31 @@ export async function extract({
   // small excerpt beats an empty one.
   const budget = Number.isFinite(maxInput) ? (room > 0 ? room : 2000) : Infinity
 
-  const { from, ...ref } = model
-  const ask = async (log) => {
-    try {
-      const result = await withTimeout(generate({ prompt: compose(log), model: ref }), timeoutMs)
-      return { text: result?.text ?? "" }
-    } catch (err) {
-      const message = String(err?.message ?? err)
-      const hint = /free tier/i.test(message)
-        ? ". A plugin may not use OpenCode's own free tier; pin a different model in options.model."
-        : ""
-      return { failed: `model call failed: ${message}${hint}` }
-    }
-  }
-
-  let log = projected(records, { budget })
-  let answer = await ask(log.text)
-  if (answer.failed) return { ok: false, detail: answer.failed }
-
-  /**
-   * An empty reply is this model's way of declining, and it gets more likely as the input
-   * grows. Measured on `deepseek/deepseek-flash` through `session.generate`, same content
-   * each time: 26,034 characters answered, 32,034 answered, 40,254 came back as an empty
-   * string — no error, no refusal, nothing to report. Near the top of that range it is not a
-   * clean cliff either; one 39,518-character input was answered once and a 32,000 one was
-   * not.
-   *
-   * So the second attempt is not the same attempt again. Retrying across `/retro` runs was
-   * already possible and useless: three attempts sent the identical oversized input and got
-   * the identical silence, then the log was retired. Halving the budget changes the one
-   * thing that correlates, costs one extra call, and only happens when the first reply was
-   * empty.
-   */
-  // Half, then a quarter. One retry was measured to be not enough: a live run got an empty
-  // reply at 31,993 characters and again at 19,181. Never round up to a minimum: when the
-  // first budget was small because little room was left, a floor would make a retry *larger*.
-  for (const divisor of [2, 4]) {
-    if (answer.text.trim() || !Number.isFinite(budget)) break
-    const smaller = projected(records, { budget: Math.max(1, Math.floor(budget / divisor)) })
-    if (smaller.text === log.text) break
-    log = smaller
-    answer = await ask(log.text)
-    if (answer.failed) return { ok: false, detail: answer.failed }
-  }
-
-  const reply = answer.text
-  const elided = /\d+ steps? elided to fit the budget/.test(log.text)
-
-  const parsed = parseLessons(reply)
-  if (!parsed.ok) return { ok: false, detail: `unparseable reply: ${parsed.error}${excerpt(reply)}`, reply }
-
-  const rejected = new Set(state.rejected.map((r) => r.id))
-  const lessons = parsed.lessons.filter((l) => !rejected.has(l.id) && !rejected.has(l.matches))
-  const recorded = store.record(lessons, { session, fingerprint })
-
+  const log = projected(records, { budget })
   return {
     ok: true,
+    text: compose(log.text),
+    // How far through the log this order goes. An excerpt covers only up to its first gap,
+    // so the mark stops there and the elided middle is read next time rather than skipped.
+    through: log.through,
+    elided: /\d+ steps? elided to fit the budget/.test(log.text),
+  }
+}
+
+/**
+ * A record, folded into the store: the rejected filtered out, the rest recorded by problem.
+ */
+export function recordAnswer({ session, lessons: raw, store, state, fingerprint, elided = false }) {
+  const rejected = new Set(state.rejected.map((r) => r.id))
+  const lessons = normaliseLessons(raw).filter((l) => !rejected.has(l.id) && !rejected.has(l.matches))
+  const recorded = store.record(lessons, { session, fingerprint })
+  return {
     lessons,
     recorded,
     // Said out loud: a lesson drawn from an excerpt is still a lesson, but the human should
-    // know the extractor did not see the whole session.
+    // know the reader did not see the whole session.
     detail: summarise(recorded, lessons.length) + (elided ? " (from an excerpt: the log was over budget)" : ""),
-    // How far through the log this went. An excerpt covers only up to its first gap, so the
-    // caller's mark stops there and the elided middle is read next time rather than skipped.
-    through: log.through,
   }
-}
-
-/**
- * What the model actually said, in one line.
- *
- * "unparseable reply" alone tells the human nothing: they cannot tell a model that
- * answered in prose from one that stopped half way through a JSON object, and those
- * have different remedies. The whole reply is kept for the plugin log; this is the part
- * that fits in a message.
- */
-function excerpt(reply) {
-  const text = String(reply ?? "").trim()
-  if (!text) return " — the model returned nothing at all"
-  const flat = text.replace(/\s+/g, " ")
-  return ` — the model answered (${text.length} chars): ${flat.slice(0, 200)}${flat.length > 200 ? "…" : ""}`
-}
-
-/**
- * A generate call that never settles is not hypothetical — it is how `generate.text`
- * behaves outside a hook, and it has been seen from inside one too. Without a bound, one
- * hung call wedges the drain for the rest of the process and nothing says so.
- */
-function withTimeout(promise, ms) {
-  if (!ms || ms <= 0) return promise
-  let timer
-  return Promise.race([
-    promise.finally(() => clearTimeout(timer)),
-    new Promise((_, reject) => {
-      timer = setTimeout(
-        () =>
-          reject(
-            new Error(
-              `no reply after ${Math.round(ms / 1000)}s. A slow or free model on a long log is the ` +
-                "usual reason: pin a faster one in `options.model`, or raise `extractTimeoutMs`",
-            ),
-          ),
-        ms,
-      )
-    }),
-  ])
 }
 
 const section = (title, body) => (body?.trim() ? `## ${title}\n\n${body.trim()}` : null)

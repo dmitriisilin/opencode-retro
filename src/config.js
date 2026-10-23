@@ -6,10 +6,7 @@ export const DEFAULTS = {
   prompts: "prompts",
   /** Per-entry cap on captured tool output. Head and tail are kept, the middle is elided. */
   maxOutput: 8000,
-  // Characters of composed input one analysis may send. A bound on cost, not a guarantee of
-  // an answer: on deepseek-flash an empty reply has been seen at 40,254, 31,993 and 19,181
-  // characters, and the same content answered at 26,034 and 32,034. No number is safe; the
-  // empty reply is handled by asking again at half and a quarter (see src/extract.js).
+  /** Characters one work order may hold: what one subagent is asked to read, so its cost. */
   maxInput: 32_000,
   /** Lower bound between heartbeat writes. See AGENTS.md "Three timestamps". */
   heartbeatMs: 60_000,
@@ -20,20 +17,13 @@ export const DEFAULTS = {
   halfLife: 10,
   /** Keep the shadow log after a successful extraction. Off — the lesson carries the story. */
   keepSessions: false,
-  /** Give up on a silent model call rather than wedging the command behind it. */
-  extractTimeoutMs: 90_000,
   /** Lessons carried by one `/retro all`. Beyond this a plan stops being a plan. */
   proposeLimit: 10,
   /**
-   * Logs analysed by one `/retro`. Unlimited by default: leaving a backlog half-analysed
+   * Work orders issued by one `/retro`. Unlimited by default: leaving a backlog half-analysed
    * only moves the work, it does not avoid it. Set a number to cap one command's spend.
    */
   extractLimit: Infinity,
-  /**
-   * Analyse a finished session at the start of the next one, without being asked. Off:
-   * a model call costs money, and nothing else in this plugin spends it unprompted.
-   */
-  asyncExtract: false,
 }
 
 /**
@@ -62,16 +52,13 @@ export function resolveConfig(ctx) {
     selfcheck: join(dir, "selfcheck.md"),
     state: join(dir, "state.json"),
     pluginLog: join(dir, "plugin.log"),
-    model: options.model ?? null,
     maxOutput: options.maxOutput ?? DEFAULTS.maxOutput,
     maxInput: options.maxInput ?? DEFAULTS.maxInput,
     heartbeatMs: options.heartbeatMs ?? DEFAULTS.heartbeatMs,
     halfLife: options.halfLife ?? DEFAULTS.halfLife,
     keepSessions: options.keepSessions ?? DEFAULTS.keepSessions,
-    extractTimeoutMs: options.extractTimeoutMs ?? DEFAULTS.extractTimeoutMs,
     proposeLimit: options.proposeLimit ?? DEFAULTS.proposeLimit,
     extractLimit: options.extractLimit ?? DEFAULTS.extractLimit,
-    asyncExtract: options.asyncExtract ?? DEFAULTS.asyncExtract,
   }
 }
 

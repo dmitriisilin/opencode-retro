@@ -1,5 +1,5 @@
-import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
-import { relative as relativePath, resolve as resolvePath, sep } from "node:path"
+import { appendFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { join, relative as relativePath, resolve as resolvePath, sep } from "node:path"
 import { createIngest } from "./src/ingest.js"
 import { createPrompts } from "./src/prompts.js"
 import { createSelfCheck } from "./src/selfcheck.js"
@@ -7,8 +7,18 @@ import { createShadowLog, identityOf, isReplacedLog, parseShadowLog } from "./sr
 import { createState } from "./src/state.js"
 import { concludedIn, createStore, score } from "./src/lessons.js"
 import { assessCurrency, fingerprintOf } from "./src/currency.js"
-import { extract } from "./src/extract.js"
-import { pickLesson, pickOpen, renderBatch, renderFailures, renderNothing, renderProposal } from "./src/propose.js"
+import { WORK_MARK, composeOrder, recordAnswer } from "./src/extract.js"
+import { RECORD_INPUT } from "./src/contract.js"
+import {
+  PROPOSE_INPUT,
+  pickLesson,
+  pickOpen,
+  renderBatch,
+  renderFailures,
+  renderNothing,
+  renderProposal,
+  renderWorkOrders,
+} from "./src/propose.js"
 import { DECIDE_INPUT, DECIDE_OUTPUT, decide } from "./src/decide.js"
 import { activeCheck } from "./src/selfcheck.js"
 import { resolveConfig } from "./src/config.js"
@@ -52,18 +62,6 @@ export const VERSION = (() => {
  * The API facts this relies on are all verified against OpenCode 2.0.32; see AGENTS.md
  * "OpenCode v2 plugin API" and fixtures/payloads/.
  */
-/**
- * The variant asked for when analysing, if the model has it: reasoning off.
- *
- * The analysis is one structured answer about a log, and a reasoning model left to think
- * spent its whole output on thinking and returned no answer at all. Measured on
- * `deepseek/deepseek-flash` with the same 40 KB prompt: by default, 38 s through OpenCode and
- * an empty reply (directly against the API, 90–272 s and 14–45 thousand reasoning tokens);
- * with `none`, 2–4 s, a valid answer six times in six, about 400 tokens. The "empty reply"
- * that AGENTS.md Gotcha 17 once blamed on the size of the input was this.
- */
-const QUIET_VARIANT = "none"
-
 /** How long a log must go unwritten before it may be pruned (session.md, "Quiet"). */
 const QUIET_MS = 7 * 24 * 60 * 60 * 1000
 
@@ -120,11 +118,11 @@ export default {
     /** Evidence from each finished session, kept so a later extraction can complete its report. */
     const lastVerified = new Map()
     let lastBeat = 0
-    let draining = false
-    /** Models that have no `none` variant, so the analysis stops asking for one. */
-    const noQuietVariant = new Set()
-    /** Learned from session.model.request; see resolveModel. */
-    let lastSessionModel = null
+    /**
+     * Sessions that are the plugin's own work — the subagents reading work orders. Nothing of
+     * theirs is written to any log (analysis.md, "The plugin's own work").
+     */
+    const internal = new Set()
     /**
      * The last analysis of each session, whichever path ran it. The report used to learn of a
      * result only through `lastVerified`, which exists once a turn has ended — so a working
@@ -255,6 +253,12 @@ export default {
     }
 
     await hook("session", "prompt", (p) => {
+      // A subagent reading one of our work orders is the plugin's own work, not the user's.
+      if (isWorkText(p?.prompt?.text)) {
+        if (p?.sessionID) internal.add(p.sessionID)
+        return
+      }
+      if (internal.has(p?.sessionID)) return
       if (p?.sessionID) {
         // A prompt starts a turn; one arriving after the last turn's end is a new turn.
         ended.delete(p.sessionID)
@@ -262,28 +266,35 @@ export default {
       }
       ingest.prompt(p)
       observe(rootOf(p.sessionID))
-      // Analysis is what `/retro` does, not something a new session triggers: a model call
-      // costs money and nothing here spends it unprompted. `asyncExtract` restores the old
-      // behaviour for anyone who wants lessons ready before they ask.
-      if (config.asyncExtract) void drainOne(p.sessionID)
     })
 
-    // The model the user actually works with, so extraction can default to it instead of
-    // demanding configuration. `model.request` carries only session and telemetry headers;
-    // never hook http.request, which carries the provider credential (AGENTS.md Gotcha 5).
-    await hook("session", "model.request", (p) => {
-      if (p?.kind === "primary" && p.model?.providerID && p.model?.id) {
-        lastSessionModel = { providerID: p.model.providerID, id: p.model.id }
-      }
-    })
+    /**
+     * The plugin's own work, kept out of every log: its subagents, the calls that start them,
+     * and the calls to the tools only that work uses. Otherwise the next analysis reads the
+     * last one — a work order's projection of another session inside this one.
+     */
+    const ownWork = (p) =>
+      internal.has(p?.sessionID) ||
+      p?.tool === "retro_record" ||
+      p?.tool === "retro_propose" ||
+      (p?.tool === "subagent" && isWorkText(p?.input?.prompt))
 
     await hook("tool", "execute.before", (p) => {
+      if (ownWork(p)) return
       ingest.toolBefore(p)
     })
     await hook("tool", "execute.after", (p) => {
-      if (p.tool === "subagent" && p.result?.metadata?.sessionID) {
-        adopt(p.result.metadata.sessionID, p.sessionID)
+      const child = p.tool === "subagent" ? p.result?.metadata?.sessionID : null
+      if (child && (isWorkText(p.input?.prompt) || internal.has(child))) {
+        // One of ours. If its own prompt did not carry the mark (the agent may have worded the
+        // delegation its own way), whatever it wrote before the link was known goes now.
+        internal.add(child)
+        log.remove(child)
+        state.uncountSession(child)
+      } else if (child) {
+        adopt(child, p.sessionID)
       }
+      if (ownWork(p)) return
       ingest.toolAfter(p)
       // Measured on the parent, never on the child: the child's records are written into
       // the parent's log, so the self-check would otherwise look for sessions/<child>.jsonl,
@@ -310,13 +321,13 @@ export default {
           description: "Propose what the last sessions should have taught this project",
           execute: command("retro", ({ sessionID, prompt }) => {
             const text = String(prompt?.text ?? "").trim().toLowerCase()
-            return text.startsWith("all") ? proposeAll(sessionID) : proposeOne(sessionID)
+            return retro(sessionID, text.startsWith("all"))
           }),
         })
         cmds.add({
           name: "retro-all",
           description: "Propose everything waiting at once, as one plan",
-          execute: command("retro-all", ({ sessionID }) => proposeAll(sessionID)),
+          execute: command("retro-all", ({ sessionID }) => retro(sessionID, true)),
         })
       })
     } catch (err) {
@@ -340,6 +351,35 @@ export default {
             pruneLogs()
             writeSelfCheck()
             return { output: result, content: result.detail }
+          },
+        })
+        tools.add({
+          name: "retro_record",
+          description:
+            "Record what one opencode-retro work order found. Call it exactly once per work " +
+            "order, with the session id named in the order and the lessons — an empty list when " +
+            "the session went straight. It only records; it changes no file in the project.",
+          input: RECORD_INPUT,
+          output: DECIDE_OUTPUT,
+          execute: async (input) => {
+            const result = applyRecord({ session: String(input?.session ?? ""), lessons: input?.lessons })
+            return { output: { ok: result.ok, detail: result.detail }, content: result.detail }
+          },
+        })
+        tools.add({
+          name: "retro_propose",
+          description:
+            "Hand over what the opencode-retro analyses found, once every work order has been " +
+            "answered: the top lesson, or with `all` every waiting lesson as one plan. Returns " +
+            "the text to put to the human, with what to do.",
+          input: PROPOSE_INPUT,
+          output: DECIDE_OUTPUT,
+          execute: async (input, context) => {
+            const failures = settleUnanswered()
+            // Logs still owed beyond what this round asked for, so the hand-over can say so.
+            const left = owedLogs().filter((id) => id !== context?.sessionID).length
+            const text = await proposalText(Boolean(input?.all), { failures, left })
+            return { output: { ok: true, detail: text }, content: text }
           },
         })
       })
@@ -388,9 +428,10 @@ export default {
         // and then the whole session was ignored by the event stream that decides when it
         // is over.
         if (isForeign(event)) return
+        if (internal.has(sessionID)) return
         if (event.data?.parentID) adopt(sessionID, event.data.parentID)
       }
-      if (sessionID && foreign.has(sessionID)) return
+      if (sessionID && (foreign.has(sessionID) || internal.has(sessionID))) return
       ingest.event(event)
 
       if (event.type === "session.execution.started" && sessionID) {
@@ -480,52 +521,6 @@ export default {
         }
       } catch (err) {
         onError("session.synthetic", err)
-      }
-    }
-
-    /**
-     * One analysis call, through a session of our own.
-     *
-     * Not `ctx.generate.text`: that endpoint refuses OpenCode's own free-tier models with
-     * "can only be used from within OpenCode", from a command's execute as much as from
-     * anywhere else. A session is within OpenCode, and `session.generate` on the very same
-     * free model returns normally — measured. So this path works whatever the user runs on,
-     * including with no configuration at all.
-     *
-     * The session is created for the call and removed after it, so it does not pile up in
-     * the user's session list. `generate` is its own request kind: no agent loop, no tools,
-     * no history — the clean context extraction needs.
-     */
-    async function analyse({ prompt, model }) {
-      const ref = model?.providerID && model?.id ? { providerID: model.providerID, id: model.id } : null
-      const key = ref ? `${ref.providerID}/${ref.id}` : null
-      // The model's no-reasoning variant, unless the user named one or this model has none.
-      const chosen = model?.variant ?? (ref && !noQuietVariant.has(key) ? QUIET_VARIANT : null)
-      try {
-        return await generateOnce(prompt, ref, chosen)
-      } catch (err) {
-        if (!chosen || model?.variant || !/variant unavailable/i.test(String(err?.message ?? err))) throw err
-        // No such variant on this model: OpenCode says so loudly, before any call is paid
-        // for. Remembered, so the next analysis does not ask again.
-        noQuietVariant.add(key)
-        return await generateOnce(prompt, ref, null)
-      }
-    }
-
-    async function generateOnce(prompt, ref, variant) {
-      const session = await ctx.session.create({
-        title: "opencode-retro analysis",
-        location: ctx.location,
-        ...(ref ? { model: { ...ref, ...(variant ? { variant } : {}) } } : {}),
-      })
-      try {
-        return await ctx.session.generate({ sessionID: session.id, prompt })
-      } finally {
-        try {
-          await ctx.session.remove({ sessionID: session.id })
-        } catch (err) {
-          onError("session.remove", err)
-        }
       }
     }
 
@@ -694,71 +689,102 @@ export default {
       return assessCurrency(lesson, { directory: config.directory, fingerprint })
     }
 
-    async function proposeAll(sessionID) {
-      const extracted = await analyseOwed(sessionID)
+    /**
+     * Both commands begin the same way: settle what the last round left unanswered, then
+     * write a work order for every owed log. With orders out, the hand-over asks the agent to
+     * have them read and to call `retro_propose` when they are in; with none, there is nothing
+     * to wait for and the proposal goes straight out.
+     */
+    async function retro(sessionID, all) {
+      const extracted = analyseOwed(sessionID)
+      if (extracted.orders.length) {
+        await diagnose()
+        writeSelfCheck()
+        return say(
+          sessionID,
+          renderWorkOrders(extracted.orders.map((o) => ({ ...o, path: workName(o.session) })), {
+            all,
+            failures: extracted.failures,
+            left: extracted.left,
+          }),
+        )
+      }
+      return say(sessionID, await proposalText(all, extracted))
+    }
 
-      const open = pickOpen(store.list(), { sessions: state.sessions, halfLife: config.halfLife })
+    /** What to put to the human: one lesson, every lesson as a plan, or that there is none. */
+    async function proposalText(all, { failures = [], left = 0 } = {}) {
+      pruneLogs()
+      const present = new Set(log.list())
+      state.compact((id) => present.has(id))
+      const extracted = { failures, left }
+      const lessons = store.list()
       await diagnose()
       writeSelfCheck()
-      if (!open.length) return say(sessionID, renderNothing({ queued: extracted.left, extracted, dir: retroDir }))
 
-      const shown = open.slice(0, config.proposeLimit)
-      const currencies = new Map()
-      for (const lesson of shown) currencies.set(lesson.id, currencyOf(lesson))
-
-      // A failed analysis is news in a batch exactly as it is in a single hand-over. The
-      // batch path used to drop it, so `/retro all` showed a plan and said nothing about the
-      // log it could not read — the one kind of silence this plugin exists to prevent.
-      return say(
-        sessionID,
-        renderFailures(extracted) +
+      if (all) {
+        const open = pickOpen(lessons, { sessions: state.sessions, halfLife: config.halfLife })
+        if (!open.length) return renderNothing({ queued: left, extracted, dir: retroDir })
+        const currencies = new Map()
+        for (const lesson of open.slice(0, config.proposeLimit)) currencies.set(lesson.id, currencyOf(lesson))
+        // A failed analysis is news in a batch exactly as it is in a single hand-over.
+        return (
+          renderFailures(extracted) +
           renderBatch(open, {
             sessions: state.sessions,
             halfLife: config.halfLife,
             currencies,
             limit: config.proposeLimit,
             leadIn: prompts.resolve("propose")?.text,
-            queued: extracted.left,
-          }),
+            queued: left,
+          })
+        )
+      }
+
+      // One invocation, one lesson: the top of the list. Deciding is the user's business, in
+      // this session, with the agent that is already here.
+      const lesson = pickLesson(lessons, { sessions: state.sessions, halfLife: config.halfLife })
+      if (!lesson) return renderNothing({ queued: left, extracted, dir: retroDir })
+      const open = lessons.filter((l) => ["new", "later", undefined, null].includes(l.status)).length
+      return (
+        renderFailures(extracted) +
+        renderProposal(lesson, {
+          total: open,
+          remaining: open - 1,
+          currency: currencyOf(lesson),
+          sessions: state.sessions,
+          halfLife: config.halfLife,
+          leadIn: prompts.resolve("propose")?.text,
+          queued: left,
+          logs: logDir,
+        })
       )
     }
 
     /**
-     * Both proposal modes analyse what has accumulated before they propose anything: one
-     * `/retro` reads every owed log, turns it into lessons, and only then looks for something
-     * to hand over.
+     * Every owed log, oldest first, so the session the command runs in comes last.
      *
      * "Everything accumulated" includes sessions still working — this one among them. Their
      * friction is the most recent there is, and reading a log does not settle anything a
      * session can still add to: the mark says how far it was read, and whatever it writes
-     * next is simply owed. Oldest first, so the session the command runs in comes last.
+     * next is simply owed.
      */
     function owedLogs(skip = new Set()) {
       return log
         .list()
-        .filter((id) => !skip.has(id) && !parents.has(id) && isOwed(id))
+        .filter((id) => !skip.has(id) && !parents.has(id) && !internal.has(id) && isOwed(id))
         .map((id) => ({ id, at: log.probe(id)?.mtimeMs ?? 0 }))
         .sort((a, b) => a.at - b.at)
         .map((x) => x.id)
     }
 
-    async function analyseOwed(sessionID) {
-      const done = []
-      const failures = []
-      // One command reads each log at most once, whatever the outcome. A failure set aside for
-      // this run rather than ending it: stopping at the first failure meant one unreadable
-      // reply hid every log behind it. And termination should not depend on every rule
-      // elsewhere being right.
-      const skip = new Set()
-
-      // The cap counts attempts, not successes: an attempt is what costs a model call, so a
-      // backlog of failing logs could otherwise spend without limit under a limit that only
-      // ever counted the ones that worked.
-      let attempted = 0
+    function analyseOwed(sessionID) {
+      // What the last round left unanswered is a failed attempt, decided before anything new
+      // is asked for — a round whose agent never called `retro_propose` ends here.
+      const failures = settleUnanswered()
 
       // A mark at three failed attempts with no outcome to say so — a state written by a
       // process that died mid-retirement — is not owed and would be reported by nothing.
-      // Retired here, so it reaches the stock section and the message instead.
       for (const id of log.list()) {
         const mark = state.looked(id)
         if (!mark.failed || (mark.attempts ?? 0) < 3) continue
@@ -768,57 +794,22 @@ export default {
         failures.push({ session: id, detail })
       }
 
-      while (attempted < config.extractLimit) {
+      // One order per log per command, whatever happens to it. The cap counts orders: an
+      // order is what costs a model call. A skipped log takes none.
+      const skip = new Set()
+      const orders = []
+      while (orders.length < config.extractLimit) {
         const [id] = owedLogs(skip)
         if (!id) break
         skip.add(id)
-        attempted++
-        const result = await runExtraction(id)
-        // A skipped log — one exchange, nothing done — never reached the model, so it is not
-        // an attempt against a limit whose reason to exist is the model call it costs.
-        if (result?.skipped) attempted--
-        if (!result?.ok) failures.push({ session: id, detail: result?.detail ?? "unknown failure" })
-        else if (!result.skipped) done.push(id)
+        const result = issueOrder(id)
+        if (result?.order) orders.push(result.order)
+        else if (!result?.ok && !result?.skipped) failures.push({ session: id, detail: result?.detail ?? "unknown failure" })
       }
 
-      pruneLogs()
-      // Bookkeeping about a session is dropped once its log is gone. Once per command is often
-      // enough, and cheap.
-      const present = new Set(log.list())
-      state.compact((id) => present.has(id))
-
-      const left = owedLogs().filter((id) => id !== sessionID).length
-      return { analysed: done.length, left, failures }
-    }
-
-    async function proposeOne(sessionID) {
-      // One invocation, one lesson: the top of the list. Deciding is the user's business,
-      // in this session, with the agent that is already here.
-      const extracted = await analyseOwed(sessionID)
-
-      const lessons = store.list()
-      const lesson = pickLesson(lessons, { sessions: state.sessions, halfLife: config.halfLife })
-      await diagnose()
-      writeSelfCheck()
-
-      if (!lesson) {
-        return say(sessionID, renderNothing({ queued: extracted.left, extracted, dir: retroDir }))
-      }
-      const open = lessons.filter((l) => ["new", "later", undefined, null].includes(l.status)).length
-      return say(
-        sessionID,
-        renderFailures(extracted) +
-          renderProposal(lesson, {
-          total: open,
-          remaining: open - 1,
-          currency: currencyOf(lesson),
-          sessions: state.sessions,
-          halfLife: config.halfLife,
-          leadIn: prompts.resolve("propose")?.text,
-          queued: extracted.left,
-          logs: logDir,
-        }),
-      )
+      const ordered = new Set(orders.map((o) => o.session))
+      const left = owedLogs().filter((id) => id !== sessionID && !ordered.has(id)).length
+      return { orders, failures, left }
     }
 
     /**
@@ -846,48 +837,29 @@ export default {
     }
 
     /**
-     * `asyncExtract`: one owed log per prompt, never the session that was just prompted, and
-     * one at a time — a prompt that arrives while an analysis is in flight does not start a
-     * second.
+     * Where a session's work order is written, and how a hand-over names it. Declarations,
+     * not bindings: everything here sits after setup's `return` (AGENTS.md Gotcha 13).
      */
-    async function drainOne(currentSession) {
-      if (draining) return
-      const [id] = owedLogs(new Set([currentSession]))
-      if (!id) return
-      draining = true
-      try {
-        await runExtraction(id)
-      } catch (err) {
-        onError("drain", err)
-      } finally {
-        draining = false
-      }
+    function workPath(session) {
+      return join(config.dir, "work", `${session}.md`)
+    }
+    function workName(session) {
+      return `${retroDir}/work/${session}.md`
+    }
+
+    /** Whether a prompt is one of the plugin's own work orders being handed to a subagent. */
+    function isWorkText(text) {
+      return typeof text === "string" && (text.includes(WORK_MARK) || text.includes(`${retroDir}/work/`))
     }
 
     /**
-     * Which model analyses the logs, in order of preference:
-     *   1. `options.model`, when the user has pinned one;
-     *   2. the model their own sessions run on, learned from `session.model.request`;
-     *   3. this workspace's default, from `ctx.model.default()`.
+     * Read a log and write its work order (analysis.md, "Work order").
      *
-     * Measured: a plugin may not call OpenCode's own free tier, and both 2 and 3 can hand
-     * one back. That failure is reported with its remedy rather than swallowed.
+     * Returns `{ skipped }` for a log that cannot hold evidence — settled at once, no order;
+     * `{ ok: false, detail }` for one that cannot be ordered, charged as a failed attempt; and
+     * `{ ok: true, order }` otherwise.
      */
-    async function resolveModel() {
-      if (config.model?.providerID && config.model?.id) return { ...config.model, from: "options.model" }
-      if (lastSessionModel) return { ...lastSessionModel, from: "your session's model" }
-      try {
-        const fallback = (await ctx.model.default())?.data
-        if (fallback?.providerID && fallback?.modelID) {
-          return { providerID: fallback.providerID, id: fallback.modelID, from: "this workspace's default model" }
-        }
-      } catch (err) {
-        onError("model.default", err)
-      }
-      return null
-    }
-
-    async function runExtraction(sessionID) {
+    function issueOrder(sessionID) {
       // The mark is checked against the file that is actually there first: a log that was
       // pruned and written again is smaller than the mark that described the old one.
       let mark = markOf(sessionID)
@@ -902,169 +874,163 @@ export default {
       const records = text == null ? null : parseShadowLog(text)
       const lastN = records?.length ? Math.max(...records.map((r) => r.n ?? 0)) : 0
 
-      // Which log this is, from the bytes that were actually read. `markOf` asked a moment
-      // earlier, and a log can be replaced in between — a pruned file written again under the
-      // same id, which starts at its own step 1. The old mark must not filter the new log's
-      // first steps away as already analysed; that is the same rule as `markOf`, applied to
-      // the bytes in hand instead of a second look at the file.
+      // Which log this is, from the bytes that were actually read. A log can be replaced
+      // between `markOf` and the read, and the old mark must not filter the new log's first
+      // steps away as already analysed.
       const identity = identityOf(text)
       if (raw != null && isReplacedLog(mark, identity, { exists: true })) {
         state.forget(sessionID)
         mark = { n: 0, size: 0 }
       }
-
-      // A log whose numbering ends before the mark does is not the log the mark described,
-      // even if it is longer: the file was replaced rather than appended to. Starting over
-      // is the only reading that makes the step references resolve.
+      // A log whose numbering ends before the mark does was replaced, not appended to.
       if (lastN > 0 && lastN < mark.n) {
         state.forget(sessionID)
         mark = { n: 0, size: 0 }
       }
 
-      /**
-       * How much was actually read, not how large the file is now.
-       *
-       * The session may be working while the model answers, and the earlier version recorded
-       * `stat` size on success — so every record appended during the call was marked as sent
-       * without ever being sent, and the growth gate then skipped it for good.
-       */
+      /** How much was actually read, not how large the file is by the time it is answered. */
       const readSize = raw == null ? log.stat(sessionID).size : raw.length
+      const failed = (detail) => fail(sessionID, { size: readSize, id: identity }, detail)
 
-      // Nothing is written to the mark until the answer is in. Marking the bytes before the
-      // call looked tidy — "already sent, do not pay twice" — but a process that died during
-      // the call left a log that was neither read nor owed: `size` said sent, no failure had
-      // been recorded, and nothing would ever look at it again. The debt that started the read
-      // (growth, an unread excerpt, a previous failure) is still in the mark, so leaving it
-      // alone is what makes the crash recoverable.
+      // A log we could not read is a failure like any other: reported, retried, never called
+      // a clean analysis. A file that exists but yields no record was corrupted or truncated.
+      if (raw == null) return failed("shadow log could not be read")
+      if (records.length === 0) return failed("shadow log could not be parsed: no line is a record")
 
-      // A log we could not read is a failure like any other, and it reaches the same retry
-      // policy below. It used to be marked extracted here and returned early, which did two
-      // wrong things at once: the log was never retried although the brief says a failed
-      // extraction keeps its log, and the command —
-      // counted it as analysed. `/retro` then reported "analysed 1 session, nothing to learn
-      // from it" about a log it had not read.
       /**
-       * Only the part that has not been turned into lessons yet.
-       *
-       * Sessions here are left open and returned to rather than finished, so a log is read
-       * more than once — and without a mark, `/retro` a fortnight later re-reads all of it,
-       * pays for all of it, and re-derives the lessons that were already integrated. The
-       * prompts are kept whatever their step, because they say what the session was for and
-       * an excerpt without them is a list of commands with no account of why.
+       * Only the part that has not been turned into lessons yet, with the prompts kept
+       * whatever their step: they say what the session was for.
        */
-      const fresh = mark.n > 0 && records ? records.filter((r) => r.n > mark.n || r.k === "prompt") : records
+      const fresh = mark.n > 0 ? records.filter((r) => r.n > mark.n || r.k === "prompt") : records
+      const composed = composeOrder({
+        records: fresh,
+        analysedUpTo: mark.n,
+        concluded: concludedFrom(sessionID),
+        session: sessionID,
+        prompts,
+        store,
+        state,
+        maxInput: config.maxInput,
+      })
 
-      let result = { ok: false, detail: "shadow log could not be read" }
-      // A file that exists but yields no record is not an empty session: the log is only
-      // created by writing a record to it, so a present file with nothing parseable in it was
-      // corrupted, truncated or written by something else. Feeding the extractor an empty
-      // record list made it answer "one exchange, nothing done" and settle the log as read —
-      // a clean report about material nobody could read.
-      if (raw != null && records.length === 0) {
-        result = { ok: false, detail: "shadow log could not be parsed: no line is a record" }
-      } else if (records) {
-        try {
-          result = await extract({
-            records: fresh,
-            analysedUpTo: mark.n,
-            concluded: concludedFrom(sessionID),
-            session: sessionID,
-            generate: analyse,
-            model: await resolveModel(),
-            prompts,
-            store,
-            state,
-            fingerprint,
-            timeoutMs: config.extractTimeoutMs,
-            maxInput: config.maxInput,
-          })
-        } catch (err) {
-          onError("extract", err)
-          result = { ok: false, detail: `threw: ${String(err?.message ?? err)}` }
-        }
+      if (composed.skipped) {
+        // A skip covers nothing: the size moves, so nothing is asked again until the log
+        // grows, and the step mark does not, so when it grows it is read from the start.
+        state.look(sessionID, { size: readSize, open: false, failed: false, attempts: 0, id: identity })
+        state.markExtracted(sessionID, { ok: true, detail: composed.detail })
+        lastExtraction.set(sessionID, composed)
+        return composed
+      }
+      if (!composed.ok) return failed(composed.detail)
+
+      // Only as far as the excerpt actually goes. One that cannot reach past the mark —
+      // the re-sent prompts filling the budget before the first gap — covers nothing new,
+      // and asking for it would record the whole file as read while the new material never
+      // reached anyone.
+      const through = Math.min(composed.through ?? lastN, lastN)
+      if (lastN > mark.n && through <= mark.n) {
+        return failed(
+          `the excerpt could not reach past step ${mark.n} of the log within maxInput, so ` +
+            "nothing new could be asked for — raise maxInput or shorten the prompts",
+        )
       }
 
-      // Nothing is settled for a session that is still working: not marked extracted, so the
-      // rest of it is still analysed when it ends, and not pruned, because it is being
-      // written to as we read it.
-      // The step mark moves only on success: a failed analysis must not skip the material it
-      // failed on. The size was already recorded above, so nothing is paid twice.
-      // Only as far as the analysis actually went. An excerpt covers up to its first gap, so
-      // marking the last step *seen* would jump over the elided middle and nothing would ever
-      // read it — the silent kind of loss this plugin exists to avoid.
-      const through = Math.min(result.through ?? lastN, lastN)
-      // An excerpt covers only its unbroken prefix, and on a re-read that prefix can end
-      // before the mark: the prompts are re-sent from step 1, so a tight budget may leave
-      // them as the only thing that fits before the first gap. Then no new step was covered
-      // at all, and settling it would record the whole file as read while the elided new
-      // material was never analysed — the next command would see "nothing new" for ever.
-      // That is a failure, and it spends one of the three attempts, rather than a success.
-      if (result.ok && lastN > mark.n && through <= mark.n) {
-        result = {
-          ...result,
-          ok: false,
-          detail:
-            `${result.detail}; the excerpt could not reach past step ${mark.n} of the log within ` +
-            "maxInput, so nothing new was analysed — raise maxInput or shorten the prompts",
-        }
+      try {
+        mkdirSync(join(config.dir, "work"), { recursive: true })
+        writeFileSync(workPath(sessionID), composed.text)
+      } catch (err) {
+        onError("extract.order", err)
+        return failed(`the work order could not be written: ${err?.message ?? err}`)
       }
+      const order = { id: identity, size: readSize, through, lastN, n: mark.n, elided: composed.elided }
+      state.issue(sessionID, order)
+      return { ok: true, order: { session: sessionID, ...order } }
+    }
 
-      // A transient model failure is worth one more go on the next prompt; a third
-      // attempt would just keep charging for the same answer.
-      // The whole reply goes to plugin.log on a failure: the message carries an excerpt, and
-      // the difference between prose and truncated JSON is only visible in the rest of it.
-      // Only a failure spends the retry budget. A successful excerpt is progress, and
-      // charging it against the budget of three would retire the rest of the log.
-      // The step mark moves only on success: a failed analysis must not skip the material it
-      // failed on. The bytes were read either way, so nothing is paid for twice. Attempts
-      // belong to the input they were spent on: a read of a larger log starts the count again.
-      if (!result.ok) {
-        const attempts = (readSize > mark.size ? 0 : (mark.attempts ?? 0)) + 1
-        onError(`extract.${sessionID}`, result.reply ? `${result.detail}\n--- reply ---\n${result.reply}` : result.detail)
-        if (attempts >= 3) {
-          // Retired: three failures on the same input. Nothing is owed any more, so neither
-          // flag may outlive it; the outcome says why, the self-check names it, and the log
-          // stays until it is quiet. Growth makes it owed again, with attempts of its own.
-          // The outcome first: a crash between the two writes then leaves a mark still owed
-          // (one more attempt) rather than a log nobody owes and nothing reports.
-          const detail = `given up after three failed analyses: ${result.detail}`
-          state.markExtracted(sessionID, { ok: false, detail })
-          state.look(sessionID, { size: readSize, open: false, failed: false, attempts: 0, id: identity })
-          result = { ...result, detail }
-        } else {
-          // `open` is cleared so a failed retry falls back to the attempt budget instead of
-          // re-reading the same excerpt on every command for ever.
-          state.look(sessionID, { size: readSize, open: false, failed: true, attempts, id: identity })
-        }
+    /**
+     * A failed attempt (analysis.md, "Attempt"). The step mark does not move — a failure must
+     * not skip the material it failed on — and the bytes are recorded as read. Attempts
+     * belong to the input they were spent on, and three on one input retire the log.
+     */
+    function fail(sessionID, { size, id }, detail) {
+      const mark = state.looked(sessionID)
+      const attempts = (size > mark.size ? 0 : (mark.attempts ?? 0)) + 1
+      onError(`extract.${sessionID}`, detail)
+      let result = { ok: false, detail }
+      if (attempts >= 3) {
+        // The outcome first: a crash between the two writes then leaves a mark still owed
+        // (one more attempt) rather than a log nobody owes and nothing reports.
+        result = { ok: false, detail: `given up after three failed analyses: ${detail}` }
+        state.markExtracted(sessionID, result)
+        state.look(sessionID, { size, open: false, failed: false, attempts: 0, id })
+      } else {
+        state.look(sessionID, { size, open: false, failed: true, attempts, id })
       }
-      // `open` is the other half of the coverage rule. Stopping the mark at the gap is only
-      // useful if the next command actually reads from there; the size gate would otherwise
-      // call a log whose bytes were all sent "already read" and the gap would never be visited.
-      const open = Boolean(result.ok && through < lastN && through > mark.n)
-      if (result.ok) {
-        state.look(sessionID, {
-          size: readSize,
-          // A skip covers nothing. "One prompt, one answer, nothing done" means there is
-          // nothing to analyse *yet* — not that these steps were turned into lessons. Moving
-          // `n` on a skip claimed they were, so when the session later did real work the
-          // re-read started after the mark and the earlier reply never reached a model.
-          // Found by the model test in five actions. The size still moves: there is nothing
-          // to pay for until the log grows, and when it does it is read from the start.
-          ...(through > 0 && !result.skipped ? { n: through } : {}),
-          open,
-          failed: false,
-          attempts: 0,
-          id: identity,
-        })
-        state.markExtracted(sessionID, { ok: true, detail: result.detail })
-      }
-
       lastExtraction.set(sessionID, result)
-      const verified = lastVerified.get(sessionID)
-      if (verified) {
-        check.verify({ ...verified, extraction: result })
-        writeSelfCheck()
+      return result
+    }
+
+    /**
+     * Orders nobody answered. Called when `retro_propose` is — the agent says the analyses
+     * are done — and at the start of every `/retro`, for a round that never got that far.
+     */
+    function settleUnanswered() {
+      const failures = []
+      for (const order of state.openOrders()) {
+        const result = fail(order.session, order, "no record came back from its analysis")
+        state.close(order.session, "unanswered")
+        removeWork(order.session)
+        failures.push({ session: order.session, detail: result.detail })
       }
+      return failures
+    }
+
+    function removeWork(sessionID) {
+      try {
+        rmSync(workPath(sessionID), { force: true })
+      } catch (err) {
+        onError("extract.order.remove", err)
+      }
+    }
+
+    /**
+     * A subagent's answer, through `retro_record`: applied to the order it answers, and to
+     * nothing else (analysis.md, "Record").
+     */
+    function applyRecord({ session, lessons }) {
+      const order = state.orderOf(session)
+      if (!order) {
+        return {
+          ok: false,
+          detail: `no work order is open for \`${session}\` — it was answered already, or never issued. Nothing was recorded.`,
+        }
+      }
+      const file = log.probe(session)
+      if (!file || (order.id && file.id && order.id !== file.id)) {
+        state.close(session, "void")
+        removeWork(session)
+        return { ok: false, detail: `the log of \`${session}\` was replaced since its order was written; it will be asked for again.` }
+      }
+      const answered = recordAnswer({ session, lessons, store, state, fingerprint, elided: order.elided })
+      // `open` is the other half of the coverage rule: stopping at the gap is only useful if
+      // the next command reads on from there without waiting for the log to grow.
+      const open = order.through < order.lastN && order.through > order.n
+      state.look(session, {
+        size: order.size,
+        ...(order.through > 0 ? { n: order.through } : {}),
+        open,
+        failed: false,
+        attempts: 0,
+        id: order.id,
+      })
+      const result = { ok: true, detail: answered.detail, through: order.through }
+      state.markExtracted(session, { ok: true, detail: answered.detail })
+      state.close(session, "answered")
+      removeWork(session)
+      lastExtraction.set(session, result)
+      const verified = lastVerified.get(session)
+      if (verified) check.verify({ ...verified, extraction: result })
+      writeSelfCheck()
       return result
     }
   },

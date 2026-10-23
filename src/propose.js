@@ -225,6 +225,45 @@ export const backlogLine = (queued) =>
   } up.`
 
 /** A failed analysis used to leave nothing but a counter in state.json. */
+/** The `retro_propose` tool's input. */
+export const PROPOSE_INPUT = {
+  type: "object",
+  properties: {
+    all: { type: "boolean", description: "Every waiting lesson as one plan, as `/retro all` asked; otherwise the top one." },
+  },
+  additionalProperties: false,
+}
+
+/**
+ * The hand-over that asks for the analyses (analysis.md, "Analysis"). Addressed to the agent:
+ * start one subagent per work order, let each record its answer, then ask for the proposal.
+ * The prompt for each subagent is given verbatim and carries the mark that keeps the
+ * plugin's own work out of the logs.
+ */
+export function renderWorkOrders(orders, { all = false, failures = [], left = 0 } = {}) {
+  const n = orders.length
+  const lines = [
+    "_opencode-retro — the logs come first:_",
+    "",
+    `${n} session log${n === 1 ? " is" : "s are"} waiting to be analysed before anything can be proposed. ` +
+      `Each has a work order — a file holding the log, the criteria and how to answer:`,
+    "",
+    ...orders.map((o) => `- \`${o.path}\``),
+    "",
+    `Start one subagent per work order — the \`general\` agent, all of them at once if you can — ` +
+      "each with exactly this prompt, its own path filled in, and nothing else:",
+    "",
+    `    opencode-retro work order: read <path> and do what it says.`,
+    "",
+    "Do not read the work orders yourself and do not analyse the logs here: each subagent reads one, " +
+      "in a context of its own, and records what it found with `retro_record`. When every subagent " +
+      `has finished, call \`retro_propose\`${all ? " with `all: true`" : ""} and follow what it returns.`,
+  ]
+  for (const f of failures) lines.push("", `_The last round could not analyse \`${f.session}\`: ${f.detail}_`)
+  if (left > 0) lines.push("", backlogLine(left))
+  return lines.join("\n")
+}
+
 export function renderFailures(extracted) {
   const failures = extracted?.failures ?? []
   if (!failures.length) return ""
