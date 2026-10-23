@@ -68,7 +68,19 @@ done
 # Once more, as a person would after the hand-over was discussed: it asks again about any log
 # whose order went unanswered, and reads the review session itself — whose checking of the
 # lesson must not be counted as the problem recurring.
-timeout 900 "$OC" api post "/api/session/$review/command" -H "x-opencode-directory: $WORK/project" \
+#
+# In a *second* session, not the first. Measured: posting it back into the review session put
+# the hand-over into the inbox of a session whose turn had not ended, and nothing happened —
+# `session.synthetic` with `resume: true` does not resume a busy session, so the order sat
+# unanswered and the review check below read UNTESTED. In the TUI the person types again and
+# sees it; headless, nobody does. A fresh session is also closer to what the check is about:
+# somebody comes back later and runs `/retro`, and the review that happened in the meantime
+# is in the logs it reads.
+before2=$(ls .retro/sessions)
+timeout 300 "$OC" run -m "$MODEL" "Reply with the single word: ready." < /dev/null > "$WORK/review2.log" 2>&1
+second=$(comm -13 <(echo "$before2") <(ls .retro/sessions) | head -1 | sed 's/\.jsonl$//')
+echo "second review session: $second"
+timeout 900 "$OC" api post "/api/session/$second/command" -H "x-opencode-directory: $WORK/project" \
   -d '{"name":"retro","text":""}' > "$WORK/retro2.json" 2>&1
 echo "retro again: exit $?"
 # And wait for *this* round too, or the review check below is scored before the analysis of

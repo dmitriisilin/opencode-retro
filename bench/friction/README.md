@@ -22,7 +22,9 @@ OPENCODE=opencode2 bench/friction/run.sh            # a fresh /tmp/retro-frictio
 It packs this checkout, installs the tarball into a fresh copy of `project/` with no git and
 no plugin options, runs each task as its own session with `deepseek/deepseek-flash`, posts
 `/retro` to a review session, waits for that session's agent to answer every work order and
-then finish with the hand-over, posts `/retro` again, and prints:
+then finish with the hand-over, posts `/retro` again **in a second session** — a hand-over
+into a session whose turn has not ended waits in its inbox, and headless nobody types again
+to see it — and prints:
 
 - **recall** — which traps became lessons;
 - **recurrence** — every task hits the traps, so a lesson seen in one session only means the

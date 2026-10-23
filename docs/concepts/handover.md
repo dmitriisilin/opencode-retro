@@ -58,10 +58,20 @@ closed. Accepting or rejecting moves the file to `archive/`; `later` keeps it op
   `a missing prompt degrades to a terse hand-off rather than a silent one`
 - (untested) A hand-over into a session that is busy — mid-turn, or waiting on a question
   the agent put to the human — is queued by OpenCode like any other input, and appears when
-  that turn ends. That is OpenCode's delivery, not something the plugin can see or change;
+  that turn ends. Measured live, but nothing pins it: no fake reproduces OpenCode's queue. `resume: true` does not resume a session that is
+  already working. That is OpenCode's delivery, not something the plugin can see or change;
   headless, it means a review that stopped on a question form holds every later hand-over
-  until the form is answered (AGENTS.md Gotcha 16). A known limit, measured live in cycle 8;
-  no fake can reproduce OpenCode's queue.
+  until the form is answered (AGENTS.md Gotcha 16).
+
+  Measured in cycle 9, which is where the shape of it became clear: a second `/retro` posted
+  into the same review session wrote its hand-over into the log and nothing followed — the
+  session's turn had never ended (`trigger — not exercised: the session has not ended yet`,
+  "still working"), so the text waited in the inbox. The order stayed owed, which is the
+  right outcome and is reported, but nothing in that session ever answered it. Interactively
+  the person types again and sees it; headless, nobody does, so the friction bench now posts
+  its second `/retro` in a fresh session. The one hazard left is arithmetic: three such
+  rounds in one busy session would retire a log that was never unanalysable, so a log owed by
+  the session a command is running in is worth watching.
 - An empty hand-over after a failed read says the read failed, and does not conclude that
   the sessions went straight.
   `a log that could not be read is not reported as a session that went straight`
