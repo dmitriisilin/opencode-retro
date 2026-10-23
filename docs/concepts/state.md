@@ -3,7 +3,7 @@
 ## Definitions
 
 **`state.json`.** The small things that must outlive a process: rejected ids, the outcome of
-each extraction, the marks, the session count. Read once at load, used from memory, and
+each extraction, the marks, the work orders issued, the session count. Read once at load, used from memory, and
 written by **merging with the file**, never by overwriting it — a second writer (another
 instance on the project) must not be clobbered. There is no queue: what is owed is computed
 from each log and its mark (log.md), so nothing in this file can say a log is owed when it is
@@ -22,6 +22,13 @@ the same size the higher attempt count stands. Two marks about different files k
 that describes the file on disk, and neither if neither does — so a mark about a replaced
 log cannot come back through a writer that never saw the replacement.
 
+**Orders.** One per session, merged by the stamp each carries: the later of two orders for a
+session wins, issued or answered, whoever wrote it. An answered order is kept as `done`
+rather than deleted, so a writer that still holds the open one cannot bring it back by
+saving after the answer. An order outlives the process that issued it on purpose — a `/retro`
+whose process died left orders nobody will answer, and the next command has to be able to
+settle them as a failed attempt rather than wait for an answer for ever.
+
 **Tombstone.** A deliberate removal the data cannot otherwise express, kept so a merge does
 not bring the thing back: `uncounted`, a session that turned out to be a delegation. It has
 no clearing act — a delegation never becomes a session — and it is never compacted, because
@@ -33,8 +40,8 @@ whose `id` does not match the file on disk is void, and a merge does not max a m
 against another with a different `id`. This is what makes "a replaced log is a different
 log" hold across writers, not just within one process.
 
-**Compaction.** Bookkeeping about a session is dropped once its log is gone: its mark and its
-extraction outcome. The set of counted sessions is not bookkeeping: a session left open can be
+**Compaction.** Bookkeeping about a session is dropped once its log is gone: its mark, its
+extraction outcome and any order about it. The set of counted sessions is not bookkeeping: a session left open can be
 prompted again months later, and folding its identity away would count it twice. The
 tombstones stay for the same reason, and grow with the number of delegations — one identity
 per session either way — not with the age of the project.
@@ -50,6 +57,10 @@ per session either way — not with the age of the project.
   `a writer reads what another saved since, not only what it loaded`
   `two writers' marks are merged, so neither loses what the other read`
   `two writers counting different sessions count two, not one`
+- A work order is one per session, the later of two wins, and an answer is not undone by a
+  writer that still holds the open order.
+  `the later of two orders for a session wins the merge`
+  `an answered order is not reopened by a writer that still holds it`
 - A deliberate removal survives a merge, including one that happens after compaction.
   `a deliberate removal survives a merge that happens after compaction`
 - A replaced log voids every byte count about the old file, so a smaller replacement is

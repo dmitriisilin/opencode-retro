@@ -12,9 +12,9 @@ is a turn, not the life of a session** — measured, see `fixtures/sessions/two-
 
 **Nothing that decides what is read or removed is held in memory.** What the plugin knows
 about a session, for those two questions, is what is on disk: its log, and its mark in
-`state.json`. Some things do live in a process — delegation links as they arrive, the model
-the user's session runs on, the self-check's counters — and none of them decides whether a
-log is read or removed. Whether a session is still working is not known and not needed. Reading a working session is safe — a mark only says how far
+`state.json` — and, for an analysis that was asked for, the order in `state.json` too. Some
+things do live in a process — delegation links as they arrive, the self-check's counters —
+and none of them decides whether a log is read or removed. Whether a session is still working is not known and not needed. Reading a working session is safe — a mark only says how far
 the log was read, and a session that writes more is simply owed the rest — and the one act
 that cannot be undone, pruning a log, waits for a week of silence. So a restart, a crash,
 a turn that never reports its end, or a second plugin instance on the same project changes
@@ -25,7 +25,7 @@ model where the disk is the only state.*
 
 **Quiet.** A log that has not been written for seven days, by its file's modification
 time. This is the only clock that decides anything about a log; the plugin's other clocks
-are timestamps, the heartbeat and the bound on a model call. Seven days is long enough that a
+are timestamps and the heartbeat. Seven days is long enough that a
 session left open and returned to within a week keeps its log, and short enough that logs
 do not pile up. A session picked up after that starts a new log, read from its own start;
 no lesson loses anything, because only a log that was read to its end and is cited by no

@@ -43,8 +43,8 @@ test("a log waiting for analysis says what will analyse it, and that nothing hap
   const x = checks.find((c) => c.name === "extraction")
   assert.equal(x.status, STATUS.SKIPPED)
   assert.match(x.detail, /`\/retro` analyses it/)
-  assert.match(x.meaning, /costs a model call, so it happens when you ask/)
-  assert.match(x.meaning, /asyncExtract/, "and names the switch for the other behaviour")
+  assert.match(x.meaning, /costs a subagent, so it happens when you ask/)
+  assert.match(x.meaning, /work order/, "and says what `/retro` will actually do")
 })
 
 test("a skipped extraction is not dressed up as a success", () => {

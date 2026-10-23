@@ -45,19 +45,22 @@ export const VERSION = (() => {
 /**
  * opencode-retro — capture, extract, propose, decide.
  *
- * Writes a shadow log of every prompt and tool call. `/retro` reads whatever has been written
- * since the last time — one clean-context model call per log — turns it into lessons, hands
- * the highest-scoring one to the session you are in, and stops there: you and the agent
- * decide what to do with it. A self-check says whether any of it worked.
+ * Writes a shadow log of every prompt and tool call. `/retro` turns whatever has been written
+ * since the last time into a work order per log, and asks the agent in the session it was run
+ * in to have each read by a subagent of its own — a context that was not in the session it
+ * reads, and has nothing of its own to defend. Each subagent answers by calling
+ * `retro_record`; `retro_propose` then hands the highest-scoring lesson to the session you
+ * are in and stops there: you and the agent decide what to do with it. A self-check says
+ * whether any of it worked.
  *
  * Everything it knows about a session is on disk: the log, and how far it was read. Nothing
  * depends on this process having seen a session start or end, so a restart, a crash or a
  * second instance on the project changes nothing about what is read or removed — and a log
  * is removed only once it has been quiet for a week (docs/concepts/session.md).
  *
- * Nothing is analysed until `/retro` asks for it: a model call costs money, and nothing
- * here spends it unprompted. The analysis goes through a session of its own rather than
- * `generate.text`, which refuses OpenCode's free-tier models — see `analyse`.
+ * Nothing is analysed until `/retro` asks for it: an analysis costs money, and nothing here
+ * spends it unprompted. The plugin itself calls no model and chooses none — the work runs on
+ * the model and settings of the session that asked for it (docs/concepts/analysis.md).
  *
  * The API facts this relies on are all verified against OpenCode 2.0.32; see AGENTS.md
  * "OpenCode v2 plugin API" and fixtures/payloads/.
@@ -477,8 +480,9 @@ export default {
       ingest.forget(sessionID)
       turnSeen.delete(sessionID)
 
-      // Not extracted here: a model call from the event stream never returns, and nothing is
-      // analysed unasked. The log is owed because it grew; `/retro` reads it.
+      // No order is written here: nothing is analysed unasked, and there is no session to ask
+      // in — a work order is read by a subagent of the session that ran `/retro`. The log is
+      // owed because it grew; the next `/retro` asks about it.
       state.countSession(sessionID)
       lastVerified.set(sessionID, verified)
       check.verify({ ...verified, extraction: { owed: true } })
@@ -796,7 +800,7 @@ export default {
       }
 
       // One order per log per command, whatever happens to it. The cap counts orders: an
-      // order is what costs a model call. A skipped log takes none.
+      // order is what costs a subagent. A skipped log takes none.
       const skip = new Set()
       const orders = []
       while (orders.length < config.extractLimit) {

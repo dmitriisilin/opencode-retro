@@ -2123,7 +2123,7 @@ test("a log whose analysis failed is named as failed, not as not analysed yet", 
   await broken.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
 
   const report = readFileSync(join(directory, ".retro", "selfcheck.md"), "utf8")
-  assert.match(report, /1 log whose analysis failed — tried again on the next `\/retro`/)
+  assert.match(report, /1 log whose analysis failed — asked for again on the next `\/retro`/)
   assert.doesNotMatch(report, /not analysed yet/, "it was analysed; it failed")
 
   await cleanup2?.()

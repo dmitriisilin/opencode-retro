@@ -21,9 +21,10 @@ such — it says `(untested)`.
 ## How they are exercised
 
 Beyond the tests each invariant cites, `test/model.test.js` walks random histories — turns,
-hooks, delegations, `/retro`, decisions, restarts, crashes mid-answer and mid-append, slow
-models, replaced logs, lesson files and prompts edited by hand, weeks passing, two plugin
-instances on one project, a model that answers nothing or prose — through the real entry point, and checks the invariants after every step.
+hooks, delegations, `/retro`, decisions, restarts, crashes mid-round and mid-append,
+replaced logs, lesson files and prompts edited by hand, weeks passing, two plugin
+instances on one project, work orders read and left unanswered, rounds abandoned with their
+orders open — through the real entry point, and checks the invariants after every step.
 A failure is shrunk to the shortest history that still fails; the ones found that way are
 kept in the same file as named tests, and cited here like any other. The audit cycles walked
 into new corners every time because the space is combinatorial; the walk is how that space

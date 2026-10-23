@@ -57,12 +57,12 @@ with whatever follows.
 **Read to its end.** A log whose mark covers its whole size with neither flag set. Not
 permanent: a session prompted again grows past its mark and is owed again.
 
-**Retired.** A log that failed three reads at the same size. Not owed; its failure is
-recorded and named in the self-check. It is owed again if it grows.
+**Retired.** A log whose work order went unanswered three times at the same size. Not owed;
+its failure is recorded and named in the self-check. It is owed again if it grows.
 
 **Pruned.** Removed from disk. A log is pruned when it is quiet (session.md: unwritten for
 seven days), nothing is owed for it, and no open lesson cites it. A retired log goes the
-same way, so a log the model could never answer does not stay for ever. `keepSessions`
+same way, so a log no analysis could ever answer does not stay for ever. `keepSessions`
 keeps everything.
 
 ## Invariants

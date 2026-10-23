@@ -405,3 +405,39 @@ test("a writer reads what another saved since, not only what it loaded", () => {
   )
 })
 
+
+test("the later of two orders for a session wins the merge", () => {
+  // An order outlives the process that issued it: a `/retro` whose process died leaves one
+  // nobody will answer, and the next command settles it. So two instances can each hold an
+  // order for the same session, and the one written later is the one that is open.
+  const path = join(mkdtempSync(join(tmpdir(), "retro-orders-merge-")), "state.json")
+  const mine = createState({ path })
+  const theirs = createState({ path })
+
+  mine.issue("ses_a", { id: "a", size: 400, through: 4, lastN: 9, n: 0 })
+  theirs.issue("ses_a", { id: "a", size: 900, through: 9, lastN: 9, n: 0 })
+
+  assert.equal(mine.orderOf("ses_a").size, 900, "the newer order, even read from the other writer")
+  assert.deepEqual(
+    theirs.openOrders().map((o) => o.session),
+    ["ses_a"],
+    "and one order, not two",
+  )
+})
+
+test("an answered order is not reopened by a writer that still holds it", () => {
+  // The hazard the `done` marker exists for: an instance that issued the order and never saw
+  // the answer saves its own copy afterwards. A deleted order would come straight back, and
+  // the same analysis would be recorded twice against the same session.
+  const path = join(mkdtempSync(join(tmpdir(), "retro-orders-done-")), "state.json")
+  const mine = createState({ path })
+  const theirs = createState({ path })
+  mine.issue("ses_a", { id: "a", size: 400, through: 4, lastN: 4, n: 0 })
+  assert.ok(theirs.orderOf("ses_a"), "both writers see it open")
+
+  theirs.close("ses_a", "answered")
+  mine.issue("ses_b", { id: "b", size: 10, through: 1, lastN: 1, n: 0 }) // mine saves again
+
+  assert.equal(mine.orderOf("ses_a"), null, "the answer stands")
+  assert.equal(JSON.parse(readFileSync(path, "utf8")).orders.ses_a.done, "answered")
+})

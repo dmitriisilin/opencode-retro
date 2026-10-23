@@ -54,7 +54,7 @@ export function composeOrder({
   //
   // And a reply to the plugin's own hand-over is not new either, when nothing was done with
   // it. `/retro` with nothing to review still resumes the agent, which answers; counted as
-  // material, that answer cost a model call on the next command, whose own hand-over was
+  // material, that answer cost an analysis on the next command, whose own hand-over was
   // answered in turn — a call per `/retro`, spent on the plugin talking to itself. Found by a
   // stranger's run. Only replies to a person's prompt count; tool calls always do.
   const reread = analysedUpTo > 0

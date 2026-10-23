@@ -96,8 +96,8 @@ export function assess(session) {
               name: "prompt hook",
               // A process loaded in the middle of a turn — a restart, or opencode.json edited
               // mid-session, which reloads the plugin — never saw that turn's prompt. Measured:
-              // a stranger pinned options.model as the README suggests, and the report said
-              // BROKEN about a session whose log had its prompt at step 1.
+              // a stranger edited opencode.json mid-session as the README suggests, and the
+              // report said BROKEN about a session whose log had its prompt at step 1.
               detail: "the plugin was loaded after this turn began",
               meaning: "a restart or a config change reloads the plugin; the next turn you type in proves the hook.",
             }
@@ -205,9 +205,8 @@ export function assess(session) {
       name: "extraction",
       detail: "this session's log is waiting; `/retro` analyses it",
       meaning:
-        "analysis is not automatic — it costs a model call, so it happens when you ask. " +
-        "`/retro` analyses everything waiting, in one go. `options.asyncExtract` moves it to " +
-        "the start of the next session instead.",
+        "analysis is not automatic — it costs a subagent, so it happens when you ask. " +
+        "`/retro` writes a work order for everything waiting and has them read, in one go.",
     })
   } else if (x.ok && x.skipped) {
     checks.push({ status: SKIPPED, name: "extraction", detail: x.detail })
@@ -219,9 +218,9 @@ export function assess(session) {
       name: "extraction",
       detail: x.detail,
       meaning:
-        "no lessons from this session yet; the next `/retro` tries again, three times in all. " +
-        "`plugin.log` says why it failed; if the model keeps failing, `options.model` in " +
-        "opencode.json pins a different one.",
+        "no lessons from this session yet; the next `/retro` asks again, three times in all. " +
+        "`plugin.log` says why. The usual reason is an order nobody answered: the subagents " +
+        "have to finish and call `retro_record` before `retro_propose` is called.",
     })
   }
 
@@ -345,8 +344,8 @@ function renderStock({
     // does not mention them.
     lines.push(
       `- ${setAside} log${setAside === 1 ? "" : "s"} given up on after three failed analyses — still in ` +
-        "`sessions/`, and nothing will read them. `plugin.log` says why each one failed; a slow " +
-        "model timing out is the usual reason, and `options.model` pins a faster one.",
+        "`sessions/`, and nothing will read them. `plugin.log` says why each one failed; a work " +
+        "order nobody answered is the usual reason.",
     )
   }
   if (failing) {
@@ -354,9 +353,9 @@ function renderStock({
     // yet", which sends the reader to run `/retro` again without telling them it already ran
     // and why it did not work.
     lines.push(
-      `- ${failing} log${failing === 1 ? "" : "s"} whose analysis failed — tried again on the next ` +
-        "`/retro`, and given up on after three. `plugin.log` says why — an empty reply or a " +
-        "timeout, usually; if it keeps happening, `options.model` pins a different model.",
+      `- ${failing} log${failing === 1 ? "" : "s"} whose analysis failed — asked for again on the next ` +
+        "`/retro`, and given up on after three. `plugin.log` says why — usually an order that " +
+        "was issued and never answered, so no subagent recorded anything for it.",
     )
   }
   if (queued) {
