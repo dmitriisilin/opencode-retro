@@ -109,6 +109,17 @@ export function assess(session) {
           },
   )
 
+  /**
+   * One phrasing for one fact, in all three branches. The counts used to read
+   * "N tool-call events / M hook calls" on a failure and a different sentence on a success,
+   * which is two ways of saying the same thing in a file whose whole job is to be read once
+   * and understood — and "1 hook calls" besides.
+   */
+  const counted = () =>
+    `${c.toolEvents} tool-call event${c.toolEvents === 1 ? "" : "s"} seen, ${c.toolHook} reached the hook` +
+    (c.ours ? `, ${c.ours} ${c.ours === 1 ? "was" : "were"} our own and not logged` : "") +
+    (c.unfinished ? `, ${c.unfinished} unfinished when the turn ended` : "")
+
   if (!c.toolEvents) {
     checks.push({
       status: SKIPPED,
@@ -130,10 +141,7 @@ export function assess(session) {
     checks.push({
       status: OK,
       name: "tool hook",
-      detail:
-        `${c.toolEvents} tool-call events / ${c.toolHook} hook calls` +
-        (c.ours ? ` + ${c.ours} of our own` : "") +
-        (c.unfinished ? ` + ${c.unfinished} unfinished when the turn ended` : ""),
+      detail: counted(),
     })
   } else if (session.ended === false) {
     // Tool calls run in parallel and their `after` hooks arrive in whatever order they
@@ -144,7 +152,7 @@ export function assess(session) {
     checks.push({
       status: SKIPPED,
       name: "tool hook",
-      detail: `${c.toolEvents} tool-call events / ${c.toolHook} hook calls so far`,
+      detail: `${counted()} — so far`,
       meaning:
         "the difference is calls that have not finished yet; the verdict is written when " +
         "the session ends.",
@@ -153,7 +161,7 @@ export function assess(session) {
     checks.push({
       status: BROKEN,
       name: "tool hook",
-      detail: `${c.toolEvents} tool-call events / ${c.toolHook} hook calls`,
+      detail: counted(),
       meaning:
         "the event stream saw tool calls the hook never received, so the tool hook is dead " +
         "or its payload moved. The plugin needs an update; see the repository in the header.",
@@ -456,7 +464,14 @@ export async function activeCheck({ ctx, config, prompts, store }) {
   const prompt = prompts.resolve("extract")
   checks.push(
     prompt
-      ? { status: OK, name: "extract prompt", detail: `${prompt.layer} (base ${prompt.base ?? "?"})` }
+      ? {
+          status: OK,
+          name: "extract prompt",
+          // Whether it was edited, not only which layer it came from: a user who changes the
+          // criteria needs to see that the change is in force, and the layer reads the same
+          // either way.
+          detail: `${prompt.layer} (base ${prompt.base ?? "?"}${prompts.isEdited?.("extract") ? ", edited here" : ""})`,
+        }
       : { status: BROKEN, name: "extract prompt", detail: "could not be resolved at any layer" },
   )
   for (const file of prompts.pendingUpdates()) {

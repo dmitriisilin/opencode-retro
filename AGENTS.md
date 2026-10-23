@@ -442,19 +442,28 @@ The live file's frontmatter records where it came from:
 ```yaml
 ---
 prompt: extract
-base: 2            # our default version it was seeded from
-base_sha: 9f2a1c4  # hash of that default's body
+base: 5            # our default version it was seeded from
 ---
 ```
 
-On load, hash the live body:
+That is the whole of it. One number, compared with the packaged default's:
 
-| hashes to `base_sha` | newer default shipped | what happens |
-|---|---|---|
-| yes (untouched) | no | nothing |
-| yes (untouched) | yes | replaced silently, `base` bumped — there was nothing to lose |
-| no (user owns it) | no | nothing |
-| no (user owns it) | yes | `updates/extract.v3.md` written, named in `selfcheck.md`, live file untouched |
+| newer default shipped | what happens |
+|---|---|
+| no | nothing |
+| yes | `updates/extract.v6.md` written, named in `selfcheck.md`, live file untouched |
+
+Whether the user has touched the file makes no difference to that, because decision 15 is
+that we never write to it again either way. *This table used to have a `base_sha` column and
+a row saying an untouched file is "replaced silently" — contradicting decision 15 three
+paragraphs above it, and describing a hash the code has never written or read. Found in cycle
+10 by following it into `src/prompts.js`. If a silent upgrade for untouched files is ever
+wanted, it is a new decision and needs the hash to go with it.*
+
+Whether the file was edited is still worth **knowing**, and that is what the self-check
+answers, by comparing the live body with the current default's rather than with a stored
+hash: `extract prompt  project (base 5, edited here)`. A person who changes their criteria
+needs to see the change is in force, and the layer alone reads the same either way.
 
 Updates accumulate like release notes and are never applied on the user's behalf. We never
 delete them either — that is the user's call. The diff between the live file and its `base`

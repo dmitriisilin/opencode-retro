@@ -1041,7 +1041,7 @@ test("a finished session is owed an analysis, and the report proves the hooks ra
   const report = readFileSync(join(directory, ".retro", "selfcheck.md"), "utf8")
   assert.match(report, /verified\s+\d{4}-\d{2}-\d{2}/, "the end-of-session trigger is proven, not assumed")
   assert.match(report, /ok\s+prompt hook\s+1 prompt seen/)
-  assert.match(report, /ok\s+tool hook\s+1 tool-call events \/ 1 hook calls/)
+  assert.match(report, /ok\s+tool hook\s+1 tool-call event seen, 1 reached the hook/)
   assert.match(report, /ok\s+shadow log\s+sessions\/ses_ended\.jsonl, \d+ entries/)
   assert.match(report, /ok\s+trigger\s+session\.execution\.succeeded/)
   assert.match(report, /waiting; `\/retro` analyses it/)
@@ -1086,7 +1086,7 @@ test("events the hooks never received are reported as a dead hook, with numbers"
   await tick()
 
   const report = readFileSync(join(directory, ".retro", "selfcheck.md"), "utf8")
-  assert.match(report, /BROKEN\s+tool hook\s+2 tool-call events \/ 1 hook calls/)
+  assert.match(report, /BROKEN\s+tool hook\s+2 tool-call events seen, 1 reached the hook/)
   assert.match(report, /the tool hook is dead/)
   assert.match(report, /needs an update/)
   await cleanup?.()
@@ -1623,7 +1623,7 @@ test("a running session with calls still in flight is not reported as a broken t
 
   const report = readFileSync(join(directory, ".retro", "selfcheck.md"), "utf8")
   assert.doesNotMatch(report, /BROKEN\s+tool hook/)
-  assert.match(report, /not exercised\s+tool hook\s+2 tool-call events \/ 1 hook calls so far/)
+  assert.match(report, /not exercised\s+tool hook\s+2 tool-call events seen, 1 reached the hook — so far/)
 
   await cleanup?.()
 })

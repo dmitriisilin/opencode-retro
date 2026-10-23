@@ -82,6 +82,21 @@ export function createPrompts({
      * default in `updates/` and return a note for selfcheck.md. The live file is never
      * touched — not even when it looks untouched (decision 15).
      */
+    /**
+     * Whether the live prompt differs from the packaged default it was seeded from.
+     *
+     * Compared body to body, not against a stored hash. A user who edits a prompt has to be
+     * able to see that the edit is in force — "project" only says which layer was read, and
+     * reads the same whether they changed anything or not. Found in cycle 10's stranger's
+     * hour: the edit worked, and nothing in the report said so.
+     */
+    isEdited(name) {
+      const live = this.resolve(name)
+      const packaged = defaultFor(name)
+      if (!live || !packaged) return false
+      return live.text.trim() !== parseFrontmatter(packaged).body.trim()
+    },
+
     checkForUpdate(name) {
       const live = this.resolve(name)
       const text = defaultFor(name)

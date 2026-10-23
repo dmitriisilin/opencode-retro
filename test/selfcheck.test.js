@@ -58,7 +58,7 @@ test("events without hook calls is the API-drift signature, and reads BROKEN", (
   const checks = assess({ ...healthy, counts: { ...healthy.counts, toolHook: 0 } })
   const tool = checks.find((c) => c.name === "tool hook")
   assert.equal(tool.status, STATUS.BROKEN)
-  assert.match(tool.detail, /12 tool-call events \/ 0 hook calls/)
+  assert.match(tool.detail, /12 tool-call events seen, 0 reached the hook/)
   assert.match(tool.meaning, /dead/)
 })
 
@@ -101,7 +101,7 @@ test("a running session's tool calls may still be in flight, and that is not BRO
   const running = assess({ ...healthy, ended: false, counts: { ...healthy.counts, toolHook: 1, toolEvents: 2 } })
   const tool = running.find((c) => c.name === "tool hook")
   assert.equal(tool.status, STATUS.SKIPPED)
-  assert.match(tool.detail, /2 tool-call events \/ 1 hook calls so far/)
+  assert.match(tool.detail, /2 tool-call events seen, 1 reached the hook — so far/)
   assert.match(tool.meaning, /not finished yet/)
 
   // Once it ends, the same shortfall is the real drift signature.

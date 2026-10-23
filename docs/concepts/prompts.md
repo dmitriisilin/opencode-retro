@@ -45,8 +45,10 @@ hand-over degrades to a terse built-in text rather than to silence.
   `seeding never overwrites what is already there`
   `a prompt that cannot be seeded reports it and leaves nothing behind`
   `a seed that fails half-way leaves no partial prompt behind`
-- Resolution is project, then global, then packaged.
+- Resolution is project, then global, then packaged, and the report says whether the live
+  file was edited — not only which layer it came from.
   `resolution is project, then global, then packaged`
+  `an edited prompt is reported as edited, not only as the layer it came from`
 - Only the user's prose reaches the model.
   `the frontmatter is stripped, so only the user's prose reaches the model`
 - A newer default is news, never a change: a news file beside the prompts, the live file

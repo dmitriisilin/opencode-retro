@@ -220,3 +220,19 @@ test("a seed that fails half-way leaves no partial prompt behind", () => {
   assert.equal(readdirSync(s.dir).filter((f) => f === "extract.md").length, 0, "there is no live prompt to mistake for the user's")
   assert.equal(prompts.resolve("extract").layer, "packaged", "and the packaged default still runs")
 })
+
+test("an edited prompt is reported as edited, not only as the layer it came from", () => {
+  // Cycle 10's stranger's hour: a prompt was edited, the edit did reach the work order — and
+  // nothing in the report said so. `project` names the layer that was read and reads the same
+  // whether the file was touched or not, so the one thing a person wants confirmed after
+  // editing their criteria was the one thing not shown.
+  const dir = mkdtempSync(join(tmpdir(), "retro-edited-"))
+  const prompts = createPrompts({ dir: join(dir, "prompts"), updates: join(dir, "prompts", "updates") })
+  prompts.seed("extract")
+
+  assert.equal(prompts.isEdited("extract"), false, "freshly seeded is the default, word for word")
+
+  const live = join(dir, "prompts", "extract.md")
+  writeFileSync(live, readFileSync(live, "utf8") + "\nAlso: never report on src/legacy.js.\n")
+  assert.equal(prompts.isEdited("extract"), true, "and an edit is visible")
+})
