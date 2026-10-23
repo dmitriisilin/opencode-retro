@@ -254,9 +254,11 @@ test("the small pieces both messages share say the same thing the same way", () 
 
   assert.equal(renderFailures(null), "", "no failures, nothing to say")
   assert.equal(renderFailures({ failures: [] }), "")
+  // Not "could not analyse": the plugin may not have analysed anything — it asked, and the
+  // asking is all it knows. The detail says what actually happened.
   assert.match(
-    renderFailures({ failures: [{ session: "ses_bad", detail: "unparseable reply" }] }),
-    /could not analyse `ses_bad`: unparseable reply/,
+    renderFailures({ failures: [{ session: "ses_bad", detail: "asked 2 times and no record came back" }] }),
+    /on `ses_bad`: asked 2 times and no record came back/,
   )
 })
 

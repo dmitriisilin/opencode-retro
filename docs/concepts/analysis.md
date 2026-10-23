@@ -161,7 +161,7 @@ the plugin's bookkeeping never turns into a lesson about the plugin.
   anybody came.
   `an order nobody answered is reported and asked again, not held against the log`
   `a log asked about many times is never given up on for it, and says how many`
-  `/retro all reports a log it could not analyse, as well as the plan`
+  `/retro all reports a log it could not read, as well as the plan`
 - A read the plugin could not complete is an attempt, and three on one input retire the log.
   `a failed read is owed, and tried again on the next command`
   `a session is given up on after three attempts, not billed forever`

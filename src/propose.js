@@ -246,7 +246,7 @@ export function renderWorkOrders(orders, { all = false, failures = [], left = 0 
     "_opencode-retro — the logs come first:_",
     "",
     `${n} session log${n === 1 ? " is" : "s are"} waiting to be analysed before anything can be proposed. ` +
-      `Each has a work order — a file holding the log, the criteria and how to answer:`,
+      "Each has a work order — a file naming the log to read, with the criteria and how to answer:",
     "",
     ...orders.map((o) => `- \`${o.path}\``),
     "",
@@ -276,7 +276,10 @@ export function renderWorkOrders(orders, { all = false, failures = [], left = 0 
       "in a context of its own, and records what it found with `retro_record`. When every subagent " +
       `has finished, call \`retro_propose\`${all ? " with `all: true`" : ""} and follow what it returns.`,
   ]
-  for (const f of failures) lines.push("", `_The last round could not analyse \`${f.session}\`: ${f.detail}_`)
+  // Not "could not analyse": the plugin may not have analysed anything — it asked, and the
+  // asking is all it knows (analysis.md, "Unanswered"). A failure it saw itself says so in
+  // its own detail.
+  for (const f of failures) lines.push("", `_From the last round, \`${f.session}\`: ${f.detail}_`)
   if (left > 0) lines.push("", backlogLine(left))
   return lines.join("\n")
 }
@@ -286,7 +289,7 @@ export function renderFailures(extracted) {
   if (!failures.length) return ""
   return (
     failures
-      .map((f) => `_opencode-retro could not analyse \`${f.session}\`: ${f.detail}_`)
+      .map((f) => `_opencode-retro on \`${f.session}\`: ${f.detail}_`)
       .join("\n") + "\n\n"
   )
 }

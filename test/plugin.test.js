@@ -387,7 +387,7 @@ test("a log nobody could analyse does not hold up the logs behind it", async () 
   // Told once, in whichever hand-over the round produced: a failure found while the orders
   // are being written is reported with them, as soon as it is known.
   const told = [...fresh.orders, ...fresh.synthetic].map((d) => d.text).join("\n")
-  assert.match(told, /could not analyse `ses_bad`/)
+  assert.match(told, /`ses_bad`[^\n]*shadow log could not be parsed/)
   assert.match(told, /could not be parsed/, "the message says what went wrong")
   assert.match(told, /lint-skill-no-config/, "and the lesson from the log that worked is still delivered")
 
@@ -1916,7 +1916,7 @@ test("a read that got no further than the mark is reported, not settled as done"
   await cleanup2?.()
 })
 
-test("/retro all reports a log it could not analyse, as well as the plan", async () => {
+test("/retro all reports a log it could not read, as well as the plan", async () => {
   // The single hand-over has always carried the failure; the batch path built its message
   // from the open lessons alone, so a log that failed simply vanished from the one command
   // most likely to be used on a backlog. Silence about a failure is the failure this plugin
@@ -1935,7 +1935,7 @@ test("/retro all reports a log it could not analyse, as well as the plan", async
 
   assert.deepEqual(analysed(fresh), ["ses_good"], "the good log is analysed")
   const told = [...fresh.orders, ...fresh.synthetic].map((d) => d.text).join("\n")
-  assert.match(told, /could not analyse `ses_bad`/, "the failure is named")
+  assert.match(told, /`ses_bad`[^\n]*shadow log could not be parsed/, "the failure is named")
   assert.match(told, /could not be parsed/, "with what went wrong")
   assert.match(told, /lint-skill-no-config/, "and the plan still arrives")
 
