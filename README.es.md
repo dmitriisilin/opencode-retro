@@ -1,4 +1,4 @@
-<!-- translated-from: README.en.md@9e38270f92aa -->
+<!-- translated-from: README.en.md@3c3ce00d61de -->
 # opencode-retro
 
 [Русский](README.md) | [English](README.en.md) | [简体中文](README.zh-CN.md) | **Español** | [日本語](README.ja.md)
@@ -42,7 +42,7 @@ La orden no contiene el log: lo señala. Leerlo es tarea del subagente, y él es
 
 Cada orden la lee un subagente, en un contexto propio. El plugin no llama a ningún modelo ni elige ninguno: la lectura ocurre con el modelo y los ajustes de tu sesión, con el propio bucle de agente de OpenCode. El agente que hizo el trabajo analizado queda excluido a propósito, porque defendería sus propias decisiones; un subagente no estuvo en esa sesión y no tiene nada propio que defender.
 
-La respuesta es una llamada a la herramienta `retro_record`, cuyo esquema es el formato de salida: una respuesta mal formada la rechaza OpenCode antes de que llegue al plugin, y al subagente se le dice por qué y puede intentarlo de nuevo. Una respuesta sin lecciones es una respuesta de verdad: la sesión fue recta. Una vez dentro los registros, el agente llama a `retro_propose`, y es eso lo que te pone una lección delante. Una orden que nadie responde es un intento fallido: el siguiente `/retro` vuelve a pedirla, tres veces en total, y luego deja el log de lado y lo dice en `selfcheck.md`.
+La respuesta es una llamada a la herramienta `retro_record`, cuyo esquema es el formato de salida: una respuesta mal formada la rechaza OpenCode antes de que llegue al plugin, y al subagente se le dice por qué y puede intentarlo de nuevo. Una respuesta sin lecciones es una respuesta de verdad: la sesión fue recta. Una vez dentro los registros, el agente llama a `retro_propose`, y es eso lo que te pone una lección delante. Una orden que nadie responde no se le carga al log: del silencio no se concluye nada, porque desde aquí un lector que falló y uno que nunca se puso en marcha son indistinguibles. El siguiente `/retro` vuelve a pedirla, y `selfcheck.md` dice cuántas veces se ha preguntado por un log sin respuesta.
 
 Las sesiones que aún no han terminado también se leen, incluida aquella en la que se ejecutó el comando: su fricción es la más reciente que hay. Leerlas no cierra nada. El plugin recuerda hasta dónde se leyó cada log, y lo que la sesión escriba después se lee en un `/retro` posterior, y solo esa parte: lo que ya se convirtió en lección no se analiza otra vez. Lo normal es dejar las sesiones abiertas y volver a ellas, así que de otro modo un `/retro` semanas después releería todo y volvería a deducir lecciones sobre las que ya se trabajó. El plugin no necesita saber si una sesión sigue en marcha: todo lo que sabe está en disco, en `.retro/`, así que un reinicio, un fallo o un segundo OpenCode sobre el mismo proyecto no cambian nada de lo que se lee.
 
