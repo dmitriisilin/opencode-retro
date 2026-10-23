@@ -63,10 +63,18 @@ test("the hand-over names the session logs where the plugin actually keeps them"
 
 test("every option the plugin reads is documented, in every language", () => {
   // The other direction of the same drift: extractLimit and heartbeatMs were settable and
-  // undocumented, and asyncExtract appeared only in prose.
+  // undocumented, and asyncExtract appeared only in prose. `model` used to be added here by
+  // hand, because it was resolved straight from the options rather than declared with a
+  // default — and it stayed in this list for a while after the option itself was gone, which
+  // made the suite demand that five READMEs document something nobody can set.
   const block = read("src/config.js").match(/export const DEFAULTS = \{([\s\S]*?)\n\}/)?.[1] ?? ""
-  const declared = new Set([...[...block.matchAll(/^  ([a-zA-Z]+):/gm)].map((m) => m[1]), "model"])
-  assert.ok(declared.size >= 10, "config should still be declaring options")
+  const declared = new Set([...block.matchAll(/^  ([a-zA-Z]+):/gm)].map((m) => m[1]))
+  assert.ok(declared.size >= 8, "config should still be declaring options")
+  assert.deepEqual(
+    [...declared].filter((o) => !Object.hasOwn(DEFAULTS, o)),
+    [],
+    "every option read out of DEFAULTS is one the module actually exports",
+  )
 
   const undocumented = []
   for (const file of SHIPPED.filter((f) => f.startsWith("README"))) {
