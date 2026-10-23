@@ -283,7 +283,8 @@ export function createStore({ dir, archive, cap = DEFAULT_CAP, halfLife = DEFAUL
       const byId = new Map(existing.map((l) => [l.id, l]))
       const archived = new Map(listArchive().map((l) => [l.id, l]))
       const seen = sessions()
-      const result = { created: [], merged: [], reopened: [], restored: [] }
+      // `stale`: evidence of a problem that was already decided, from before the decision.
+      const result = { created: [], merged: [], reopened: [], restored: [], stale: [] }
 
       // Ids minted in this batch are taken, not merge targets: two lessons that collide
       // on a slug are two problems, and merging them would drop one statement. An explicit
@@ -340,6 +341,26 @@ export function createStore({ dir, archive, cap = DEFAULT_CAP, halfLife = DEFAUL
         // one session, not two. Without this, an accepted lesson comes back marked "the fix
         // did not hold" when all that held is the old evidence.
         if (buried && !evicted && already) continue
+
+        /**
+         * Nor does *older* evidence, from any session. A backlog is the normal case: you run
+         * `/retro`, accept a lesson, integrate the fix — and the next command analyses the
+         * logs behind it, which were written before the fix and walked into the same trap.
+         * Reopening on those says "the fix did not hold" about a fix that was never tested,
+         * and says it once per waiting log.
+         *
+         * So a decision is only reopened by evidence from after it was taken. `seenAt` is
+         * when the cited steps actually happened, read from the log; a problem whose evidence
+         * predates the decision is discarded, because it is news about a past the decision
+         * already answered.
+         */
+        if (buried && !evicted && buried.closedAt && lesson.seenAt) {
+          const decided = Date.parse(buried.closedAt)
+          if (Number.isFinite(decided) && lesson.seenAt < decided) {
+            result.stale.push(buried.id)
+            continue
+          }
+        }
 
         if (buried) {
           const updatedEvidence = already

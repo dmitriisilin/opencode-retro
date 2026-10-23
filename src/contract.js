@@ -54,9 +54,13 @@ per line, and the fields you need are:
 - \`output\` may say that its middle was elided: very large tool results are clamped when
   the log is written, and the notice says how much went.
 
-Read it in whatever way suits its size — all at once, or the head and then on. If you end up
-reading only part of it, say so with \`through\`, and the rest will be asked about again
-rather than counted as read.
+Read it in whatever way suits its size — all at once, or the head and then on.
+
+\`through\` is how far you got, and it is required: nothing else knows. Give the last step
+number the order names when you read all of it, or the last one you actually reached when you
+did not — the rest is then asked about again instead of being counted as read. Do not round
+it up to make the answer look complete; an honest partial read loses nothing, and a false
+full one loses the part nobody will ever come back to.
 
 Do not edit anything, do not run commands, and do not go looking through the project: you
 are judging the log, not redoing the work, and not checking whether the problem is still
@@ -116,11 +120,11 @@ export const RECORD_INPUT = {
     through: {
       type: "number",
       description:
-        "Only when you read part of the log: the last step number you actually read. " +
-        "Leave it out when you read everything the order asked for.",
+        "The last step number you actually read. The order says how far the log goes; say " +
+        "that number when you read all of it, or a smaller one when you did not.",
     },
   },
-  required: ["session", "lessons"],
+  required: ["session", "lessons", "through"],
 }
 
 /**

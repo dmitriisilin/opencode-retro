@@ -306,3 +306,51 @@ test("the review of a handed-over lesson is not counted as the problem recurring
   assert.match(flat, /`handover` step with `"about": "lesson"` and checks or applies the lesson it handed over/)
   assert.match(flat, /do not report it as a recurrence, and do not count its steps as cost/)
 })
+
+test("problems already fixed are named in the order, with the date they were fixed", () => {
+  // A backlog is the normal case: `/retro`, accept, integrate — and the next command analyses
+  // the logs that were waiting behind it, written before the fix and into the same trap.
+  const r = rig()
+  analyse(r, { session: "ses_one" })
+  r.store.close("lint-skill-no-config", "accepted", { changed: [".opencode/skills/lint/SKILL.md"] })
+
+  const { order } = analyse(r, { session: "ses_two" })
+  assert.match(order.text, /## Already fixed/)
+  assert.match(order.text, /`lint-skill-no-config` \(fixed \d{4}-\d{2}-\d{2}\)/)
+  assert.match(order.text, /changed \.opencode\/skills\/lint\/SKILL\.md/, "and what was done about it")
+  assert.match(order.text, /the fix came later/, "with what that means for an older session")
+  assert.doesNotMatch(order.text, /## Lessons already recorded[\s\S]*lint-skill-no-config/, "it is not also listed as open")
+})
+
+test("evidence from before a fix does not reopen it, and evidence from after does", () => {
+  // Reopening on a log that predates the fix says "the fix did not hold" about a fix that was
+  // never tested — once per waiting log. The date is the one the log itself carries.
+  const r = rig()
+  const steps = [9, 18]
+  const dateOf = (at) => () => at
+
+  recordAnswer({ session: "ses_one", lessons: LESSONS(), dateOf: dateOf(1000), ...r })
+  r.store.close("lint-skill-no-config", "accepted", { changed: ["SKILL.md"] })
+  const closedAt = Date.parse(r.store.listArchive()[0].closedAt)
+
+  const older = recordAnswer({ session: "ses_two", lessons: LESSONS({ steps }), dateOf: dateOf(closedAt - 60_000), ...r })
+  assert.deepEqual(older.recorded.stale, ["lint-skill-no-config"], "old evidence is discarded")
+  assert.deepEqual(older.recorded.reopened, [])
+  assert.match(older.detail, /already fixed before this session ran/, "and said out loud, not dropped silently")
+  assert.deepEqual(r.store.list(), [], "the lesson stays closed")
+
+  const newer = recordAnswer({ session: "ses_three", lessons: LESSONS({ steps }), dateOf: dateOf(closedAt + 60_000), ...r })
+  assert.deepEqual(newer.recorded.reopened, ["lint-skill-no-config"], "evidence from after the fix is real news")
+  assert.equal(r.store.list()[0].reopenedFrom, "accepted")
+})
+
+test("undated evidence reopens a decision, because nothing says it is old", () => {
+  // The log could not be read, or carries no timestamps. Reopening is the safe side: a lesson
+  // put to a human again costs attention, and silently dropping one costs the whole point.
+  const r = rig()
+  recordAnswer({ session: "ses_one", lessons: LESSONS(), ...r })
+  r.store.close("lint-skill-no-config", "accepted", { changed: ["SKILL.md"] })
+
+  const again = recordAnswer({ session: "ses_two", lessons: LESSONS(), ...r })
+  assert.deepEqual(again.recorded.reopened, ["lint-skill-no-config"])
+})

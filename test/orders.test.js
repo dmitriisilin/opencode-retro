@@ -48,8 +48,23 @@ async function retro(fake, { invoker = "ses_review", all = false } = {}) {
   return { handover, paths: [...handover.matchAll(/^- `([^`]+)`$/gm)].map((m) => m[1]) }
 }
 
-const record = (fake, session, lessons, invoker = "ses_review_sub") =>
-  fake.tools.get("retro_record").execute({ session, lessons }, { sessionID: invoker })
+/**
+ * A subagent's answer. `through` is required of a real one, so it is sent by default as the
+ * whole log the order asked for; `through: null` is a reader that did not say how far it got.
+ */
+const record = (fake, session, lessons, { through, dir, invoker = "ses_review_sub" } = {}) => {
+  const ordered = () => {
+    try {
+      return state(dir).orders?.[session]?.lastN ?? 0
+    } catch {
+      return 0 // no state.json yet: nothing was ever ordered, which the plugin will say
+    }
+  }
+  const claim = through === undefined ? (dir ? ordered() : 0) : through
+  return fake.tools
+    .get("retro_record")
+    .execute({ session, lessons, ...(claim === null ? {} : { through: claim }) }, { sessionID: invoker })
+}
 const propose = (fake, all = false, invoker = "ses_review") =>
   fake.tools.get("retro_propose").execute({ all }, { sessionID: invoker })
 
@@ -102,7 +117,7 @@ test("the plugin never calls a model itself", async () => {
 
   await work(fake, "ses_a")
   const { paths } = await retro(fake)
-  await record(fake, "ses_a", [LESSON])
+  await record(fake, "ses_a", [LESSON], { dir })
   const handed = await propose(fake)
 
   assert.equal(paths.length, 1)
@@ -121,7 +136,7 @@ test("a record moves the mark to what the order asked for", async () => {
   assert.ok(order.lastN > 0, "the order says how much there is to read")
   assert.equal(state(dir).looked?.ses_a?.n ?? 0, 0, "and the mark has not moved yet")
 
-  await record(fake, "ses_a", [LESSON])
+  await record(fake, "ses_a", [LESSON], { dir })
 
   const mark = state(dir).looked.ses_a
   assert.equal(mark.n, order.lastN, "a record with no `through` answered the order in full")
@@ -137,15 +152,15 @@ test("a record with no order behind it is refused", async () => {
   const cleanup = await plugin.setup(fake.ctx)
 
   await work(fake, "ses_a")
-  const first = await record(fake, "ses_a", [LESSON])
+  const first = await record(fake, "ses_a", [LESSON], { dir })
   assert.equal(first.output.ok, false, "nothing was asked about this session")
   assert.match(first.output.detail, /no work order is open/)
   assert.equal(existsSync(join(dir, ".retro", "lessons")), false, "and nothing is written")
 
   // And the same answer twice over: the second call is refused rather than counted again.
   await retro(fake)
-  await record(fake, "ses_a", [LESSON])
-  const again = await record(fake, "ses_a", [LESSON])
+  await record(fake, "ses_a", [LESSON], { dir })
+  const again = await record(fake, "ses_a", [LESSON], { dir })
   assert.equal(again.output.ok, false)
   const { recurrence } = JSON.parse(
     JSON.stringify(parseFrontmatter(readFileSync(join(dir, ".retro", "lessons", `${LESSON.id}.md`), "utf8")).data),
@@ -174,7 +189,7 @@ test("a record for a log replaced since its order is refused", async () => {
       .join("\n") + "\n",
   )
 
-  const result = await record(fake, "ses_a", [LESSON])
+  const result = await record(fake, "ses_a", [LESSON], { dir })
   assert.equal(result.output.ok, false)
   assert.match(result.output.detail, /was replaced since its order was written/)
   assert.match(result.output.detail, /asked for again/, "and says what happens next")
@@ -192,7 +207,7 @@ test("a record with no lessons settles the log as read", async () => {
 
   await work(fake, "ses_a")
   await retro(fake)
-  const result = await record(fake, "ses_a", [])
+  const result = await record(fake, "ses_a", [], { dir })
 
   assert.equal(result.output.ok, true, "an empty answer is an answer")
   assert.match(result.output.detail, /nothing to learn/)
@@ -255,7 +270,7 @@ test("retro_propose hands over the top lesson once the records are in", async ()
   await record(fake, "ses_a", [
     LESSON,
     { id: "cheap-one", statement: "A smaller problem.", steps: [2, 2], cost: 1, confidence: 0.5, why: "once" },
-  ])
+  ], { dir })
 
   const handed = await propose(fake)
   assert.match(handed.content, new RegExp(LESSON.id), "the highest-scoring lesson, not the first one recorded")
@@ -276,7 +291,7 @@ test("retro_propose for all delivers the plan", async () => {
   await record(fake, "ses_a", [
     LESSON,
     { id: "cheap-one", statement: "A smaller problem.", steps: [2, 2], cost: 1, confidence: 0.5, why: "once" },
-  ])
+  ], { dir })
   const handed = await propose(fake, true)
 
   assert.match(handed.content, new RegExp(LESSON.id))
@@ -336,7 +351,7 @@ test("a record that arrives after its round was closed is still recorded", async
   await propose(fake) // too early: the subagent has not reported yet
   assert.equal(state(dir).looked.ses_a.attempts, 1, "the round was closed and the attempt charged")
 
-  const result = await record(fake, "ses_a", [LESSON])
+  const result = await record(fake, "ses_a", [LESSON], { dir })
   assert.equal(result.output.ok, true, result.output.detail)
   assert.match(result.output.detail, /after the round was closed/)
   assert.match(result.output.detail, /attempt is given back/)
@@ -348,7 +363,7 @@ test("a record that arrives after its round was closed is still recorded", async
   assert.equal(existsSync(join(dir, ".retro", "lessons", `${LESSON.id}.md`)), true)
 
   // Once is once, though: the same answer again is still refused.
-  assert.equal((await record(fake, "ses_a", [LESSON])).output.ok, false)
+  assert.equal((await record(fake, "ses_a", [LESSON], { dir })).output.ok, false)
   await cleanup?.()
 })
 
@@ -365,8 +380,43 @@ test("a record is refused once its log was replaced, even if its round is still 
     JSON.stringify({ v: 1, n: 1, t: 1, k: "prompt", text: "a different task entirely" }) + "\n",
   )
 
-  const result = await record(fake, "ses_a", [LESSON])
+  const result = await record(fake, "ses_a", [LESSON], { dir })
   assert.equal(result.output.ok, false)
   assert.match(result.output.detail, /was replaced since its order was written/)
   await cleanup?.()
+})
+
+test("a record that does not say how far it read leaves the log unread", async () => {
+  // Saying how far it got is the reader's job, and the schema requires it — nothing else
+  // knows. So silence cannot mean "read it all": that is the one failure that loses material
+  // without anybody noticing. The lessons are kept, because they are real; the log is not
+  // marked read, and the next command asks about it again.
+  const dir = sandbox()
+  const fake = fakeOpenCode({ directory: dir, agent: false })
+  const cleanup = await plugin.setup(fake.ctx)
+
+  await work(fake, "ses_a")
+  await retro(fake)
+  const result = await record(fake, "ses_a", [LESSON], { through: null, dir })
+
+  assert.equal(result.output.ok, true, "the answer is kept")
+  assert.match(result.output.detail, /did not say how far it read/)
+  assert.match(result.output.detail, /asked about again/)
+  assert.equal(existsSync(join(dir, ".retro", "lessons", `${LESSON.id}.md`)), true, "the lesson is real and is written")
+
+  const mark = state(dir).looked.ses_a
+  assert.ok(!mark.n, "but the step mark does not move")
+  assert.equal(mark.open, true, "and the log is owed now, not when it next grows")
+
+  const { paths } = await retro(fake)
+  assert.deepEqual(paths.map((p) => p.split("/").pop()), ["ses_a.md"], "so it is asked about again")
+  assert.match(fake.orders.at(-1).text, /ses_a/)
+  await cleanup?.()
+})
+
+test("a record must say how far it read, because nothing else knows", async () => {
+  const { RECORD_INPUT } = await import("../src/contract.js")
+  assert.ok(RECORD_INPUT.required.includes("through"), "OpenCode refuses a record without it")
+  assert.ok(RECORD_INPUT.required.includes("session"))
+  assert.ok(RECORD_INPUT.required.includes("lessons"))
 })

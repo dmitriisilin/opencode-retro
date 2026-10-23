@@ -113,6 +113,7 @@ export function composeOrder({
     section("Session", [`id: ${session}`, `log: ${logPath}`, `steps: 1 to ${lastN || "?"}`].join("\n")),
     section("What to read", scope),
     section("Already concluded from this session", renderConcluded(concluded)),
+    section("Already fixed", renderFixed(store.listArchive?.() ?? [])),
     section(
       "Lessons already recorded",
       existing.length
@@ -133,16 +134,37 @@ export function composeOrder({
 /**
  * A record, folded into the store: the rejected filtered out, the rest recorded by problem.
  */
-export function recordAnswer({ session, lessons: raw, store, state, fingerprint, partial = false }) {
+export function recordAnswer({
+  session,
+  lessons: raw,
+  store,
+  state,
+  fingerprint,
+  partial = false,
+  unreported = false,
+  /** When a cited range actually happened, from the log: `(steps) => epoch ms | null`. */
+  dateOf = null,
+}) {
   const rejected = new Set(state.rejected.map((r) => r.id))
-  const lessons = normaliseLessons(raw).filter((l) => !rejected.has(l.id) && !rejected.has(l.matches))
+  const lessons = normaliseLessons(raw)
+    .filter((l) => !rejected.has(l.id) && !rejected.has(l.matches))
+    // When the friction happened, not when it was read. A backlog is analysed after the fixes
+    // taken from the logs ahead of it, so a decision must only be reopened by evidence from
+    // after it was taken (lesson.md). The log is the only thing that knows.
+    .map((l) => (dateOf ? { ...l, seenAt: dateOf(l.steps) } : l))
   const recorded = store.record(lessons, { session, fingerprint })
   return {
     lessons,
     recorded,
     // Said out loud: a lesson from part of a log is still a lesson, but the human should know
     // the reader said it did not get to the end.
-    detail: summarise(recorded, lessons.length) + (partial ? " (from part of the log; the rest is still owed)" : ""),
+    detail:
+      summarise(recorded, lessons.length) +
+      (unreported
+        ? " (the analysis did not say how far it read, so the log counts as unread and is asked about again)"
+        : partial
+          ? " (from part of the log; the rest is still owed)"
+          : ""),
   }
 }
 
@@ -167,6 +189,38 @@ function renderConcluded(concluded) {
     .join("\n")
 }
 
+/**
+ * Problems a human accepted and fixed, with the date the decision was taken.
+ *
+ * A backlog is the normal case: `/retro`, accept, integrate — and the next command analyses
+ * the logs that were waiting behind it, written before the fix and walking into the same
+ * trap. Without this the reader spends an analysis re-deriving a problem that is answered,
+ * and reports it as a recurrence; `record()` discards such evidence mechanically
+ * (lesson.md), but spending the reading on it is a waste either way, and a reader that knows
+ * can say something useful instead.
+ *
+ * Most recent first, and bounded: the archive grows for the life of the project, and this is
+ * context, not a ledger.
+ */
+function renderFixed(archived) {
+  const fixed = archived
+    .filter((l) => l.status === "accepted" && l.closedAt)
+    .sort((a, b) => String(b.closedAt).localeCompare(String(a.closedAt)))
+    .slice(0, 10)
+  if (!fixed.length) return null
+  return [
+    "These were accepted and fixed. If this session ran *before* the date given, friction from",
+    "them is history and not worth reporting — the fix came later. Report one again only if it",
+    "happened after that date, which is real news: the fix did not hold.",
+    "",
+    ...fixed.map((l) => {
+      const when = String(l.closedAt).slice(0, 10)
+      const changed = Array.isArray(l.changed) && l.changed.length ? ` — changed ${l.changed.join(", ")}` : ""
+      return `- \`${l.id}\` (fixed ${when}): ${l.statement}${changed}`
+    }),
+  ].join("\n")
+}
+
 function renderRejected(rejected) {
   if (!rejected.length) return null
   return rejected.map((r) => `- \`${r.id}\`${r.reason ? ` — ${r.reason}` : ""}`).join("\n")
@@ -180,5 +234,10 @@ function summarise(recorded, lessons) {
   if (recorded.restored?.length) parts.push(`${recorded.restored.length} restored (${recorded.restored.join(", ")})`)
   if (recorded.merged?.length) parts.push(`${recorded.merged.length} recurring (${recorded.merged.join(", ")})`)
   if (recorded.archived?.length) parts.push(`${recorded.archived.length} archived`)
+  // Said out loud, because the alternative is a lesson silently dropped: this one was already
+  // decided, and the evidence for it is from before the decision (lesson.md).
+  if (recorded.stale?.length) {
+    parts.push(`${recorded.stale.length} already fixed before this session ran (${recorded.stale.join(", ")})`)
+  }
   return parts.join(", ") || "no change"
 }

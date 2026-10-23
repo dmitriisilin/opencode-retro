@@ -80,8 +80,15 @@ export function fakeOpenCode({ options = {}, directory, reply, defaultReply = ""
       const { answer, through } = typeof given === "object" && given !== null ? given : { answer: given }
       const parsed = parseLessons(answer)
       if (!parsed.ok) continue
+      /**
+       * `through` is required of a real subagent, so it is sent here too. A reply that does
+       * not say otherwise read the whole log, which is what the order asked for: the last
+       * step the order names. A test that wants an unreported mark passes `through: null`.
+       */
+      const lastN = Number((prompt.match(/^steps: 1 to (\d+)$/m) ?? [])[1] ?? 0)
+      const claim = through === undefined ? lastN : through
       await tools.get("retro_record").execute(
-        { session, lessons: parsed.lessons, ...(through === undefined ? {} : { through }) },
+        { session, lessons: parsed.lessons, ...(claim === null ? {} : { through: claim }) },
         { sessionID: `${input.sessionID}_sub` },
       )
     }

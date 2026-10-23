@@ -54,11 +54,15 @@ log for as long as the log does. It is the one place the plugin still decides wh
 analysis can see, and it decides it once, at capture, where the alternative is keeping
 everything for ever.
 
-**Coverage (`through`).** How far a log was read, **as the reader reports it**. The order
-asks for everything up to the last step in the log, so that is what a record with no
-`through` means. A reader that got part way says so, the mark stops there, and the rest
-stays owed — the same thing an excerpt's coverage used to mean, reported by the one party
-that actually knows instead of inferred from what we chose to show.
+**Coverage (`through`).** How far a log was read, **as the reader reports it**, and required
+of every record: the plugin does not render what is read, so there is nothing on this side
+that could know. Reading the log is the reader's job and so is saying how much of it it read.
+
+A reader that got part way says so, the mark stops there, and the rest stays owed. Silence is
+not "read it all": an unreported coverage leaves the step mark where it was and the log owed
+now, so the lessons are kept and the log is asked about again. Assuming a full read would be
+the one failure that loses material without anybody noticing, which is the failure this
+plugin exists to end. (The schema requires it, so silence is a backstop rather than a path.)
 
 It is clamped to the order's own range. A `through` past the last step would mark steps as
 read that were not in the log when the order was written; one at or below the old mark says
@@ -97,10 +101,12 @@ the plugin's bookkeeping never turns into a lesson about the plugin.
   its session, which starts one subagent per order.
   `/retro issues a work order per owed log and asks the agent to analyse them`
   `the plugin never calls a model itself`
-- A record with no `through` answered the order in full; one with `through` moves the mark
-  only that far and leaves the rest owed.
+- `through` is required, and a record moves the mark only as far as it claims. Unreported,
+  the log counts as unread: the lessons are kept and the log is owed now.
   `a record moves the mark to what the order asked for`
   `a log read in part is read again without growing, and is not pruned first`
+  `a record that does not say how far it read leaves the log unread`
+  `a record must say how far it read, because nothing else knows`
 - A reported coverage no further than the mark is a failed attempt, not a settled log.
   `a read that got no further than the mark is reported, not settled as done`
 - A record is applied to the order it answers, and to nothing else: a record for a session

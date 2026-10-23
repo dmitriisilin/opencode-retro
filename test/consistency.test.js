@@ -224,6 +224,23 @@ test("every invariant in docs/concepts cites a test that exists", () => {
     }
   }
 
+  // A citation is a backticked line standing on its own, so a line that stands alone and is
+  // *not* one — a quoted title, say, written that way because the test's name has a backtick
+  // in it — is a citation nothing checks. Measured: one was written like that here and the
+  // suite stayed green, which is the exact failure this whole mechanism exists to prevent.
+  const uncheckable = []
+  for (const file of readdirSync(join(root, "docs", "concepts")).filter((f) => f.endsWith(".md") && f !== "README.md")) {
+    for (const [, quoted] of read(`docs/concepts/${file}`).matchAll(/^\s+"([^"]{12,})"\s*$/gm)) {
+      if (titles.has(quoted)) uncheckable.push(`${file}: ${quoted}`)
+    }
+  }
+  assert.deepEqual(
+    uncheckable,
+    [],
+    "a test cited in quotes is cited by nothing; rename the test so its title has no backtick:\n  " +
+      uncheckable.join("\n  "),
+  )
+
   const missing = []
   for (const file of readdirSync(join(root, "docs", "concepts")).filter((f) => f.endsWith(".md") && f !== "README.md")) {
     const text = read(`docs/concepts/${file}`)

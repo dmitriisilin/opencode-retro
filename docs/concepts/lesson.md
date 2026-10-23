@@ -34,8 +34,17 @@ deletion.
 A lesson the user marked `later` is never evicted, so a workspace with many of them can
 stay over the cap rather than discard a question the user asked to come back to.
 
-**Reopen.** An accepted lesson whose problem returns in a *different* session comes back
-with `reopenedFrom: accepted` — the news that the fix did not hold.
+**Reopen.** An accepted lesson whose problem returns in a *different* session, **after the
+decision was taken**, comes back with `reopenedFrom: accepted` — the news that the fix did
+not hold.
+
+**Stale evidence.** The same problem reported from a session that ran *before* the decision.
+Discarded, and named in the outcome. A backlog is the normal case — `/retro`, accept,
+integrate, and the next command analyses the logs that were waiting behind it, written before
+the fix and into the same trap — so without this, one fix is reported as having failed once
+per waiting log. When the friction happened is read from the log itself (`seenAt`, the
+timestamp of the last cited step); evidence with no date reopens, because nothing says it is
+old and putting a lesson to a human twice costs less than dropping one.
 
 **Restore.** An evicted lesson whose problem returns comes back as the open question it
 was, with no `reopenedFrom` added by the eviction. If it already carried one from an earlier
@@ -69,8 +78,14 @@ told to the extractor and filters its answer, and the store refuses to reopen an
 - A lesson that comes back marks its earlier evidence as released, and the hand-over offers
   only evidence whose log is kept.
   `a lesson that comes back marks its earlier evidence as released, and does not send the reviewer to it`
-- An accepted lesson that returns from another session is reopened as a failed fix.
+- An accepted lesson that returns from another session, after the decision, is reopened as a
+  failed fix; the same problem reported from before the decision is discarded and named.
   `a lesson that was accepted and comes back is reopened, because the fix did not hold`
+  `evidence from before a fix does not reopen it, and evidence from after does`
+  `undated evidence reopens a decision, because nothing says it is old`
+- What a human has already fixed is named in the order, with the date, so the reading is not
+  spent re-deriving an answered problem.
+  `problems already fixed are named in the order, with the date they were fixed`
 - A rejected lesson never returns.
   `a lesson the user rejected does not come back from the archive`
 - An evicted lesson returns as an open question, can be decided, and is not called

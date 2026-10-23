@@ -688,6 +688,34 @@ export default {
       observe(rootOf(parent), { force: true })
     }
 
+    /**
+     * When the steps a lesson cites actually happened, from the log itself.
+     *
+     * A record is folded in long after the work it is about: a backlog is analysed after the
+     * fixes taken from the logs ahead of it. So "is this problem back?" and "was this written
+     * before the fix?" are different questions, and only the log can answer the second.
+     * Falls back to the newest record, and to nothing at all if the log cannot be read — in
+     * which case the store treats the evidence as undated and reopens as it always did.
+     */
+    function datesIn(sessionID) {
+      let records = null
+      return (steps) => {
+        if (records === null) {
+          try {
+            records = parseShadowLog(readFileSync(log.path(sessionID), "utf8"))
+          } catch {
+            records = []
+          }
+        }
+        if (!records.length) return null
+        const cited = Array.isArray(steps) && steps.length ? Math.max(...steps) : null
+        const at = cited == null ? null : records.find((r) => r.n === cited)?.t
+        if (Number.isFinite(at)) return at
+        const newest = records.reduce((max, r) => (Number.isFinite(r.t) && r.t > max ? r.t : max), 0)
+        return newest > 0 ? newest : null
+      }
+    }
+
     /** Sessions an open lesson points at. The reason a log is still on disk. */
     function citedSessions() {
       const cited = new Set()
@@ -1035,17 +1063,24 @@ export default {
         return { ok: false, detail: `the log of \`${session}\` was replaced since its order was written; it will be asked for again.` }
       }
       /**
-       * How far the log was read. The order asked for all of it, so that is the default;
-       * a reader that got only part way says so with `through`, and the rest stays owed.
+       * How far the log was read, as the reader reports it. Reported and not measured: the
+       * plugin does not render what is read, so it cannot know, and `through` is required by
+       * the schema for exactly that reason — whoever read it is the only one who can say.
        *
-       * Reported, not measured — the plugin no longer renders what is read, so it cannot
-       * know. It is clamped to the order's own range: a `through` past `lastN` would mark
-       * steps as read that were not in the log when the order was written, and one at or
-       * below the old mark says nothing new was read at all, which is a failed attempt
-       * rather than a settled log.
+       * Unreported, the log counts as unread: the lessons are kept, because they are real,
+       * but the step mark does not move and the log is left owed so the next command reads
+       * it again. The alternative — assuming it was read in full — is the one failure that
+       * loses material silently, and silence is what this plugin exists to end. (OpenCode
+       * enforces the schema, so this is a backstop, not a path.)
+       *
+       * It is clamped to the order's own range: a `through` past `lastN` would mark steps as
+       * read that were not in the log when the order was written, and one at or below the old
+       * mark says nothing new was read at all, which is a failed attempt rather than a
+       * settled log.
        */
-      const claimed = Number.isFinite(through) ? Math.min(Math.trunc(through), order.lastN) : order.lastN
-      if (claimed <= order.n && order.lastN > order.n) {
+      const reported = Number.isFinite(through)
+      const claimed = reported ? Math.min(Math.trunc(through), order.lastN) : order.n
+      if (reported && claimed <= order.n && order.lastN > order.n) {
         const detail =
           `\`${session}\` was read only as far as step ${claimed}, which is no further than the ` +
           `${order.n} already analysed. Nothing was recorded; the log will be asked about again.`
@@ -1055,7 +1090,16 @@ export default {
         return { ok: false, detail }
       }
       const partial = claimed < order.lastN
-      const answered = recordAnswer({ session, lessons, store, state, fingerprint, partial })
+      const answered = recordAnswer({
+        session,
+        lessons,
+        store,
+        state,
+        fingerprint,
+        partial,
+        unreported: !reported,
+        dateOf: datesIn(session),
+      })
       // `open` is what makes a partial read useful: the next command reads on from the mark
       // without waiting for the log to grow.
       state.look(session, {

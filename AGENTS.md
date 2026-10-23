@@ -937,6 +937,18 @@ understood is just a diagnostic that was written badly.
       `src/projection.js` and its tests with them. Coverage is reported by the reader
       (`through` on a record) instead. See "The budget was the last thing left over from one
       model call"; it was the owner's question, and the right one.
+- [x] **`through` is required, and silence means unread.** Saying how far it read is the
+      reader's job — nothing on this side can know — so the schema demands it, and a record
+      without it keeps its lessons but leaves the log owed. The alternative, reading silence
+      as "all of it", is the one failure that loses material without anybody noticing.
+- [x] **A decision is not reopened by evidence from before it.** Found by following the
+      owner's question about what happens to integrated lessons: a backlog is the normal case,
+      so accepting a lesson and then analysing the logs that were waiting behind it reported
+      the fix as having failed, once per log. Measured: a clean store, one accept, one older
+      session, and the lesson came back as `reopenedFrom: accepted`. Now the extractor is told
+      what was fixed and when (so the reading is not spent on it), and `record()` discards
+      evidence older than the decision and names it in the outcome. Undated evidence still
+      reopens — putting a lesson twice costs less than dropping one.
 - [ ] **Not yet run live.** Everything here is tested against a fake OpenCode; nothing has
       been through a real `/retro` with real subagents. Until it has, the live behaviour of
       the hand-over — whether an agent reliably starts one subagent per order, reads none of
