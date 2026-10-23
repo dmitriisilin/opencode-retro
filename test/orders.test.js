@@ -420,3 +420,41 @@ test("a record must say how far it read, because nothing else knows", async () =
   assert.ok(RECORD_INPUT.required.includes("session"))
   assert.ok(RECORD_INPUT.required.includes("lessons"))
 })
+
+test("the proposal retro_propose returns is written into the session's log", async () => {
+  // Found by a live run. `retro_propose` hands its text back as a tool result — the agent
+  // asked for it — so nothing was sent and nothing was logged, and the review session's log
+  // showed the work-order hand-over, then the agent reading files and running commands to
+  // check a lesson, then its verdict, with nothing saying a lesson had been handed over.
+  //
+  // The contract tells an analysis that work after a `handover` with `about: "lesson"` is the
+  // review of that lesson and not the problem happening again. With no such record the rule
+  // can never fire, and the review is read as friction of its own — which the friction bench
+  // had already caught once from the other end, when a review added a session and 19 steps of
+  // cost to the lesson it was checking.
+  const dir = sandbox()
+  const fake = fakeOpenCode({ directory: dir, agent: false })
+  const cleanup = await plugin.setup(fake.ctx)
+
+  await work(fake, "ses_a")
+  await retro(fake)
+  await record(fake, "ses_a", [LESSON], { dir })
+  const handed = await propose(fake)
+
+  const records = readFileSync(logOf(dir, "ses_review"), "utf8")
+    .trim()
+    .split("\n")
+    .map((l) => JSON.parse(l))
+  assert.deepEqual(
+    records.filter((r) => r.k === "handover").map((r) => r.about),
+    ["work", "lesson"],
+    "the round asked for the analyses, and then a lesson was handed over",
+  )
+  const proposal = records.find((r) => r.about === "lesson")
+  assert.ok(proposal.text.includes(LESSON.id), "with what was handed over, so the review reads as a review")
+  assert.equal(proposal.text, handed.content, "the same text the agent was given")
+
+  // And it is logged, not sent: the agent already has it as the tool's result.
+  assert.deepEqual(fake.synthetic.filter((s) => s.via === undefined), [], "nothing was delivered twice")
+  await cleanup?.()
+})

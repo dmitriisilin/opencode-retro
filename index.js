@@ -396,6 +396,8 @@ export default {
             // Logs still owed beyond what this round asked for, so the hand-over can say so.
             const left = owedLogs().filter((id) => id !== context?.sessionID).length
             const text = await proposalText(Boolean(input?.all), { failures, left })
+            // Logged, not sent: the agent asked for this and has it as the tool's result.
+            noteHandover(context?.sessionID, text, "lesson")
             return { output: { ok: true, detail: text }, content: text }
           },
         })
@@ -524,8 +526,31 @@ export default {
         // The synthetic goes to the session's inbox; without `resume` it sits there until
         // the user happens to type something, and they never see what they asked for.
         await ctx.session.synthetic({ sessionID, text, description: "opencode-retro", resume: true })
-        // Written to the log ourselves, because a synthetic does not fire the prompt hook:
-        // without this the session's own log shows the work and not the instruction behind it.
+        noteHandover(sessionID, text, about)
+      } catch (err) {
+        onError("session.synthetic", err)
+      }
+    }
+
+    /**
+     * Our own text, written into the session's log (Gotcha 12).
+     *
+     * Separate from `say` because the two ways a hand-over reaches a session need different
+     * halves of this. A synthetic does not fire the prompt hook, so it has to be logged or the
+     * session's log shows the work with the instruction behind it missing. A hand-over the
+     * agent *asked* for — `retro_propose` returns the text as a tool result — is already in
+     * front of the agent and must not be sent again, but it still has to be logged, and for
+     * the same reason: measured live, a review session showed the work-order hand-over, then
+     * the agent reading files and running commands to check a lesson, then its verdict — with
+     * nothing saying a lesson had been handed over at all. The contract tells an analysis that
+     * work following a `handover` with `about: "lesson"` is the review of that lesson and not
+     * the problem happening again; with no such record, that rule can never fire, and the
+     * review is read as friction of its own. The bench had already caught that once, from the
+     * other end, when the review added a session and 19 steps of cost to the lesson it was
+     * checking.
+     */
+    function noteHandover(sessionID, text, about = "lesson") {
+      try {
         const owner = rootOf(sessionID)
         const before = log.stat(owner).size
         const mark = state.looked(owner)
@@ -538,7 +563,7 @@ export default {
           state.look(owner, { size: log.stat(owner).size })
         }
       } catch (err) {
-        onError("session.synthetic", err)
+        onError("handover.log", err)
       }
     }
 

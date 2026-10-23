@@ -2,10 +2,27 @@
 
 ## Definitions
 
-**Proposal.** One lesson, put to the agent already in the user's session, by
-`session.synthetic` with `resume: true`. `/retro` delivers the highest-scoring open
-lesson and stops; `/retro all` delivers every open lesson up to `proposeLimit` and asks
-for one plan. The plugin never edits the harness and never drives the conversation.
+**Proposal.** One lesson, put to the agent already in the user's session. `/retro` delivers
+the highest-scoring open lesson and stops; `/retro all` delivers every open lesson up to
+`proposeLimit` and asks for one plan. The plugin never edits the harness and never drives
+the conversation.
+
+It arrives one of two ways, and both end in the log. When the round had analyses to run, the
+agent calls `retro_propose` and the text comes back as that tool's result — it asked, so
+nothing is sent. When there was nothing to analyse, `/retro` delivers it with
+`session.synthetic` and `resume: true`, because otherwise it would sit in the inbox until the
+person happened to type something.
+
+**Logging our own text.** Either way the hand-over is written into the session's log as a
+`handover` record, with `about` saying which of the two it is: `work` for a request for
+analyses, `lesson` for a lesson put to the human. A synthetic has to be logged because it
+does not fire the prompt hook, and the log would otherwise show the work with the instruction
+behind it missing (log.md). A tool result has to be logged for a different reason: the
+extraction contract tells an analysis that work following a `handover` with
+`about: "lesson"` is the review of that lesson rather than the problem happening again, and
+with no such record that rule can never fire. Measured live — a review session held the
+work-order hand-over, the agent checking a lesson against the repository, and its verdict,
+with nothing between them saying a lesson had been handed over at all.
 
 **The rule.** `.retro/prompts/propose.md`: what the agent treats as its job when a lesson
 arrives — is it still true, where does the fix belong, relay it, change nothing until
@@ -31,6 +48,10 @@ closed. Accepting or rejecting moves the file to `archive/`; `later` keeps it op
   `the top open lesson is picked by score`
   `one invocation delivers exactly one lesson, the top of the open set`
   `decided lessons are not shown again; later ones are`
+- A hand-over is written into the session's log whichever way it arrived, and says which
+  kind it was.
+  `the proposal retro_propose returns is written into the session's log`
+  `the plugin's own analysis is not logged as the user's work`
 - The hand-over text comes from the prompt file, and a missing file degrades to a terse
   hand-over rather than a silent one.
   `the hand-over instructions come from the prompt file, not from source`
