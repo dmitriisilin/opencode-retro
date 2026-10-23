@@ -1137,6 +1137,11 @@ the order it is cheapest to check:
    into a fresh project under `/tmp`, with no plugin options at all and no git; worked in,
    `/retro` run through the API (Gotcha 16), a prompt edited and seen to take effect, a
    decision recorded, `/retro` run again. Nothing confusing, silent or maintainer-only.
+   Done in cycle 10, where it found three things — an edit that worked and was never
+   confirmed anywhere a person looks, a table in this file describing a `base_sha` the code
+   has never had, and one fact phrased three ways in the self-check. "Seen to take effect" is
+   the load-bearing word: the edit reaching the work order is not the same as the person
+   being able to tell, and only the second is the check.
 4a. The planted-friction bench (`bench/friction/`) finds every trap, counts each recurring one
    in more than one session, does not count the review of a lesson as its recurrence, reports
    no lesson against the control, and leaves no work order unanswered. A recall number, not an
