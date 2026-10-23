@@ -26,10 +26,13 @@ and is named in `selfcheck.md`. Updates accumulate like release notes; deleting 
 the user's call. They live inside an overridden prompt directory when there is one, since
 a notice written where the user stopped looking is a notice nobody sees.
 
-**The contract.** The output format the extractor must produce. A constant in source,
-wrapped around the prompt at call time and never written to disk, so an edited prompt
-cannot remove it and no file carries a region the user is told not to touch. Only the
-user's prose, with the frontmatter stripped, reaches the model.
+**The contract.** How an analysis must answer. Two halves: `RECORD_INPUT`, the schema of
+the `retro_record` tool, which OpenCode enforces before a call reaches the plugin, and
+`OUTPUT_CONTRACT`, the prose that says what the fields mean. Both are constants in source,
+and the prose is written into each work order after the user's prompt rather than into the
+prompt file, so an edited prompt cannot remove it and no file the user owns carries a
+region they are told not to touch. Only the user's prose, with the frontmatter stripped,
+goes into the order.
 
 **Fallback.** When no layer resolves at all — the file deleted, the package broken — the
 hand-over degrades to a terse built-in text rather than to silence.
@@ -52,8 +55,11 @@ hand-over degrades to a terse built-in text rather than to silence.
   `a current base produces no news`
   `the news file is written once, and keeps being reported`
   `update notices land beside the prompts, including when the directory is overridden`
-- The contract is never written to disk, only wrapped at call time.
-  `the contract is never written to disk, only wrapped at call time`
+- No prompt file carries the contract: it is a constant in source, written into every work
+  order after the user's prose.
+  `no prompt file carries the contract; it is written into the work order`
+- Lessons that arrive as a string instead of an array are read, not refused.
+  `lessons that arrive as a string are parsed rather than refused`
 - The extractor's reply is parsed tolerantly and fails loudly, never silently.
   `prose around the json, a trailing comma, and a missing fence all survive`
   `an unparseable reply fails loudly rather than silently returning nothing`

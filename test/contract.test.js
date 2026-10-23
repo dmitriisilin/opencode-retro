@@ -3,7 +3,7 @@ import assert from "node:assert/strict"
 import { readFileSync, readdirSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
-import { OUTPUT_CONTRACT, parseLessons, slug } from "../src/contract.js"
+import { OUTPUT_CONTRACT, normaliseLessons, parseLessons, slug } from "../src/contract.js"
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..")
 
@@ -19,8 +19,8 @@ const good = {
   why: "Step 9 invoked the skill; step 18 exited 2.",
 }
 
-test("the contract is never written to disk, only wrapped at call time", () => {
-  assert.match(OUTPUT_CONTRACT, /fenced `json` block/)
+test("no prompt file carries the contract; it is written into the work order", () => {
+  assert.match(OUTPUT_CONTRACT, /retro_record/, "the answer is a tool call, not a reply to parse")
   assert.match(OUTPUT_CONTRACT, /"lessons": \[\]/, "the empty answer must be spelled out")
 
   // The rule is not "the constant exists" but "it is not in any file the user can edit":
@@ -55,6 +55,16 @@ test("prose around the json, a trailing comma, and a missing fence all survive",
     assert.ok(ok, `failed on: ${reply.slice(0, 40)}`)
     assert.equal(lessons.length, 1)
   }
+})
+
+test("lessons that arrive as a string are parsed rather than refused", () => {
+  // The schema asks for an array and OpenCode enforces it, but a model handed a nested
+  // structure will stringify it often enough that refusing one would throw away a good
+  // answer. Everything the reply parser tolerates is tolerated here.
+  assert.deepEqual(normaliseLessons(JSON.stringify([good]))[0].statement, good.statement)
+  assert.deepEqual(normaliseLessons('```json\n{"lessons": [' + JSON.stringify(good) + "]}\n```")[0].steps, [9, 18])
+  assert.deepEqual(normaliseLessons("not json at all"), [], "and nothing is invented from prose")
+  assert.deepEqual(normaliseLessons(undefined), [])
 })
 
 test("an empty list is a valid answer, not a failure", () => {

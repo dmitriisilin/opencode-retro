@@ -19,6 +19,8 @@ import { parseLessons } from "../src/contract.js"
  * plays the agent itself; work-order hand-overs are in `orders` either way.
  */
 export function fakeOpenCode({ options = {}, directory, reply, defaultReply = "", agent = true } = {}) {
+  // `agent` may be a function, so a history can abandon one round and answer the next.
+  const agentRuns = () => (typeof agent === "function" ? agent() : agent)
   const commands = new Map()
   const tools = new Map()
   const hooks = new Map()
@@ -72,7 +74,7 @@ export function fakeOpenCode({ options = {}, directory, reply, defaultReply = ""
       synthetic: async (input) => {
         if (ordersIn(input.text).length) {
           orders.push(input)
-          if (agent) await playAgent(input)
+          if (agentRuns()) await playAgent(input)
           return
         }
         synthetic.push(input)

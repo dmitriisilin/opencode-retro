@@ -96,7 +96,6 @@ const queue = (directory, sessions) =>
     }),
   )
 
-const MODEL = { providerID: "deepseek", id: "deepseek-flash" }
 
 /** The event loop is a promise chain, not a callback, so give it a turn to run. */
 const tick = () => new Promise((resolve) => setTimeout(resolve, 20))
@@ -117,7 +116,7 @@ const REPLY = JSON.stringify({
 
 test("setup registers the commands and the decision tool, and seeds the prompts", async () => {
   const directory = sandbox()
-  const fake = fakeOpenCode({ directory, options: { model: MODEL } })
+  const fake = fakeOpenCode({ directory })
   const cleanup = await plugin.setup(fake.ctx)
 
   // Two commands, and that is the whole surface: one lesson, or all of them.
@@ -136,7 +135,7 @@ test("setup registers the commands and the decision tool, and seeds the prompts"
 
 test("/retro runs, and says there is nothing when the store is empty", async () => {
   const directory = sandbox()
-  const fake = fakeOpenCode({ directory, options: { model: MODEL } })
+  const fake = fakeOpenCode({ directory })
   const cleanup = await plugin.setup(fake.ctx)
 
   await fake.commands.get("retro").execute({ sessionID: "ses_x", prompt: { text: "" } })
@@ -150,7 +149,7 @@ test("/retro runs, and says there is nothing when the store is empty", async () 
 
 test("a prompt, a tool call and a session end produce a lesson, then /retro hands it over", async () => {
   const directory = sandbox()
-  const fake = fakeOpenCode({ directory, options: { model: MODEL } })
+  const fake = fakeOpenCode({ directory })
   const cleanup = await plugin.setup(fake.ctx)
 
   const session = "ses_work"
@@ -174,7 +173,7 @@ test("a prompt, a tool call and a session end produce a lesson, then /retro hand
     JSON.stringify({ version: 1, rejected: [], extracted: {}, sessions: 1, pending: [{ session, queuedAt: "now", attempts: 0 }] }),
   )
 
-  const fresh = fakeOpenCode({ directory, options: { model: MODEL } })
+  const fresh = fakeOpenCode({ directory })
   const cleanup2 = await plugin.setup(fresh.ctx)
   await fresh.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
 
@@ -193,7 +192,7 @@ test("a prompt, a tool call and a session end produce a lesson, then /retro hand
 
 test("an edited propose prompt is what reaches the agent", async () => {
   const directory = sandbox()
-  const first = fakeOpenCode({ directory, options: { model: MODEL } })
+  const first = fakeOpenCode({ directory })
   const seeded = await plugin.setup(first.ctx)
   await seeded?.()
 
@@ -204,7 +203,7 @@ test("an edited propose prompt is what reaches the agent", async () => {
     "---\nid: l\nstatement: something\ncost: 5\nrecurrence: 1\nconfidence: 1\nstatus: new\n---\n\nbody\n",
   )
 
-  const fake = fakeOpenCode({ directory, options: { model: MODEL } })
+  const fake = fakeOpenCode({ directory })
   const cleanup = await plugin.setup(fake.ctx)
   await fake.commands.get("retro").execute({ sessionID: "ses_x", prompt: { text: "" } })
 
@@ -223,7 +222,7 @@ test("a command that throws reports itself instead of vanishing into a 500", asy
     "---\nid: broken\nstatement: something\ncost: 5\nrecurrence: 1\nconfidence: 1\nstatus: new\nproposal:\n  target: AGENTS.md\n  change: 42\n---\n\nbody\n",
   )
 
-  const fake = fakeOpenCode({ directory, options: { model: MODEL } })
+  const fake = fakeOpenCode({ directory })
   const cleanup = await plugin.setup(fake.ctx)
   await fake.commands.get("retro").execute({ sessionID: "ses_x", prompt: { text: "" } })
 
@@ -237,7 +236,7 @@ test("a command that throws reports itself instead of vanishing into a 500", asy
 
 test("deciding on a lesson that does not exist fails clearly through the registered tool", async () => {
   const directory = sandbox()
-  const fake = fakeOpenCode({ directory, options: { model: MODEL } })
+  const fake = fakeOpenCode({ directory })
   const cleanup = await plugin.setup(fake.ctx)
 
   const tool = fake.tools.get("retro_decide")
@@ -256,7 +255,7 @@ test("deciding on a lesson that does not exist fails clearly through the registe
 test("a log survives while a lesson cites it, and goes once that lesson is decided", async () => {
   const directory = sandbox()
   const session = "ses_cited"
-  const fake = fakeOpenCode({ directory, options: { model: MODEL } })
+  const fake = fakeOpenCode({ directory })
   const cleanup = await plugin.setup(fake.ctx)
 
   await fake.hooks.get("session.prompt")({ sessionID: session, messageID: "m1", prompt: { text: "do it" } })
@@ -277,7 +276,7 @@ test("a log survives while a lesson cites it, and goes once that lesson is decid
     JSON.stringify({ version: 1, rejected: [], extracted: {}, sessions: 1, pending: [{ session, queuedAt: "now", attempts: 0 }] }),
   )
 
-  const fresh = fakeOpenCode({ directory, options: { model: MODEL } })
+  const fresh = fakeOpenCode({ directory })
   const cleanup2 = await plugin.setup(fresh.ctx)
   await fresh.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
 
@@ -317,7 +316,7 @@ test("one invocation delivers exactly one lesson, the top of the open set", asyn
     )
   }
 
-  const fake = fakeOpenCode({ directory, options: { model: MODEL } })
+  const fake = fakeOpenCode({ directory })
   const cleanup = await plugin.setup(fake.ctx)
   await fake.commands.get("retro").execute({ sessionID: "ses_x", prompt: { text: "" } })
 
@@ -340,7 +339,7 @@ test("/retro all delivers every waiting lesson as one plan", async () => {
     )
   }
 
-  const fake = fakeOpenCode({ directory, options: { model: MODEL } })
+  const fake = fakeOpenCode({ directory })
   const cleanup = await plugin.setup(fake.ctx)
   await fake.commands.get("retro-all").execute({ sessionID: "ses_x", prompt: { text: "" } })
 
@@ -357,7 +356,7 @@ test("a log the model could not answer does not hold up the logs behind it", asy
   // The other logs were never read, and the message said to run `/retro` again — which
   // would have failed on the same log again.
   const directory = sandbox()
-  const fake = fakeOpenCode({ directory, options: { model: MODEL } })
+  const fake = fakeOpenCode({ directory })
   const cleanup = await plugin.setup(fake.ctx)
 
   await workSession(fake, "ses_bad")
@@ -366,7 +365,6 @@ test("a log the model could not answer does not hold up the logs behind it", asy
 
   const fresh = fakeOpenCode({
     directory,
-    options: { model: MODEL },
     reply: (input) => (input.prompt.includes("id: ses_bad") ? "I could not do this one." : REPLY),
   })
   const cleanup2 = await plugin.setup(fresh.ctx)
@@ -386,7 +384,7 @@ test("a log the model could not answer does not hold up the logs behind it", asy
 
 /** One `/retro` by a fresh instance whose model answers with `reply`. */
 async function retroWith(directory, reply, invoker = "ses_review") {
-  const fake = fakeOpenCode({ directory, options: { model: MODEL }, ...(reply === undefined ? {} : { reply }) })
+  const fake = fakeOpenCode({ directory, ...(reply === undefined ? {} : { reply }) })
   const cleanup = await plugin.setup(fake.ctx)
   await fake.commands.get("retro").execute({ sessionID: invoker, prompt: { text: "" } })
   await cleanup?.()
@@ -395,7 +393,7 @@ async function retroWith(directory, reply, invoker = "ses_review") {
 
 test("a log that failed stays owed, and is tried again on the next command", async () => {
   const directory = sandbox()
-  const fake = fakeOpenCode({ directory, options: { model: MODEL } })
+  const fake = fakeOpenCode({ directory })
   const cleanup = await plugin.setup(fake.ctx)
   await workSession(fake, "ses_bad")
 
@@ -412,7 +410,7 @@ test("a log that failed stays owed, and is tried again on the next command", asy
 
 test("a session is given up on after three attempts, not billed forever", async () => {
   const directory = sandbox()
-  const fake = fakeOpenCode({ directory, options: { model: MODEL } })
+  const fake = fakeOpenCode({ directory })
   const cleanup = await plugin.setup(fake.ctx)
   await workSession(fake, "ses_bad")
 
@@ -434,7 +432,7 @@ test("the report is written from the first prompt, not once the session is over"
   // the checks needs the session to be over: a hook fired, and the log has something
   // non-empty in it.
   const directory = sandbox()
-  const fake = fakeOpenCode({ directory, options: { model: MODEL } })
+  const fake = fakeOpenCode({ directory })
   const cleanup = await plugin.setup(fake.ctx)
   const session = "ses_underway"
 
@@ -465,7 +463,7 @@ test("a session still working is read, and owed the rest when it writes more", a
   // one settles nothing it can still add to: the mark says how far it was read, and whatever
   // it writes next is owed. Its log is not removed, because it was written in the last week.
   const directory = sandbox()
-  const fake = fakeOpenCode({ directory, options: { model: MODEL } })
+  const fake = fakeOpenCode({ directory })
   const cleanup = await plugin.setup(fake.ctx)
   const session = "ses_working"
 
@@ -502,7 +500,7 @@ test("a second look at a session reads only what is new since the first", async 
   const directory = sandbox()
   // A parseable reply, because the mark only moves on success: a failed analysis must not
   // skip the material it failed on.
-  const fake = fakeOpenCode({ directory, options: { model: MODEL } })
+  const fake = fakeOpenCode({ directory })
   const cleanup = await plugin.setup(fake.ctx)
   const session = "ses_returned_to"
 
@@ -551,7 +549,7 @@ test("a working session is not read again until its log has grown", async () => 
   // same answer, and it also settles the abandoned case: a log nobody will append to again
   // is read once and then left alone.
   const directory = sandbox()
-  const fake = fakeOpenCode({ directory, options: { model: MODEL }, reply: JSON.stringify({ lessons: [] }) })
+  const fake = fakeOpenCode({ directory, reply: JSON.stringify({ lessons: [] }) })
   const cleanup = await plugin.setup(fake.ctx)
   const session = "ses_growing"
 
@@ -609,7 +607,7 @@ test("an excerpted log is read again without growing, and is not pruned first", 
 
   const fake = fakeOpenCode({
     directory,
-    options: { model: MODEL, maxInput: 9000 },
+    options: { maxInput: 9000 },
     reply: JSON.stringify({ lessons: [] }),
   })
   const cleanup = await plugin.setup(fake.ctx)
@@ -634,7 +632,13 @@ test("an excerpted log is read again without growing, and is not pruned first", 
   // And it keeps working through the gap, command after command, until the whole log has
   // been covered. This also crosses the failure-retry budget, which a successful excerpt
   // must not spend: the log is being read, just not in one piece.
-  for (let i = 0; i < 40 && savedState(directory).looked[session]?.open; i++) {
+  //
+  // How many commands that takes is (maxInput − the fixed part of an order) worth of log at
+  // a time, and the fixed part here — the user's prompt plus the contract — is over 7,000
+  // characters of the 9,000 budget. So the bound is generous on purpose: it is not a claim
+  // about the rate, only that the gap is worked through and the log then goes. The rate is a
+  // real cost of a small `maxInput`, and the number to turn up if it matters.
+  for (let i = 0; i < 80 && savedState(directory).looked[session]?.open; i++) {
     age(directory, session)
     await fake.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
     if (savedState(directory).looked[session]?.open) assert.ok(existsSync(logPath), "never pruned while the gap is owed")
@@ -659,7 +663,7 @@ test("a log left behind by a server that stopped is read like any other", async 
     ].join("\n") + "\n",
   )
 
-  const fake = fakeOpenCode({ directory, options: { model: MODEL } })
+  const fake = fakeOpenCode({ directory })
   const cleanup = await plugin.setup(fake.ctx)
   await fake.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
 
@@ -678,7 +682,7 @@ test("a session from another checkout of this project is not ours", async () => 
   // hook, most likely renamed upstream` about a healthy session, queued its partial log for
   // analysis, and counted it towards freshness.
   const directory = sandbox()
-  const fake = fakeOpenCode({ directory, options: { model: MODEL } })
+  const fake = fakeOpenCode({ directory })
   const cleanup = await plugin.setup(fake.ctx)
   const session = "ses_in_a_worktree"
 
@@ -716,7 +720,7 @@ test("a log that cannot be read is reported as a failure, not as a clean analysi
   const directory = sandbox()
   mkdirSync(join(directory, ".retro", "sessions", "ses_vanished.jsonl"), { recursive: true })
 
-  const fake = fakeOpenCode({ directory, options: { model: MODEL } })
+  const fake = fakeOpenCode({ directory })
   const cleanup = await plugin.setup(fake.ctx)
   await fake.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
 
@@ -742,7 +746,7 @@ test("`/retro all` is reachable as an argument to the one command", async () => 
     "---\nid: a\nstatement: problem a\ncost: 5\nrecurrence: 1\nconfidence: 1\nstatus: new\n---\n\nbody\n",
   )
 
-  const fake = fakeOpenCode({ directory, options: { model: MODEL } })
+  const fake = fakeOpenCode({ directory })
   const cleanup = await plugin.setup(fake.ctx)
   await fake.commands.get("retro").execute({ sessionID: "ses_x", prompt: { text: "all" } })
 
@@ -754,7 +758,7 @@ test("a review costs nothing beyond the analysis itself", async () => {
   // The free checks run every time; asking the model whether it answers is a call nobody
   // requested, and the analysis answers that question on its own.
   const directory = sandbox()
-  const fake = fakeOpenCode({ directory, options: { model: MODEL } })
+  const fake = fakeOpenCode({ directory })
   const cleanup = await plugin.setup(fake.ctx)
 
   await fake.commands.get("retro").execute({ sessionID: "ses_x", prompt: { text: "" } })
@@ -772,7 +776,7 @@ test("a subagent's work lands in the parent's log, and is not analysed on its ow
   const directory = sandbox()
   const parent = "ses_parent"
   const child = "ses_child"
-  const fake = fakeOpenCode({ directory, options: { model: MODEL } })
+  const fake = fakeOpenCode({ directory })
   const cleanup = await plugin.setup(fake.ctx)
 
   await fake.hooks.get("session.prompt")({ sessionID: parent, messageID: "m1", prompt: { text: "find the exports" } })
@@ -822,7 +826,7 @@ test("the subagent's own instruction is not lost to the race that reveals its pa
   const directory = sandbox()
   const parent = "ses_parent"
   const child = "ses_child"
-  const fake = fakeOpenCode({ directory, options: { model: MODEL } })
+  const fake = fakeOpenCode({ directory })
   const cleanup = await plugin.setup(fake.ctx)
 
   await fake.hooks.get("session.prompt")({ sessionID: parent, messageID: "m1", prompt: { text: "find the exports" } })
@@ -868,7 +872,7 @@ test("an unreadable orphan log for a child is removed, not analysed as a session
   const logPath = join(directory, ".retro", "sessions", `${child}.jsonl`)
   writeFileSync(logPath, "this line is not a shadow-log record\n")
 
-  const fake = fakeOpenCode({ directory, options: { model: MODEL } })
+  const fake = fakeOpenCode({ directory })
   const cleanup = await plugin.setup(fake.ctx)
 
   await fake.hooks.get("session.prompt")({ sessionID: parent, messageID: "m1", prompt: { text: "delegate" } })
@@ -892,7 +896,7 @@ test("an unreadable orphan log for a child is removed, not analysed as a session
 test("keepSessions keeps a log that nothing cites, because losing it is not recoverable", async () => {
   const directory = sandbox()
   const session = "ses_kept"
-  const fake = fakeOpenCode({ directory, options: { model: MODEL, keepSessions: true } })
+  const fake = fakeOpenCode({ directory, options: { keepSessions: true } })
   const cleanup = await plugin.setup(fake.ctx)
 
   await fake.hooks.get("session.prompt")({ sessionID: session, messageID: "m1", prompt: { text: "do it" } })
@@ -910,7 +914,7 @@ test("keepSessions keeps a log that nothing cites, because losing it is not reco
     JSON.stringify({ version: 1, rejected: [], extracted: {}, sessions: 1, pending: [{ session, queuedAt: "now", attempts: 0 }] }),
   )
 
-  const fresh = fakeOpenCode({ directory, options: { model: MODEL, keepSessions: true } })
+  const fresh = fakeOpenCode({ directory, options: { keepSessions: true } })
   const cleanup2 = await plugin.setup(fresh.ctx)
   await fresh.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
   await fresh.tools.get("retro_decide").execute({ id: "lint-skill-no-config", status: "accepted" })
@@ -933,7 +937,7 @@ test("proposeLimit caps one plan and says what it left out", async () => {
     )
   }
 
-  const fake = fakeOpenCode({ directory, options: { model: MODEL, proposeLimit: 2 } })
+  const fake = fakeOpenCode({ directory, options: { proposeLimit: 2 } })
   const cleanup = await plugin.setup(fake.ctx)
   await fake.commands.get("retro").execute({ sessionID: "ses_x", prompt: { text: "all" } })
 
@@ -950,13 +954,13 @@ test("a log skipped as one exchange does not spend the command's limit", async (
   // the answer was known, so a quiet log at the head of the queue used up a limit of one and
   // the session behind it — the one with something to read — was never looked at.
   const directory = sandbox()
-  const writer = fakeOpenCode({ directory, options: { model: MODEL } })
+  const writer = fakeOpenCode({ directory })
   const stopWriter = await plugin.setup(writer.ctx)
   await writer.hooks.get("session.prompt")({ sessionID: "ses_quiet", messageID: "m1", prompt: { text: "hello" } })
   await workSession(writer, "ses_busy")
   await stopWriter?.()
 
-  const fake = fakeOpenCode({ directory, options: { model: MODEL, extractLimit: 1 } })
+  const fake = fakeOpenCode({ directory, options: { extractLimit: 1 } })
   const cleanup = await plugin.setup(fake.ctx)
   await fake.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
 
@@ -973,13 +977,13 @@ test("a log skipped as one exchange does not spend the command's limit", async (
 
 test("extractLimit caps what one command analyses and leaves the rest owed", async () => {
   const directory = sandbox()
-  const fake = fakeOpenCode({ directory, options: { model: MODEL, extractLimit: 1 } })
+  const fake = fakeOpenCode({ directory, options: { extractLimit: 1 } })
   const cleanup = await plugin.setup(fake.ctx)
 
   await workSession(fake, "ses_one")
   await workSession(fake, "ses_two")
 
-  const fresh = fakeOpenCode({ directory, options: { model: MODEL, extractLimit: 1 } })
+  const fresh = fakeOpenCode({ directory, options: { extractLimit: 1 } })
   const cleanup2 = await plugin.setup(fresh.ctx)
   await fresh.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
 
@@ -997,7 +1001,7 @@ test("a finished session is owed an analysis, and the report proves the hooks ra
   // handleEvent — the one function that turns traffic into work — was never executed.
   const directory = sandbox()
   const session = "ses_ended"
-  const fake = fakeOpenCode({ directory, options: { model: MODEL } })
+  const fake = fakeOpenCode({ directory })
   const cleanup = await plugin.setup(fake.ctx)
 
   await fake.hooks.get("session.prompt")({ sessionID: session, messageID: "m1", prompt: { text: "do it" } })
@@ -1046,7 +1050,7 @@ test("events the hooks never received are reported as a dead hook, with numbers"
   // comparison can name which one broke.
   const directory = sandbox()
   const session = "ses_drift"
-  const fake = fakeOpenCode({ directory, options: { model: MODEL } })
+  const fake = fakeOpenCode({ directory })
   const cleanup = await plugin.setup(fake.ctx)
 
   await fake.hooks.get("session.prompt")({ sessionID: session, messageID: "m1", prompt: { text: "do it" } })
@@ -1083,7 +1087,7 @@ test("a subagent's own instruction is absorbed when session.created reveals the 
   const directory = sandbox()
   const parent = "ses_parent"
   const child = "ses_child"
-  const fake = fakeOpenCode({ directory, options: { model: MODEL } })
+  const fake = fakeOpenCode({ directory })
   const cleanup = await plugin.setup(fake.ctx)
 
   await fake.hooks.get("session.prompt")({
@@ -1123,7 +1127,7 @@ test("a delegation inside a delegation is folded into the root when the links ar
   // leaf is a session: no log of its own is left, neither is queued, and neither moves the
   // freshness counter even though both ends were processed before the links were known.
   const directory = sandbox()
-  const fake = fakeOpenCode({ directory, options: { model: MODEL } })
+  const fake = fakeOpenCode({ directory })
   const cleanup = await plugin.setup(fake.ctx)
   const root = "ses_root"
   const middle = "ses_middle"
@@ -1230,7 +1234,7 @@ test("a session that runs again is owed a second analysis, from where the first 
   // the second turn is owed because the log grew, and the read starts where the first one
   // stopped, so the steps already turned into lessons are not paid for twice.
   const directory = sandbox()
-  const fake = fakeOpenCode({ directory, options: { model: MODEL } })
+  const fake = fakeOpenCode({ directory })
   const cleanup = await plugin.setup(fake.ctx)
   const session = "ses_twice"
 
@@ -1263,7 +1267,7 @@ test("a session picked up again is read while its second turn is running, and it
   // Reading a session in the middle of a turn settles nothing it can still add to: what it
   // writes after the read is owed, and its log is not pruned while it is being written.
   const directory = sandbox()
-  const fake = fakeOpenCode({ directory, options: { model: MODEL } })
+  const fake = fakeOpenCode({ directory })
   const cleanup = await plugin.setup(fake.ctx)
   const session = "ses_back_at_it"
 
@@ -1309,7 +1313,7 @@ test("a log smaller than its mark is read again, not mistaken for already read",
   ])
 
   age(directory, session)
-  const fake = fakeOpenCode({ directory, options: { model: MODEL }, reply: JSON.stringify({ lessons: [] }) })
+  const fake = fakeOpenCode({ directory, reply: JSON.stringify({ lessons: [] }) })
   const cleanup = await plugin.setup(fake.ctx)
   await fake.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
   assert.equal(fake.generated.length, 1, "the orphan log was read")
@@ -1346,7 +1350,7 @@ test("a log whose numbering starts over is read from its own start, even if it i
     { v: 1, n: 4, t: 4, k: "session", event: "end", outcome: "succeeded" },
   ])
 
-  const fake = fakeOpenCode({ directory, options: { model: MODEL } })
+  const fake = fakeOpenCode({ directory })
   const cleanup = await plugin.setup(fake.ctx)
   await fake.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
   assert.equal(fake.generated.length, 1)
@@ -1375,7 +1379,6 @@ test("a failed retry on a resumed session is not silently dropped", async () => 
   let calls = 0
   const fake = fakeOpenCode({
     directory,
-    options: { model: MODEL },
     reply: () => (++calls === 1 ? REPLY : "I cannot answer that."),
   })
   const cleanup = await plugin.setup(fake.ctx)
@@ -1404,7 +1407,7 @@ test("a session whose creation we never saw is not counted, queued or reported o
   // queued a log that does not exist, moved the freshness counter, and rewrote
   // selfcheck.md as BROKEN prompt hook about somebody else's healthy session.
   const directory = sandbox()
-  const fake = fakeOpenCode({ directory, options: { model: MODEL } })
+  const fake = fakeOpenCode({ directory })
   const cleanup = await plugin.setup(fake.ctx)
   const elsewhere = "ses_another_checkout"
 
@@ -1429,7 +1432,7 @@ test("a session created with the same directory spelled differently is still our
   // `<dir>` and `<dir>/` name one place. Treating the second as a foreign checkout silently
   // discarded the session's end event, so the session was never counted or verified.
   const directory = sandbox()
-  const fake = fakeOpenCode({ directory, options: { model: MODEL } })
+  const fake = fakeOpenCode({ directory })
   const cleanup = await plugin.setup(fake.ctx)
   const session = "ses_trailing_slash"
 
@@ -1454,7 +1457,7 @@ test("a subagent's tool call does not make the self-check measure its missing lo
   const directory = sandbox()
   const parent = "ses_parent_report"
   const child = "ses_child_report"
-  const fake = fakeOpenCode({ directory, options: { model: MODEL } })
+  const fake = fakeOpenCode({ directory })
   const cleanup = await plugin.setup(fake.ctx)
 
   await fake.hooks.get("session.prompt")({ sessionID: parent, messageID: "m1", prompt: { text: "find the exports" } })
@@ -1500,7 +1503,7 @@ test("deciding a lesson never prunes the log of the session it was decided in", 
     "---\nid: a\nstatement: problem a\ncost: 5\nrecurrence: 1\nconfidence: 1\nstatus: new\n---\n\nbody\n",
   )
 
-  const fake = fakeOpenCode({ directory, options: { model: MODEL } })
+  const fake = fakeOpenCode({ directory })
   const cleanup = await plugin.setup(fake.ctx)
   const result = await fake.tools.get("retro_decide").execute({ id: "a", status: "accepted" }, { sessionID: deciding })
 
@@ -1520,7 +1523,7 @@ test("the hand-over the plugin delivers is in the session's own log", async () =
   // editing for no stated reason, with the instruction that caused all of it missing. We are
   // the sender, so we write it — as a hand-over, not as the user's prompt.
   const directory = sandbox()
-  const fake = fakeOpenCode({ directory, options: { model: MODEL } })
+  const fake = fakeOpenCode({ directory })
   const cleanup = await plugin.setup(fake.ctx)
 
   mkdirSync(join(directory, ".retro", "lessons"), { recursive: true })
@@ -1551,7 +1554,7 @@ test("a review session driven by a hand-over is not reported as a dead prompt ho
   // `session.synthetic`, which does not fire the prompt hook (Gotcha 12), so it proves
   // nothing; saying so is not the same as saying the hook is dead.
   const directory = sandbox()
-  const fake = fakeOpenCode({ directory, options: { model: MODEL } })
+  const fake = fakeOpenCode({ directory })
   const cleanup = await plugin.setup(fake.ctx)
 
   await fake.commands.get("retro").execute({ sessionID: "ses_reviewer", prompt: { text: "" } })
@@ -1579,7 +1582,7 @@ test("a running session with calls still in flight is not reported as a broken t
   // The comparison only settles when the session does.
   const directory = sandbox()
   // heartbeatMs 0 so the report is re-evaluated on the tool hook rather than throttled.
-  const fake = fakeOpenCode({ directory, options: { model: MODEL, heartbeatMs: 0 } })
+  const fake = fakeOpenCode({ directory, options: { heartbeatMs: 0 } })
   const cleanup = await plugin.setup(fake.ctx)
 
   await fake.hooks.get("session.prompt")({ sessionID: "ses_live", prompt: { text: "go" } })
@@ -1626,7 +1629,7 @@ test("a session that turns out to be a subagent is not analysed on its own", asy
   // plugin loads lazily, leaving the parent's `subagent` result as the only route. A
   // delegation is a step in its parent's task, so there is nothing of its own to analyse.
   const directory = sandbox()
-  const fake = fakeOpenCode({ directory, options: { model: MODEL } })
+  const fake = fakeOpenCode({ directory })
   const cleanup = await plugin.setup(fake.ctx)
   const child = "ses_child"
   const parent = "ses_parent"
@@ -1659,7 +1662,7 @@ test("a failed read is owed, and tried again on the next command", async () => {
   // is still working, which the plugin no longer needs to know — and a restart changes nothing.
   const directory = sandbox()
   const session = "ses_failed"
-  const fake = fakeOpenCode({ directory, options: { model: MODEL }, reply: "not json at all" })
+  const fake = fakeOpenCode({ directory, reply: "not json at all" })
   const cleanup = await plugin.setup(fake.ctx)
   await workSession(fake, session)
 
@@ -1675,7 +1678,7 @@ test("a failed read is owed, and tried again on the next command", async () => {
 
   // The plugin restarts in between; the debt is on disk, not in this process's memory.
   await cleanup?.()
-  const after = fakeOpenCode({ directory, options: { model: MODEL } })
+  const after = fakeOpenCode({ directory })
   const cleanup2 = await plugin.setup(after.ctx)
   await after.commands.get("retro").execute({ sessionID: "ses_review2", prompt: { text: "" } })
 
@@ -1703,7 +1706,7 @@ test("a mark belongs to one log: a replaced file is read from its own start, wha
     tool(3, "old-2"),
     { v: 1, n: 4, t: 4, k: "session", event: "end", outcome: "succeeded" },
   ])
-  const fake = fakeOpenCode({ directory, options: { model: MODEL } })
+  const fake = fakeOpenCode({ directory })
   const cleanup = await plugin.setup(fake.ctx)
   await fake.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
   assert.equal(savedState(directory).looked[session].n, 4)
@@ -1737,7 +1740,7 @@ test("lessons extracted from an orphan child keep their evidence when the child 
     "```json\n" +
     JSON.stringify({ lessons: [{ id: "child-lesson", statement: "the child kept retrying", steps: [1, 3], cost: 3, confidence: 0.8, why: "x" }] }) +
     "\n```"
-  const fake = fakeOpenCode({ directory, options: { model: MODEL }, reply })
+  const fake = fakeOpenCode({ directory, reply })
   const cleanup = await plugin.setup(fake.ctx)
   const parent = "ses_root"
   const child = "ses_child"
@@ -1776,7 +1779,7 @@ test("lessons extracted from an orphan child keep their evidence when the child 
 
 test("a hook that arrives after a session's end does not report the session as broken", async () => {
   const directory = sandbox()
-  const fake = fakeOpenCode({ directory, options: { model: MODEL } })
+  const fake = fakeOpenCode({ directory })
   const cleanup = await plugin.setup(fake.ctx)
   const session = "ses_late"
 
@@ -1820,7 +1823,7 @@ test("an entry that used its three attempts is retired and reported, not skipped
       looked: { ses_crashed: { n: 0, size: line.length, failed: true, attempts: 3 } },
     }),
   )
-  const fake = fakeOpenCode({ directory, options: { model: MODEL } })
+  const fake = fakeOpenCode({ directory })
   const cleanup = await plugin.setup(fake.ctx)
 
   await fake.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
@@ -1848,7 +1851,7 @@ test("an excerpt that cannot reach past the mark is reported, not settled as don
     { v: 1, n: 3, t: 3, k: "tool", id: "c2", tool: "shell", input: { command: "npx eslint --fix ." }, status: "completed", exit: 2 },
   ])
 
-  const first = fakeOpenCode({ directory, options: { model: MODEL }, reply: REPLY })
+  const first = fakeOpenCode({ directory, reply: REPLY })
   const cleanup = await plugin.setup(first.ctx)
   await first.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
   assert.equal(first.generated.length, 1, "first read")
@@ -1859,7 +1862,7 @@ test("an excerpt that cannot reach past the mark is reported, not settled as don
   appendFileSync(logPath, JSON.stringify({ v: 1, n: 4, t: 4, k: "tool", id: "huge", tool: "shell", input: { command: "x".repeat(100_000) }, status: "completed", exit: 2 }) + "\n")
   appendFileSync(logPath, JSON.stringify({ v: 1, n: 5, t: 5, k: "text", text: "THE NEW MATERIAL" }) + "\n")
 
-  const small = fakeOpenCode({ directory, options: { model: MODEL, maxInput: 8000 }, reply: REPLY })
+  const small = fakeOpenCode({ directory, options: { maxInput: 8000 }, reply: REPLY })
   const cleanup2 = await plugin.setup(small.ctx)
   await small.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
 
@@ -1879,7 +1882,7 @@ test("/retro all reports a log it could not analyse, as well as the plan", async
   // most likely to be used on a backlog. Silence about a failure is the failure this plugin
   // exists to prevent, so both commands say it.
   const directory = sandbox()
-  const fake = fakeOpenCode({ directory, options: { model: MODEL } })
+  const fake = fakeOpenCode({ directory })
   const cleanup = await plugin.setup(fake.ctx)
 
   await workSession(fake, "ses_bad")
@@ -1888,7 +1891,6 @@ test("/retro all reports a log it could not analyse, as well as the plan", async
 
   const fresh = fakeOpenCode({
     directory,
-    options: { model: MODEL },
     reply: (input) => (input.prompt.includes("id: ses_bad") ? "I could not do this one." : REPLY),
   })
   const cleanup2 = await plugin.setup(fresh.ctx)
@@ -1914,7 +1916,7 @@ test("evidence remapped into a middle delegation follows it into the root", asyn
     "```json\n" +
     JSON.stringify({ lessons: [{ id: "leaf-lesson", statement: "the leaf kept retrying", steps: [1, 2], cost: 2, confidence: 0.8, why: "x" }] }) +
     "\n```"
-  const fake = fakeOpenCode({ directory, options: { model: MODEL }, reply })
+  const fake = fakeOpenCode({ directory, reply })
   const cleanup = await plugin.setup(fake.ctx)
   const root = "ses_root2"
   const middle = "ses_middle2"
@@ -1972,7 +1974,7 @@ test("a log with no parseable record is reported as a failure, not as a clean an
   mkdirSync(join(directory, ".retro", "sessions"), { recursive: true })
   writeFileSync(join(directory, ".retro", "sessions", `${session}.jsonl`), "this is not a shadow log\nnor is this\n")
 
-  const fake = fakeOpenCode({ directory, options: { model: MODEL } })
+  const fake = fakeOpenCode({ directory })
   const cleanup = await plugin.setup(fake.ctx)
   await fake.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
 
@@ -2008,7 +2010,7 @@ test("a replaced log whose first record cannot be read is still a different log"
       line({ v: 1, n: 2, t: 2, k: "tool", id: "old", tool: "shell", input: { command: "old-command" }, status: "completed", exit: 2 }) +
       line({ v: 1, n: 3, t: 3, k: "session", event: "end", outcome: "succeeded" }),
   )
-  const fake = fakeOpenCode({ directory, options: { model: MODEL }, reply: REPLY })
+  const fake = fakeOpenCode({ directory, reply: REPLY })
   const cleanup = await plugin.setup(fake.ctx)
   await fake.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
   assert.equal(savedState(directory).looked[session].n, 3)
@@ -2033,7 +2035,7 @@ test("a working session read by /retro is reported as read, not as unanalysed", 
   // by `/retro` while working. The report said `extraction: not run` and `1 log not analysed
   // yet` — both false, in the file whose one job is to claim only what happened.
   const directory = sandbox()
-  const fake = fakeOpenCode({ directory, options: { model: MODEL } })
+  const fake = fakeOpenCode({ directory })
   const cleanup = await plugin.setup(fake.ctx)
   const session = "ses_returned"
 
@@ -2075,7 +2077,7 @@ test("a log read in part stays read in part after the hand-over wrote into it", 
   // selfcheck.md's own invariant says it must not do. The unreached gap is the reason it is
   // owed; later growth does not make the part already read disappear.
   const directory = sandbox()
-  const fake = fakeOpenCode({ directory, options: { model: MODEL } })
+  const fake = fakeOpenCode({ directory })
   const cleanup = await plugin.setup(fake.ctx)
   const session = "ses_partial"
   await workSession(fake, session)
@@ -2097,7 +2099,7 @@ test("a log read in part stays read in part after the hand-over wrote into it", 
   )
   // A second instance reads the state written above; state is read at setup, so the first
   // one still holds the empty copy it loaded.
-  const reader = fakeOpenCode({ directory, options: { model: MODEL } })
+  const reader = fakeOpenCode({ directory })
   const cleanup2 = await plugin.setup(reader.ctx)
   await reader.hooks.get("session.prompt")({ sessionID: session, messageID: "m2", prompt: { text: "more" } })
 
@@ -2111,12 +2113,12 @@ test("a log read in part stays read in part after the hand-over wrote into it", 
 
 test("a log whose analysis failed is named as failed, not as not analysed yet", async () => {
   const directory = sandbox()
-  const fake = fakeOpenCode({ directory, options: { model: MODEL } })
+  const fake = fakeOpenCode({ directory })
   const cleanup = await plugin.setup(fake.ctx)
   await workSession(fake, "ses_bad")
   queue(directory, ["ses_bad"])
 
-  const broken = fakeOpenCode({ directory, options: { model: MODEL }, reply: "not json at all" })
+  const broken = fakeOpenCode({ directory, reply: "not json at all" })
   const cleanup2 = await plugin.setup(broken.ctx)
   await broken.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
 
@@ -2139,7 +2141,6 @@ test("a successful read clears the failure the mark was carrying", async () => {
   let calls = 0
   const fake = fakeOpenCode({
     directory,
-    options: { model: MODEL },
     reply: () => (++calls === 1 ? "not json at all" : REPLY),
   })
   const cleanup = await plugin.setup(fake.ctx)
@@ -2182,7 +2183,7 @@ test("a log given up on after three attempts is not retried in the same command"
   // call on a log the same report calls "given up on".
   const directory = sandbox()
   const session = "ses_retired_twice"
-  const writer = fakeOpenCode({ directory, options: { model: MODEL } })
+  const writer = fakeOpenCode({ directory })
   const stopWriter = await plugin.setup(writer.ctx)
   await workSession(writer, session)
   await stopWriter?.()
@@ -2198,7 +2199,7 @@ test("a log given up on after three attempts is not retried in the same command"
     }),
   )
 
-  const fake = fakeOpenCode({ directory, options: { model: MODEL } })
+  const fake = fakeOpenCode({ directory })
   const cleanup = await plugin.setup(fake.ctx)
   await fake.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
 
@@ -2220,7 +2221,7 @@ test("a read that never returns leaves the log owed, not marked as read", async 
   // is what makes the crash recoverable.
   const directory = sandbox()
   const session = "ses_crash_read"
-  const fake = fakeOpenCode({ directory, options: { model: MODEL } })
+  const fake = fakeOpenCode({ directory })
   const cleanup = await plugin.setup(fake.ctx)
   const statePath = join(directory, ".retro", "state.json")
 
@@ -2249,7 +2250,7 @@ test("a read that never returns leaves the log owed, not marked as read", async 
   else writeFileSync(statePath, midway)
   await cleanup?.()
 
-  const after = fakeOpenCode({ directory, options: { model: MODEL } })
+  const after = fakeOpenCode({ directory })
   const cleanup2 = await plugin.setup(after.ctx)
   await after.commands.get("retro").execute({ sessionID: "ses_review2", prompt: { text: "" } })
 
@@ -2293,7 +2294,7 @@ test("a log that is still owed is not pruned by a decision", async () => {
     }),
   )
 
-  const fake = fakeOpenCode({ directory, options: { model: MODEL } })
+  const fake = fakeOpenCode({ directory })
   const cleanup = await plugin.setup(fake.ctx)
   await fake.tools.get("retro_decide").execute({ id: "a", status: "accepted" }, { sessionID: "ses_review" })
 
@@ -2313,7 +2314,7 @@ test("the plugin's own hand-over does not make a log owed", async () => {
   // paid a read only to skip it.
   const directory = sandbox()
   const session = "ses_review_here"
-  const fake = fakeOpenCode({ directory, options: { model: MODEL } })
+  const fake = fakeOpenCode({ directory })
   const cleanup = await plugin.setup(fake.ctx)
   await workSession(fake, session)
 
@@ -2338,7 +2339,7 @@ test("a log given up on and then grown is not reported as beyond reading", async
   // tried again.
   const directory = sandbox()
   const session = "ses_revived"
-  const writer = fakeOpenCode({ directory, options: { model: MODEL } })
+  const writer = fakeOpenCode({ directory })
   const stopWriter = await plugin.setup(writer.ctx)
   await workSession(writer, session)
   await stopWriter?.()
@@ -2354,7 +2355,7 @@ test("a log given up on and then grown is not reported as beyond reading", async
     }),
   )
 
-  const fake = fakeOpenCode({ directory, options: { model: MODEL }, reply: "not json at all" })
+  const fake = fakeOpenCode({ directory, reply: "not json at all" })
   const cleanup = await plugin.setup(fake.ctx)
   await fake.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
 
@@ -2373,7 +2374,6 @@ test("a re-read of a session that did work is analysed even when the new materia
   const session = "ses_reply_only"
   const fake = fakeOpenCode({
     directory,
-    options: { model: MODEL },
     reply: () => JSON.stringify({ lessons: [] }),
   })
   const cleanup = await plugin.setup(fake.ctx)
@@ -2410,7 +2410,7 @@ test("a reply to the plugin's own hand-over, with nothing done, costs no model c
   // itself, and "1 log not analysed yet" in the report for ever.
   const directory = sandbox()
   const session = "ses_reviewing"
-  const fake = fakeOpenCode({ directory, options: { model: MODEL }, reply: () => JSON.stringify({ lessons: [] }) })
+  const fake = fakeOpenCode({ directory, reply: () => JSON.stringify({ lessons: [] }) })
   const cleanup = await plugin.setup(fake.ctx)
   await workSession(fake, session)
   await fake.commands.get("retro").execute({ sessionID: session, prompt: { text: "" } })
@@ -2444,7 +2444,7 @@ test("a log written in the last seven days is not pruned, whatever else is true 
   // this week. That is the whole of what makes pruning safe without knowing whether a session
   // is working: a session that writes keeps its log.
   const directory = sandbox()
-  const fake = fakeOpenCode({ directory, options: { model: MODEL }, reply: JSON.stringify({ lessons: [] }) })
+  const fake = fakeOpenCode({ directory, reply: JSON.stringify({ lessons: [] }) })
   const cleanup = await plugin.setup(fake.ctx)
   await workSession(fake, "ses_recent")
   const logPath = join(directory, ".retro", "sessions", "ses_recent.jsonl")
@@ -2470,14 +2470,14 @@ test("a log nobody has read is kept, however old", async () => {
   // Pruning is cleanup of what has been read, never a substitute for reading it: a user who
   // runs `/retro` once a month must not find the month gone.
   const directory = sandbox()
-  const writer = fakeOpenCode({ directory, options: { model: MODEL } })
+  const writer = fakeOpenCode({ directory })
   const stop = await plugin.setup(writer.ctx)
   await workSession(writer, "ses_unread")
   await stop?.()
   age(directory, "ses_unread", 60)
 
   // A decision prunes without analysing anything — the one path that could take it unread.
-  const fake = fakeOpenCode({ directory, options: { model: MODEL } })
+  const fake = fakeOpenCode({ directory })
   const cleanup = await plugin.setup(fake.ctx)
   await fake.tools.get("retro_decide").execute({ id: "no-such-lesson", status: "accepted" }, { sessionID: "ses_review" })
   assert.ok(existsSync(join(directory, ".retro", "sessions", "ses_unread.jsonl")), "two months old and still there")
@@ -2490,7 +2490,7 @@ test("a log given up on goes once it has been quiet for seven days", async () =>
   // A log the model could never answer is kept for a look, and named in the self-check — but
   // not for ever, or `sessions/` fills with transcripts nothing will read.
   const directory = sandbox()
-  const fake = fakeOpenCode({ directory, options: { model: MODEL } })
+  const fake = fakeOpenCode({ directory })
   const cleanup = await plugin.setup(fake.ctx)
   await workSession(fake, "ses_hopeless")
   for (let i = 0; i < 3; i++) await retroWith(directory, "not json at all")
@@ -2507,7 +2507,7 @@ test("a log given up on goes once it has been quiet for seven days", async () =>
 
 test("a session picked up after its log was pruned is read from the start of its new log", async () => {
   const directory = sandbox()
-  const fake = fakeOpenCode({ directory, options: { model: MODEL }, reply: JSON.stringify({ lessons: [] }) })
+  const fake = fakeOpenCode({ directory, reply: JSON.stringify({ lessons: [] }) })
   const cleanup = await plugin.setup(fake.ctx)
   await turn(fake, "ses_back", 1, "first-command")
   await fake.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
@@ -2528,7 +2528,7 @@ test("a restart forgets nothing about what is owed", async () => {
   // What is owed is on disk — the log and its mark — so a process that dies with work
   // outstanding leaves nothing to reconstruct.
   const directory = sandbox()
-  const writer = fakeOpenCode({ directory, options: { model: MODEL } })
+  const writer = fakeOpenCode({ directory })
   const stop = await plugin.setup(writer.ctx)
   await workSession(writer, "ses_before_restart")
   await stop?.()
@@ -2542,8 +2542,8 @@ test("two instances on one project neither lose nor prune each other's work", as
   // of the other's sessions were working, and could settle and prune a log being written. With
   // the disk as the only state there is nothing for one instance to know about the other.
   const directory = sandbox()
-  const a = fakeOpenCode({ directory, options: { model: MODEL } })
-  const b = fakeOpenCode({ directory, options: { model: MODEL } })
+  const a = fakeOpenCode({ directory })
+  const b = fakeOpenCode({ directory })
   const stopA = await plugin.setup(a.ctx)
   const stopB = await plugin.setup(b.ctx)
 
@@ -2576,14 +2576,14 @@ test("a plugin reloaded in the middle of a turn does not call the prompt hook de
   // whose log had its prompt at step 1.
   const directory = sandbox()
   const session = "ses_reloaded"
-  const before = fakeOpenCode({ directory, options: { model: MODEL } })
+  const before = fakeOpenCode({ directory })
   const stopBefore = await plugin.setup(before.ctx)
   await before.hooks.get("session.prompt")({ sessionID: session, messageID: "m1", prompt: { text: "do it" } })
   before.emit({ type: "session.execution.started", durable: { seq: 1 }, data: { sessionID: session } })
   await tick()
   await stopBefore?.()
 
-  const after = fakeOpenCode({ directory, options: { model: MODEL } })
+  const after = fakeOpenCode({ directory })
   const stopAfter = await plugin.setup(after.ctx)
   await after.hooks.get("tool.execute.before")({ sessionID: session, id: "c1", tool: "shell", input: { command: "x" } })
   after.emit({ type: "session.tool.called", durable: { seq: 2 }, data: { sessionID: session, id: "c1", input: { command: "x" } } })

@@ -20,6 +20,7 @@ export const GITIGNORE = `# Written once by opencode-retro. Yours to edit from h
 # Everything below is machine state.
 
 sessions/
+work/
 state.json
 selfcheck.md
 plugin.log

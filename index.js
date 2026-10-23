@@ -501,7 +501,7 @@ export default {
 
     return () => controller.abort()
 
-    async function say(sessionID, text) {
+    async function say(sessionID, text, about = "lesson") {
       try {
         // The synthetic goes to the session's inbox; without `resume` it sits there until
         // the user happens to type something, and they never see what they asked for.
@@ -511,7 +511,7 @@ export default {
         const owner = rootOf(sessionID)
         const before = log.stat(owner).size
         const mark = state.looked(owner)
-        ingest.handover(sessionID, text)
+        ingest.handover(sessionID, text, about)
         // Our own text is not material (analysis.md), so a log read to its end is not owed for
         // it: otherwise every `/retro` left its own session "not analysed yet" in the report,
         // and the next command paid a read to skip it. It is still in the log, and the next
@@ -707,6 +707,7 @@ export default {
             failures: extracted.failures,
             left: extracted.left,
           }),
+          "work",
         )
       }
       return say(sessionID, await proposalText(all, extracted))
@@ -841,7 +842,7 @@ export default {
      * not bindings: everything here sits after setup's `return` (AGENTS.md Gotcha 13).
      */
     function workPath(session) {
-      return join(config.dir, "work", `${session}.md`)
+      return join(config.work, `${session}.md`)
     }
     function workName(session) {
       return `${retroDir}/work/${session}.md`
@@ -936,7 +937,7 @@ export default {
       }
 
       try {
-        mkdirSync(join(config.dir, "work"), { recursive: true })
+        mkdirSync(config.work, { recursive: true })
         writeFileSync(workPath(sessionID), composed.text)
       } catch (err) {
         onError("extract.order", err)

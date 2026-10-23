@@ -12,21 +12,18 @@ a constant in source.
 |---|---|
 | `dir` | where everything lives; `.retro` under the project, or an absolute path |
 | `prompts` | the prompt directory; `prompts` under `dir`, or an absolute path |
-| `model` | the analysis model; absent, the user's session model, then the workspace default |
 | `maxOutput` | characters of tool output kept per captured step, head and tail |
-| `maxInput` | characters one analysis may send (see analysis.md) |
+| `maxInput` | characters one work order may hold (see analysis.md) |
 | `heartbeatMs` | the shortest gap between self-check writes while a session works |
 | `halfLife` | sessions without a recurrence before a lesson's score halves |
 | `keepSessions` | keep every log, including ones nothing cites |
-| `extractTimeoutMs` | how long one analysis may take before it is given up on |
 | `proposeLimit` | lessons in one `/retro all` |
-| `extractLimit` | attempts one `/retro` makes; unlimited by default |
-| `asyncExtract` | analyse at the start of the next session instead of when asked |
+| `extractLimit` | work orders one `/retro` issues; unlimited by default |
 
 **The layout.** Everything the plugin writes is under `dir`, in plain text: the prompts,
-`sessions/`, `lessons/`, `archive/`, `selfcheck.md`, `state.json`, `plugin.log`, and the
-plugin's own `.gitignore`. Never `.opencode/`: a write there makes OpenCode rescan skills
-and emit events, and a plugin that writes on events then writes for ever.
+`sessions/`, `work/`, `lessons/`, `archive/`, `selfcheck.md`, `state.json`, `plugin.log`,
+and the plugin's own `.gitignore`. Never `.opencode/`: a write there makes OpenCode rescan
+skills and emit events, and a plugin that writes on events then writes for ever.
 
 **Resolution.** `dir` resolves against the project directory, not the process's working
 directory; an absolute `dir` or `prompts` is used as given; a context with no location
@@ -39,7 +36,7 @@ cost more than it saves. This happens before projection, which trims again.
 **The project's git.** The plugin writes `.retro/.gitignore` once and never again. Git
 applies it to the directory holding it, so the decision is made inside the one directory
 the plugin owns and the user's own `.gitignore` is never touched. Ignored: sessions,
-state, the self-check, the plugin log, prompt update notices. Not ignored: `lessons/`,
+state, work orders, the self-check, the plugin log, prompt update notices. Not ignored: `lessons/`,
 `archive/`, the live prompts — the product and the configuration, which travel with the
 repository.
 
@@ -71,7 +68,6 @@ be shared; this repository does not track its own.
   everything the entry point imports.
   `the version the self-check reports is the version we ship`
   `the published tarball carries everything the entry point imports`
-- The model is the user's session model unless an option says otherwise, and the
-  workspace default after that.
-  `the model the user is actually working with is the one used for analysis`
-  `with no model configured, the workspace default is used`
+- There is no model option, because the plugin calls no model: an analysis runs as a
+  subagent of the session that asked for it, on that session's model (analysis.md).
+  `the plugin never calls a model itself`

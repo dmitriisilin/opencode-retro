@@ -96,8 +96,19 @@ export const RECORD_INPUT = {
   required: ["session", "lessons"],
 }
 
-/** Lessons as the store wants them, from whatever shape a record carried. */
-export const normaliseLessons = (raw) => (Array.isArray(raw) ? raw.map(normalise).filter(Boolean) : [])
+/**
+ * Lessons as the store wants them, from whatever shape a record carried.
+ *
+ * The schema asks for an array, and OpenCode enforces it — but a model handed a nested
+ * structure will put it in a string often enough that refusing one would throw away a
+ * perfectly good answer. A string is read with the same tolerant parser a reply used to
+ * need: fenced, prose-wrapped, trailing-comma JSON all survive.
+ */
+export const normaliseLessons = (raw) => {
+  if (Array.isArray(raw)) return raw.map(normalise).filter(Boolean)
+  if (typeof raw === "string") return parseLessons(raw).lessons
+  return []
+}
 
 /**
  * Pulls lessons out of a model reply. Tolerant on purpose: a cheap model will wrap JSON in
@@ -111,12 +122,19 @@ export function parseLessons(reply) {
   for (const [, block] of text.matchAll(/```(?:json)?\s*([\s\S]*?)```/g)) candidates.push(block)
   const brace = text.indexOf("{")
   if (brace !== -1) candidates.push(text.slice(brace))
+  // A bare array, last of all: the `steps` of a well-formed object answer start with a `[`
+  // too, so this must only ever be reached once every object candidate has failed.
+  const bracket = text.indexOf("[")
+  if (bracket !== -1) candidates.push(text.slice(bracket))
 
   for (const candidate of candidates) {
     const parsed = tryParse(candidate)
     if (!parsed) continue
     const raw = Array.isArray(parsed) ? parsed : parsed.lessons
     if (!Array.isArray(raw)) continue
+    // Lessons are objects. An array of numbers is a `steps` list that happened to parse,
+    // and reading it as an answer would report "nothing to learn" about a session nobody read.
+    if (raw.some((l) => !l || typeof l !== "object")) continue
     return { ok: true, lessons: raw.map(normalise).filter(Boolean) }
   }
   return { ok: false, error: "no parseable json object in the reply", lessons: [] }

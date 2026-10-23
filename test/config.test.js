@@ -9,7 +9,6 @@ test("defaults are the documented layout, in one place", () => {
   assert.equal(DEFAULTS.dir, ".retro")
   assert.equal(DEFAULTS.prompts, "prompts")
   assert.equal(DEFAULTS.keepSessions, false, "machine state is not kept unless asked")
-  assert.equal(DEFAULTS.asyncExtract, false, "nothing spends money unprompted")
   assert.equal(DEFAULTS.extractLimit, Infinity, "a half-analysed backlog only moves the work")
 })
 
@@ -20,6 +19,7 @@ test("the layout is resolved under the project, not under the process", () => {
   assert.equal(got.project, "proj_1", "the stable workspace id, not a git subprocess")
   assert.equal(got.dir, resolve("/tmp/project", ".retro"))
   assert.equal(got.sessions, resolve(got.dir, "sessions"))
+  assert.equal(got.work, resolve(got.dir, "work"))
   assert.equal(got.lessons, resolve(got.dir, "lessons"))
   assert.equal(got.archive, resolve(got.dir, "archive"))
   assert.equal(got.prompts, resolve(got.dir, "prompts"))
@@ -38,27 +38,25 @@ test("an absolute dir or prompt path is used as given", () => {
 
 test("every settable option is carried through, and omitted ones take the default", () => {
   const options = {
-    model: { providerID: "deepseek", id: "deepseek-flash" },
     maxOutput: 100,
+    maxInput: 1234,
     heartbeatMs: 5,
     halfLife: 3,
     keepSessions: true,
-    extractTimeoutMs: 250,
     proposeLimit: 2,
     extractLimit: 4,
-    asyncExtract: true,
   }
   const got = resolveConfig({ location, options })
   for (const [key, value] of Object.entries(options)) assert.deepEqual(got[key], value, key)
 
   const plain = resolveConfig({ location, options: {} })
-  assert.equal(plain.model, null, "no model is a legitimate state; extraction says how to fix it")
   assert.equal(plain.maxOutput, DEFAULTS.maxOutput)
   assert.equal(plain.maxInput, DEFAULTS.maxInput)
   assert.equal(plain.heartbeatMs, DEFAULTS.heartbeatMs)
   assert.equal(plain.halfLife, DEFAULTS.halfLife)
-  assert.equal(plain.extractTimeoutMs, DEFAULTS.extractTimeoutMs)
+  assert.equal(plain.keepSessions, DEFAULTS.keepSessions)
   assert.equal(plain.proposeLimit, DEFAULTS.proposeLimit)
+  assert.equal(plain.extractLimit, DEFAULTS.extractLimit)
 })
 
 test("a context without a location still yields a usable layout", () => {
@@ -66,7 +64,7 @@ test("a context without a location still yields a usable layout", () => {
   assert.equal(got.directory, process.cwd())
   assert.equal(got.project, null)
   assert.equal(got.dir, resolve(process.cwd(), ".retro"))
-  assert.equal(got.model, null)
+  assert.equal(got.work, resolve(process.cwd(), ".retro", "work"))
 })
 
 test("clamp keeps the head and the tail, and says how much went missing", () => {

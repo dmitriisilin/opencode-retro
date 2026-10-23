@@ -201,14 +201,19 @@ export function createIngest({
      *
      * It also marks the session as ours, which it is: the command ran in it.
      */
-    handover(sessionID, text) {
+    handover(sessionID, text, about = "lesson") {
       const s = session(owner(sessionID))
       s.owned = true
       // Counted because a hand-over is the only input some sessions ever get. The self-check
       // reads `prompts` to decide whether the prompt hook worked, and a `/retro` review
       // session has none — see `assess`, which must not call that a dead hook.
       s.counts.handovers++
-      append(sessionID, { k: "handover", text: text ?? "" })
+      // `about` separates the two hand-overs the plugin writes: a lesson put to the human,
+      // and a request for the analyses that have to run first. They read identically in a
+      // log and mean different things — the extraction contract discounts work that reviews
+      // a lesson it was handed, which would have swallowed real work done after a request
+      // for an analysis.
+      append(sessionID, { k: "handover", about, text: text ?? "" })
     },
 
     /**

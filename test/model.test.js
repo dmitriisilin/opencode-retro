@@ -37,7 +37,6 @@ const DEBUG = Boolean(process.env.RETRO_MODEL_DEBUG)
 const debug = (...args) => DEBUG && console.error("  ·", ...args)
 const POOL = ["ses_a", "ses_b", "ses_c"]
 const LESSON_IDS = Array.from({ length: 40 }, (_, i) => `lesson-${i}`)
-const MODEL = { providerID: "fake", id: "fake-model" }
 
 /**
  * Which branches the walk actually reached, across all runs. A clean walk proves nothing
@@ -66,21 +65,16 @@ const hash = (text) => {
 
 /**
  * Time is a counter and timers never fire. A history is then a pure function of its actions:
- * the same list replays to the same files, which is what makes shrinking possible. It is also
- * how a crash is simulated — a model call that never settles leaves its `/retro` suspended
- * for good, exactly as a process that died would.
+ * the same list replays to the same files, which is what makes shrinking possible.
+ *
+ * Nothing in the plugin schedules anything any more — the one timer it ever had bounded a
+ * model call it no longer makes — so the stub is here to keep that true: a timer appearing
+ * in a run is a dependency on a clock, and it will never fire.
  */
 const timers = new Set()
 /** The world's clock, in ms. Starts at the real time, so files written in a run are recent. */
 let clock = 0
 const WEEK = 7 * 24 * 60 * 60 * 1000
-/** Fire every pending timer: the model call they guard has been waiting longer than allowed. */
-const advanceTimers = () => {
-  for (const t of [...timers]) {
-    timers.delete(t)
-    t.fn()
-  }
-}
 function freezeTime() {
   const real = { Date: globalThis.Date, now: Date.now, setTimeout: globalThis.setTimeout, clearTimeout: globalThis.clearTimeout }
   clock = Math.floor(real.now() / 1000) * 1000
@@ -130,7 +124,7 @@ function generate(seed, steps) {
   // mostly defers: that is what fills the open set past its cap, a branch the ordinary
   // histories almost never reached.
   const prolific = r() < 0.2
-  const actions = [{ op: "options", maxInput: r() < 0.5 ? 4000 : 32000, writers, asyncExtract: r() < 0.25, prolific }]
+  const actions = [{ op: "options", maxInput: r() < 0.5 ? 4000 : 32000, writers, prolific }]
   const delegations = []
   let next = 0
   for (let i = 0; i < steps; i++) {
@@ -155,10 +149,10 @@ function generate(seed, steps) {
       const status = prolific ? pick(["later", "later", "later", "accepted", "rejected"]) : pick(["accepted", "rejected", "later"])
       actions.push({ op: "decide", pick: r(), status, archived: r() < 0.15, w: w() })
     }
-    else if (roll < 0.78) actions.push({ op: "model", mode: pick(["ok", "ok", "ok", "empty", "prose"]) })
+    else if (roll < 0.78) actions.push({ op: "model", mode: pick(["ok", "ok", "ok", "silent", "silent"]) })
     else if (roll < 0.84) actions.push({ op: "restart", w: w() })
     else if (roll < 0.86) actions.push({ op: "crash", invoker: "ses_review", w: w() })
-    else if (roll < 0.88) actions.push({ op: "slow", invoker: r() < 0.6 ? "ses_review" : s, w: w() })
+    else if (roll < 0.88) actions.push({ op: "abandoned", invoker: r() < 0.6 ? "ses_review" : s, w: w() })
     else if (roll < 0.91) actions.push({ op: "replace", s })
     else if (roll < 0.925) actions.push({ op: "torn", s })
     else if (roll < 0.945) actions.push({ op: "edit", pick: r(), how: pick(["delete", "later", "nostatus", "body", "break"]) })
@@ -203,7 +197,7 @@ function createWorld() {
   const retro = join(directory, ".retro")
   const world = {
     directory,
-    options: { model: MODEL, heartbeatMs: 0 },
+    options: { heartbeatMs: 0 },
     writers: 1,
     /** One plugin instance per writer, all on the same project directory. */
     instances: [],
@@ -238,22 +232,25 @@ function createWorld() {
     inPrompt: false,
   }
 
+  /**
+   * One subagent reading one work order. `mode` is what becomes of the order:
+   * `ok` records an answer, `silent` is a subagent that reads it and never records — the
+   * answer it would have given is unusable — and `absent` is a round whose agent never
+   * started a subagent at all, so this is not reached.
+   */
   world.reply = async (input) => {
     world.generated++
     const prompt = input.prompt
     const session = (prompt.match(/id: (ses_\w+)/) ?? [])[1]
     const logSection = prompt.split("## Log")[1]?.split("\n## ")[0] ?? ""
     const steps = [...logSection.matchAll(/^\[(\d+)\]/gm)].map((m) => Number(m[1]))
-    debug(`model (${world.mode}) asked about ${session}: steps ${steps.join(",")}`)
-    world.saw.add(`model call (${world.mode})`)
-    if (world.marker && !prompt.includes(world.marker)) world.violation ??= `the extractor was not given the edited prompt (${world.marker})`
-    if (world.marker) world.saw.add("an edited prompt reached the model")
+    debug(`subagent (${world.mode}) read the order for ${session}: steps ${steps.join(",")}`)
+    world.saw.add(`a work order was read (${world.mode})`)
+    if (world.marker && !prompt.includes(world.marker)) world.violation ??= `the order did not carry the edited prompt (${world.marker})`
+    if (world.marker) world.saw.add("an edited prompt reached the order")
     if (/elided to fit the budget/.test(prompt)) world.saw.add("an excerpt was sent")
     if (/Steps up to \d+ of this session were analysed before/.test(prompt)) world.saw.add("a re-read from the mark")
-    if (world.inPrompt) world.saw.add("asyncExtract analysed from a prompt hook")
-    if (world.mode === "hang") return new Promise(() => {})
-    if (world.mode === "empty") return ""
-    if (world.mode === "prose") return "I think the session went fine overall."
+    if (world.mode === "silent") return "I think the session went fine overall."
     if (session) {
       const set = world.analysed.get(session) ?? new Set()
       for (const n of steps) set.add(n)
@@ -287,7 +284,14 @@ function createWorld() {
   }
 
   world.start = async (w) => {
-    const fake = fakeOpenCode({ directory, options: world.options, reply: world.reply })
+    const fake = fakeOpenCode({
+      directory,
+      options: world.options,
+      reply: world.reply,
+      // `absent`: the agent in the session never starts a subagent, so the orders of that
+      // round are answered by nobody. The next command has to settle them.
+      agent: () => world.mode !== "absent",
+    })
     const cleanup = await plugin.setup(fake.ctx)
     world.instances[w] = { fake, cleanup }
     world.generation[w] = (world.generation[w] ?? 0) + 1
@@ -392,24 +396,19 @@ async function act(world, action) {
   switch (action.op) {
     case "options":
       world.options.maxInput = action.maxInput
-      world.options.asyncExtract = Boolean(action.asyncExtract)
       world.prolific = Boolean(action.prolific)
       world.writers = action.writers ?? 1
       return
-    case "slow": {
-      // The model is still thinking when the plugin's own bound runs out: the analysis fails
-      // with a timeout, the process lives on, and the next attempt is a fresh call.
+    case "abandoned": {
+      // `/retro` issues its orders and the agent in that session does nothing with them: it
+      // was interrupted, it misread the hand-over, its subagents died. The orders stay open
+      // until a later command settles them as a failed attempt.
       const inst = world.homeOf(action.invoker, action.w)
       const before = world.mode
-      world.mode = "hang"
-      const done = inst.fake.commands.get("retro").execute({ sessionID: action.invoker, prompt: { text: "" } })
-      await flush(6)
+      world.mode = "absent"
+      await inst.fake.commands.get("retro").execute({ sessionID: action.invoker, prompt: { text: "" } })
       world.mode = before
-      for (let i = 0; i < 8 && timers.size; i++) {
-        advanceTimers()
-        await flush(4)
-      }
-      await done
+      world.saw.add("a round was abandoned with its orders open")
       return flush()
     }
     case "prompt":
@@ -533,19 +532,19 @@ async function act(world, action) {
       return world.start(w)
     }
     case "crash": {
-      // `/retro` starts, the model never answers, and the process dies mid-call. The old
-      // instance is abandoned rather than cleaned up: a dead process runs no `finally`.
+      // `/retro` issues its orders and the process dies before any of them is answered. The
+      // old instance is abandoned rather than cleaned up: a dead process runs no `finally`,
+      // and the orders it wrote are on disk with nobody left to answer them.
       const w = Math.min(action.w ?? 0, world.writers - 1)
       const before = world.mode
-      world.mode = "hang"
+      world.mode = "absent"
       world.home.set(action.invoker, world.home.get(action.invoker) ?? w)
       void world.instances[world.home.get(action.invoker)].fake.commands
         .get("retro")
         .execute({ sessionID: action.invoker, prompt: { text: "" } })
       await flush(8)
       world.mode = before
-      // A dead process's timers never fire. Left in the set, the next slow model advanced them
-      // and the crashed instance woke up and wrote with its stale counter.
+      // A dead process's timers never fire.
       timers.clear()
       const dead = world.home.get(action.invoker)
       for (const s of [...world.inTurn]) if ((world.home.get(s) ?? 0) === dead) world.inTurn.delete(s)
@@ -803,8 +802,7 @@ function check(world) {
 
   // Nothing throws into the user's session or into the plugin log.
   const pluginLog = existsSync(join(retro, "plugin.log")) ? readFileSync(join(retro, "plugin.log"), "utf8") : ""
-  if (/no reply after/.test(pluginLog)) world.saw.add("a model call timed out")
-  if (/the model returned nothing at all/.test(pluginLog)) world.saw.add("an empty reply survived the retries")
+  if (/no record came back from its analysis/.test(pluginLog)) world.saw.add("an order was left unanswered")
   const thrown = pluginLog.split("\n").find((l) => /TypeError|ReferenceError|RangeError|SyntaxError|is not a function|Cannot read/.test(l))
   if (thrown) fail("selfcheck", "a hook or command never throws", thrown.trim())
   for (const inst of world.instances) {
@@ -816,8 +814,8 @@ function check(world) {
 
 /**
  * The strongest invariant only holds once the world is calm: every turn over, every
- * delegation reported, the model answering. Then `/retro`, repeated until it stops spending
- * anything, must leave nothing owed — every material step of every log was analysed, or the
+ * delegation reported, every order answered. Then `/retro`, repeated until it stops issuing
+ * anything, must leave nothing owed — every material step of every log was recorded, or the
  * log was given up on after three failed attempts, or it could never hold evidence.
  */
 async function quiesce(world) {
@@ -855,7 +853,7 @@ async function quiesce(world) {
     const unread = materialSteps(records).filter((r) => !analysed.has(r.n)).map((r) => r.n)
     if (unread.length) {
       const err = new Error(
-        `analysis: once the world is calm, nothing is owed\n  ${s}: steps ${unread.join(",")} never reached a model that answered`,
+        `analysis: once the world is calm, nothing is owed\n  ${s}: steps ${unread.join(",")} were never recorded`,
       )
       err.invariant = "analysis: once the world is calm, nothing is owed"
       throw err
@@ -970,7 +968,7 @@ const FOUND = {
     { op: "options", maxInput: 4000 },
     { op: "tool", s: "ses_a", exit: 2, size: 1200 },
     { op: "crash", invoker: "ses_review" },
-    { op: "model", mode: "prose" },
+    { op: "model", mode: "silent" },
     { op: "retro", invoker: "ses_review", all: false },
     { op: "retro", invoker: "ses_c", all: false },
     { op: "retro", invoker: "ses_review", all: true },
@@ -984,7 +982,7 @@ const FOUND = {
   ],
   "material that arrives after failures gets attempts of its own": [
     { op: "options", maxInput: 32000 },
-    { op: "model", mode: "prose" },
+    { op: "model", mode: "silent" },
     { op: "tool", s: "ses_a", exit: 0, size: 611 },
     { op: "end", s: "ses_a" },
     { op: "retro", invoker: "ses_a", all: false },
@@ -1006,13 +1004,13 @@ const FOUND = {
     { op: "retro", invoker: "ses_review", all: false },
   ],
   "a crash mid-append loses only its own half-record, not the prompt after it": [
-    { op: "options", maxInput: 32000, writers: 1, asyncExtract: false, prolific: false },
+    { op: "options", maxInput: 32000, writers: 1, prolific: false },
     { op: "tool", s: "ses_c", w: 0, exit: 0, size: 374 },
     { op: "torn", s: "ses_c" },
     { op: "prompt", s: "ses_c", w: 0 },
   ],
   "a lesson file broken by hand is left as the user left it": [
-    { op: "options", maxInput: 4000, writers: 1, asyncExtract: false, prolific: true },
+    { op: "options", maxInput: 4000, writers: 1, prolific: true },
     { op: "prompt", s: "ses_c", w: 0 },
     { op: "tool", s: "ses_a", w: 0, exit: 0, size: 613 },
     { op: "crash", invoker: "ses_review", w: 0 },

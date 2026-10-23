@@ -39,6 +39,8 @@ export function resolveConfig(ctx) {
     project: ctx?.location?.project?.id ?? null,
     dir,
     sessions: join(dir, "sessions"),
+    // Where a work order is written for a subagent to read (analysis.md, "Work order").
+    work: join(dir, "work"),
     lessons: join(dir, "lessons"),
     archive: join(dir, "archive"),
     prompts: isAbsolute(options.prompts ?? "") ? options.prompts : resolve(dir, options.prompts ?? DEFAULTS.prompts),
