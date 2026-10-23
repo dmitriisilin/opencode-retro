@@ -2570,8 +2570,8 @@ test("two instances on one project neither lose nor prune each other's work", as
 
 
 test("a plugin reloaded in the middle of a turn does not call the prompt hook dead", async () => {
-  // Measured by a stranger: pinning options.model mid-session, as the README suggests when the
-  // analysis comes back empty, reloads the plugin. The new instance never saw the turn's
+  // Measured by a stranger: editing `opencode.json` mid-session, as the README suggests when
+  // something is not working, reloads the plugin. The new instance never saw the turn's
   // prompt, counted tool calls and no prompt, and reported BROKEN prompt hook — about a session
   // whose log had its prompt at step 1.
   const directory = sandbox()

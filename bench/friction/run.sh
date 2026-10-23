@@ -3,9 +3,11 @@
 #
 #   bench/friction/run.sh [workdir] [model]
 #
-# Packs this checkout, installs the tarball into a fresh copy of project/ (no git, no
-# options.model), runs every task in traps.json as its own session, then one `/retro` over
-# the API, and prints which planted traps became lessons. Costs real model calls.
+# Packs this checkout, installs the tarball into a fresh copy of project/ (no git, no plugin
+# options), runs every task in traps.json as its own session, then one `/retro` over the API,
+# and prints which planted traps became lessons. Costs real model calls — and since the
+# analyses are subagents of the review session, they are billed to the model that session
+# runs on.
 set -u
 HERE=$(cd "$(dirname "$0")" && pwd)
 REPO=$(cd "$HERE/../.." && pwd)
@@ -44,9 +46,18 @@ echo "review session: $review"
 timeout 900 "$OC" api post "/api/session/$review/command" -H "x-opencode-directory: $WORK/project" \
   -d '{"name":"retro","text":""}' > "$WORK/retro.json" 2>&1
 echo "retro: exit $?"
-# The command returns once the hand-over is delivered; the agent then works on it. Wait until
-# the review session's log stops growing, or the second /retro reads the review before it
-# exists and the check below proves nothing (measured: it did, once).
+# The command returns once the hand-over is delivered; the agent then works on it — first the
+# analyses, then the proposal. Two things have to settle before the next command, and the
+# plugin's own work is deliberately absent from the logs, so the review session's log is not
+# enough on its own: wait for `.retro/work/` to empty, which happens as each order is
+# answered, and then for that log to stop growing (or the second /retro reads the review
+# before it exists and the check below proves nothing — measured: it did, once).
+for _ in $(seq 1 90); do
+  [ -z "$(ls -A .retro/work 2>/dev/null)" ] && break
+  sleep 10
+done
+left=$(ls -A .retro/work 2>/dev/null | wc -l)
+[ "$left" != "0" ] && echo "WARNING: $left work order(s) unanswered; the agent never analysed them"
 prev=-1
 for _ in $(seq 1 60); do
   now=$(stat -c %s ".retro/sessions/$review.jsonl" 2>/dev/null || echo 0)
@@ -54,9 +65,9 @@ for _ in $(seq 1 60); do
   prev=$now
   sleep 10
 done
-# Once more, as a person would after the hand-over was discussed: it retries any log the model
-# failed on, and reads the review session itself — whose checking of the lesson must not be
-# counted as the problem recurring.
+# Once more, as a person would after the hand-over was discussed: it asks again about any log
+# whose order went unanswered, and reads the review session itself — whose checking of the
+# lesson must not be counted as the problem recurring.
 timeout 900 "$OC" api post "/api/session/$review/command" -H "x-opencode-directory: $WORK/project" \
   -d '{"name":"retro","text":""}' > "$WORK/retro2.json" 2>&1
 echo "retro again: exit $?"

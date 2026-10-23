@@ -250,8 +250,14 @@ export function renderWorkOrders(orders, { all = false, failures = [], left = 0 
     "",
     ...orders.map((o) => `- \`${o.path}\``),
     "",
-    `Start one subagent per work order — the \`general\` agent, all of them at once if you can — ` +
-      "each with exactly this prompt, its own path filled in, and nothing else:",
+    // No agent is named on purpose: the only subagent names this project has actually
+    // observed from OpenCode are `build` and `explore` (AGENTS.md, "Subagents run in
+    // sessions of their own"), and naming one we have not verified would send the agent
+    // after something that may not exist. It knows its own roster; the requirement is only
+    // that the subagent can read a file and call a tool.
+    "Start one subagent per work order — all of them at once if you can, with whichever " +
+      "general-purpose agent you have; it only needs to read a file and call a tool. Give " +
+      "each exactly this prompt, with its own path filled in, and nothing else:",
     "",
     `    opencode-retro work order: read <path> and do what it says.`,
     "",

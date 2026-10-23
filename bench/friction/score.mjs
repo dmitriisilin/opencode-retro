@@ -53,7 +53,14 @@ const state = existsSync(join(retro, "state.json")) ? JSON.parse(readFileSync(jo
 lines.push("", "analysis per session:")
 for (const [id, x] of Object.entries(state.extracted ?? {})) lines.push(`        ${x.ok ? "ok    " : "FAILED"} ${id}: ${x.detail}`)
 for (const [id, m] of Object.entries(state.looked ?? {})) {
-  if (m.failed) lines.push(`        FAILED ${id}: last read failed (${m.attempts ?? 1} attempt(s)); the next /retro retries`)
+  if (m.failed) lines.push(`        FAILED ${id}: last read failed (${m.attempts ?? 1} attempt(s)); the next /retro asks again`)
+}
+// An order still open is the agent in the review session not having analysed it, which is a
+// different failure from the extractor finding nothing — and the one that invalidates a run.
+const open = Object.entries(state.orders ?? {}).filter(([, o]) => o && !o.done)
+if (open.length) {
+  lines.push("", `BROKEN  ${open.length} work order(s) never answered: ${open.map(([s]) => s).join(", ")}`)
+  lines.push("        the recall above is not a measurement of the extractor; the analyses did not run.")
 }
 lines.push("")
 for (const c of controls) {

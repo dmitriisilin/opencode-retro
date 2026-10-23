@@ -20,20 +20,24 @@ OPENCODE=opencode2 bench/friction/run.sh            # a fresh /tmp/retro-frictio
 ```
 
 It packs this checkout, installs the tarball into a fresh copy of `project/` with no git and
-no `options.model`, runs each task as its own session with `deepseek/deepseek-flash`, posts
-`/retro` to a review session, waits for the agent there to finish with the hand-over, posts
-`/retro` again, and prints:
+no plugin options, runs each task as its own session with `deepseek/deepseek-flash`, posts
+`/retro` to a review session, waits for that session's agent to answer every work order and
+then finish with the hand-over, posts `/retro` again, and prints:
 
 - **recall** — which traps became lessons;
 - **recurrence** — every task hits the traps, so a lesson seen in one session only means the
   extractor kept quiet about a known problem;
 - **the review** — the agent checking a handed-over lesson must not count as the problem
   happening again (`UNTESTED` if its work was never analysed);
-- **analysis per session** — including an empty reply from the model, retried by the second
-  `/retro`;
+- **analysis per session** — including an order nobody answered, asked for again by the
+  second `/retro`;
 - **controls**, lessons about nothing planted, and whether a re-saved lesson's quoting grew.
 
-Every run costs real model calls: three working sessions, a review, and an analysis each.
+Every run costs real model calls: three working sessions, a review, and an analysis each —
+the analyses being subagents of the review session, so they are billed to that session's
+model rather than to one the plugin chose. A run that reports every trap missed and leaves
+files in `.retro/work/` is the agent not having done the analyses, not the extractor keeping
+quiet; the script warns when any order is still unanswered.
 Use a new directory every time — recreating a project at the same path while the OpenCode
 service is up leaves the plugin unloaded there, silently (AGENTS.md Gotcha 15).
 

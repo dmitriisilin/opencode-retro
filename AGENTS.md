@@ -915,6 +915,12 @@ understood is just a diagnostic that was written badly.
       them itself, and calls `retro_propose` once rather than after each record — is
       unverified. That is the next thing to do, in `spike/playground/`, and the release
       checklist's stranger's-first-hour run is not meaningful before it.
+- [ ] **Which agent a subagent should be is unmeasured.** The only names this project has
+      seen from OpenCode are `build` (primary) and `explore`. The hand-over therefore names
+      none and asks for "whichever general-purpose agent you have", which is a guess about
+      what the agent will do with that latitude. Worth replacing with a measured name — and
+      worth checking whether a read-only agent such as `explore` can call a plugin tool at
+      all, since `retro_record` is how an analysis answers.
 
 Known, listed so nobody discovers them as surprises:
 
