@@ -30,6 +30,14 @@ The tool's schema is the output contract: a malformed answer is refused by OpenC
 it reaches the plugin, and the subagent is told why and can try again. A record with no
 lessons is an answer — the session went straight.
 
+**Late record.** A record that arrives after its round was closed. Calling `retro_propose`
+is how the agent says the analyses are done, so an order still open then is charged as a
+failed attempt — the plugin cannot tell a subagent that died from one still reading, and
+will not guess with a clock. Which makes calling it early possible, and so a record for an
+order settled that way is still applied, against the coverage of the order it answers, and
+the attempt is given back. Only `unanswered` reopens: an order already answered must not be
+answered twice, and one voided because its log was replaced is about a session that is gone.
+
 **Projection.** The log rendered as text for the work order. Prompts, hand-overs and
 assistant text in full up to a few thousand characters each; tool output trimmed; tool calls
 and steps one line each. Deterministic: the same records always project the same way.
@@ -112,6 +120,10 @@ the plugin's bookkeeping never turns into a lesson about the plugin.
   `a record for a log replaced since its order is refused`
 - A record with no lessons is an answer: the log is read, and the session went straight.
   `a record with no lessons settles the log as read`
+- A record that arrives after its round was closed is still applied, and the attempt the
+  log was charged is given back — unless its log was replaced since.
+  `a record that arrives after its round was closed is still recorded`
+  `a record is refused once its log was replaced, even if its round is still closeable`
 - An order not answered by the next `/retro` is a failed attempt; three on the same input
   retire the log, and both commands report it.
   `an order nobody answered is a failed attempt, and the log is asked for again`

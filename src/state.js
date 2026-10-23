@@ -436,6 +436,16 @@ export function createState({ path, onError, now = () => Date.now(), probe = nul
       const o = data.orders[session]
       return o && !o.done ? { ...o } : null
     },
+    /**
+     * An order settled as unanswered and not replaced since: the one case where an answer
+     * that arrives after the round was closed is still worth having, because the reading did
+     * happen and only the reporting was late.
+     */
+    unansweredOrder(session) {
+      refresh()
+      const o = data.orders[session]
+      return o && o.done === "unanswered" ? { ...o } : null
+    },
     /** Every order still waiting for an answer, by session. */
     openOrders() {
       refresh()

@@ -378,6 +378,16 @@ export default {
           input: PROPOSE_INPUT,
           output: DECIDE_OUTPUT,
           execute: async (input, context) => {
+            /**
+             * Calling this is how the agent says the analyses are done, so an order still
+             * open now is one nobody answered — the plugin cannot tell a subagent that died
+             * from one still reading, and will not guess with a clock.
+             *
+             * Calling it too early is therefore possible, and must not destroy the work:
+             * `applyRecord` accepts a record that arrives after its order was settled this
+             * way, so a subagent that finishes late is still recorded and the attempt it
+             * was charged is given back.
+             */
             const failures = settleUnanswered()
             // Logs still owed beyond what this round asked for, so the hand-over can say so.
             const left = owedLogs().filter((id) => id !== context?.sessionID).length
@@ -1003,7 +1013,18 @@ export default {
      * nothing else (analysis.md, "Record").
      */
     function applyRecord({ session, lessons }) {
-      const order = state.orderOf(session)
+      /**
+       * An answer that arrives after its order was settled as unanswered is still accepted —
+       * the reading happened, only the reporting was late. That is what makes calling
+       * `retro_propose` early a mistake with no cost: the round is closed, the attempt is
+       * charged, and then the record comes in, is applied, and gives the attempt back.
+       *
+       * Only `unanswered` reopens. An order already answered must not be answered twice
+       * (recurrence counts sessions, not records), and one voided because the log was
+       * replaced is about a session that no longer exists.
+       */
+      const late = !state.orderOf(session) && state.unansweredOrder(session)
+      const order = state.orderOf(session) ?? late
       if (!order) {
         return {
           ok: false,
@@ -1028,7 +1049,11 @@ export default {
         attempts: 0,
         id: order.id,
       })
-      const result = { ok: true, detail: answered.detail, through: order.through }
+      const result = {
+        ok: true,
+        detail: answered.detail + (late ? " (recorded after the round was closed; the failed attempt is given back)" : ""),
+        through: order.through,
+      }
       state.markExtracted(session, { ok: true, detail: answered.detail })
       state.close(session, "answered")
       removeWork(session)

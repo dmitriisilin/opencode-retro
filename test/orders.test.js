@@ -316,3 +316,52 @@ test("the plugin's own analysis is not logged as the user's work", async () => {
   assert.equal(records[0].about, "work")
   await cleanup?.()
 })
+
+test("a record that arrives after its round was closed is still recorded", async () => {
+  // Calling `retro_propose` is how the agent says the analyses are done, so an order still
+  // open then is charged as a failed attempt — the plugin cannot tell a subagent that died
+  // from one still reading. Which makes calling it early possible, and it must not destroy
+  // the work: the reading happened, only the reporting was late.
+  const dir = sandbox()
+  const fake = fakeOpenCode({ directory: dir, agent: false })
+  const cleanup = await plugin.setup(fake.ctx)
+
+  await work(fake, "ses_a")
+  await retro(fake)
+  await propose(fake) // too early: the subagent has not reported yet
+  assert.equal(state(dir).looked.ses_a.attempts, 1, "the round was closed and the attempt charged")
+
+  const result = await record(fake, "ses_a", [LESSON])
+  assert.equal(result.output.ok, true, result.output.detail)
+  assert.match(result.output.detail, /after the round was closed/)
+  assert.match(result.output.detail, /attempt is given back/)
+
+  const mark = state(dir).looked.ses_a
+  assert.ok(!mark.failed, "the failure is withdrawn: the log was read after all")
+  assert.ok(!mark.attempts, "and the attempt it was charged is not held against it")
+  assert.ok(mark.n > 0, "and the mark follows the order it answered")
+  assert.equal(existsSync(join(dir, ".retro", "lessons", `${LESSON.id}.md`)), true)
+
+  // Once is once, though: the same answer again is still refused.
+  assert.equal((await record(fake, "ses_a", [LESSON])).output.ok, false)
+  await cleanup?.()
+})
+
+test("a record is refused once its log was replaced, even if its round is still closeable", async () => {
+  const dir = sandbox()
+  const fake = fakeOpenCode({ directory: dir, agent: false })
+  const cleanup = await plugin.setup(fake.ctx)
+
+  await work(fake, "ses_a")
+  await retro(fake)
+  await propose(fake)
+  writeFileSync(
+    logOf(dir, "ses_a"),
+    JSON.stringify({ v: 1, n: 1, t: 1, k: "prompt", text: "a different task entirely" }) + "\n",
+  )
+
+  const result = await record(fake, "ses_a", [LESSON])
+  assert.equal(result.output.ok, false)
+  assert.match(result.output.detail, /was replaced since its order was written/)
+  await cleanup?.()
+})
