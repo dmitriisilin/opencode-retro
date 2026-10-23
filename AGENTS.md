@@ -23,8 +23,9 @@ Motivating example: a project carries a `lint` skill borrowed from another harne
 1. **Name:** `opencode-retro` (retrospective). npm name reserved by `dmitriisilin`. "loop" was rejected: in the OpenCode ecosystem `/loop` already means recurring prompts / Ralph loops.
 2. **v2 only.** No v1 compatibility layer.
 3. **Shadow log.** Plugin writes its own append-only log of every tool call and prompt to `.opencode/retro/sessions/<sessionID>.jsonl` in real time. No LLM, no batching. We do *not* depend on session history surviving compaction.
-4. **No detectors in front of the model.** There were three — `repeat`, `revert`, `skill-failure` — marking suspicious step ranges in the prompt. They are gone, and `fixtures/ab-anchors/` is why: given the same log, the model found the same lessons with them and without. What they encoded was never really detection, it was *guidance about what to look for*, and guidance belongs in `prompts/extract.md`, where the user can read it, disagree with it and change it — not in 196 lines of JavaScript that decide in advance what the model is allowed to notice. So the signals the detectors knew are now prose in that prompt: a call repeated with nothing changed between attempts, an edit undone, a skill followed into a dead end, a non-zero exit hiding behind a "completed" status, a task quietly dropped, a correction the user had to repeat. Stated as a place to start, explicitly not a checklist. The one mechanical thing left is a cost guard: one prompt and no tool calls at all, and the model is not called — which claims nothing about the session, only that there is nothing in it to read. A conversation with no tool calls *is* analysed, because a wrong instruction file shows up exactly there: a wrong answer and a correction, with nothing executed.
-5. **Extraction runs when asked, in a clean context**, not the working agent (it would defend its own choices) — one call through a session created for it and removed after, no agent, no tools, no history (see decision 10 for why not `generate.text`). Input: compressed projection of the shadow log (tool outputs trimmed to head/tail, prompts and assistant text in full) + existing lessons + rejected ids. Core question: *"If this session were run again, what should change so it goes shorter and straighter?"* **When** it runs is a deliberate choice, not an API constraint: see "When the analysis runs".
+4. **No detectors in front of the model.** There were three — `repeat`, `revert`, `skill-failure` — marking suspicious step ranges in the prompt. They are gone, and `fixtures/ab-anchors/` is why: given the same log, the model found the same lessons with them and without. What they encoded was never really detection, it was *guidance about what to look for*, and guidance belongs in `prompts/extract.md`, where the user can read it, disagree with it and change it — not in 196 lines of JavaScript that decide in advance what the model is allowed to notice. So the signals the detectors knew are now prose in that prompt: a call repeated with nothing changed between attempts, an edit undone, a skill followed into a dead end, a non-zero exit hiding behind a "completed" status, a task quietly dropped, a correction the user had to repeat. Stated as a place to start, explicitly not a checklist. The one mechanical thing left is a cost guard: one prompt and no tool calls at all, and no work order is written — which claims nothing about the session, only that there is nothing in it to read. A conversation with no tool calls *is* analysed, because a wrong instruction file shows up exactly there: a wrong answer and a correction, with nothing executed.
+5. **Extraction runs when asked, in a clean context — and the plugin does not perform it.** `/retro` writes a **work order** per owed log (`.retro/work/<session>.md`: the criteria, the projection, the lesson lists, how to answer) and asks the agent in the session it was run in to start one subagent per order. Each subagent reads its order and answers by calling `retro_record`; when the records are in, the agent calls `retro_propose`. Input is unchanged: compressed projection of the shadow log (tool outputs trimmed to head/tail, prompts and assistant text in full) + existing lessons + rejected ids. Core question unchanged: *"If this session were run again, what should change so it goes shorter and straighter?"* The clean context is still the point — a subagent was not in the session it reads and has nothing of its own to defend — but it now comes from OpenCode's own agent loop rather than from a session the plugin builds. **When** it runs is still a deliberate choice: see "When the analysis runs".
+   *Replaces one `session.generate` call in a session of the plugin's own, with a model and a variant the plugin picked. Three things were wrong with it, and only the third was visible at the time. (a) That call returns `{ text }` and nothing else — no finish reason, no usage — so a reasoning model that spent its whole output on reasoning came back empty with no way to see why, and it took a probe against the provider's own API to find out (Gotcha 17). (b) The plugin had to choose a model and a variant, which meant an option, a fallback chain, a workspace default, a remedy to name when all of them came up empty, and a `none` variant that does not mean the same thing on every provider. (c) It had to bound the call itself, because a hang wedged whatever guarded it (Gotcha 11). All three are now OpenCode's problem, which is the right place for them: a subagent runs with the agent loop, the tools, the retries and the model of the session that asked for it. What the plugin gives up is control over the analysis model — the work is billed where the work happens — and that was never worth the three mechanisms it cost.*
 6. **No separate "incident" entity.** Log → lessons. Each lesson carries `evidence` (session id + step ranges).
 7. **Lesson ≠ proposal.** Extracting the lesson is mandatory; proposing where to apply it is optional. Targets `skill | instruction | tool | refactor | other` are prompt hints, not an enum the extractor must fit into. "Doesn't fit the ontology" is a normal outcome — the human decides.
 8. **Lessons are workspace-scoped and keyed by problem, not by session.** One file per lesson, `lessons/<id>.md`, scoped to `location.project.id`. Sessions appear only as evidence refs, and a second session hitting the same problem increments `recurrence` and appends evidence rather than creating a second file. Score = `cost × recurrence × confidence × freshness`, where freshness halves every `halfLife` sessions (default 10) since the problem was last seen — counted in **sessions, not days**, because at one session a day a wall-clock decay buries everything. Recurrence matters more than one expensive incident: a lesson that shows up in three sessions *will* show up in the fourth. Overflow past the cap (default 30) is archived, never deleted.
@@ -52,10 +53,11 @@ Motivating example: a project carries a `lint` skill borrowed from another harne
 │   ├── extract.md            # log → lessons        (user-editable, decision 13)
 │   └── propose.md            # lesson → hand-over, one or many
 ├── sessions/<sessionID>.jsonl # shadow log, one event per line
+├── work/<sessionID>.md        # a work order, while an analysis is owed (decision 5)
 ├── lessons/<lessonID>.md      # YAML frontmatter + body, one per lesson
 ├── archive/                   # evicted lessons
 ├── selfcheck.md               # is the plugin actually working (decision 19)
-├── state.json                 # rejected ids, last extraction per session, etc.
+├── state.json                 # rejected ids, marks, orders issued, etc.
 └── plugin.log                 # hook errors; never thrown at the user's session
 ```
 
@@ -214,9 +216,18 @@ every time (17/17 in a live session). Corrects an earlier claim in this file tha
 should be the index outright.
 
 **Clean-context model call.** `ctx.generate.text({ prompt, model: { providerID, id } })`
-returns `{ text }` — one-shot, no session, no history. This is the extractor's call
-(decision 5). `ctx.session.create({ title, location })` also works as a fallback if the
-extractor ever needs tools.
+returns `{ text }` — one-shot, no session, no history; `ctx.session.create({ title, location })`
+plus `ctx.session.generate({ sessionID, prompt })` does the same thing inside a session, which
+is the only route that works on a free-tier model (Gotcha 10). *Neither is used: the plugin
+calls no model (decision 5). Recorded because both were measured, and because the reasons not
+to use them are in Gotchas 9, 10, 11 and 17 rather than in the signatures.*
+
+**A tool the plugin registers is how an analysis answers.** `ctx.tool.transform(tools => tools.add({ name, description, input, output, execute }))`
+registers `retro_record`, `retro_propose` and `retro_decide`; `input` is plain JSON Schema and
+OpenCode enforces it before `execute` is reached, so a malformed answer is refused with a
+reason the caller can act on and there is no reply text to parse. `execute` receives
+`(input, context)` and `context.sessionID` is the session the call came from — which is how a
+record is attributed, and how the plugin tells its own tool calls from the user's work.
 
 **`/retro` is a real command.** `cmds.add({ name, description, execute })` registers, and
 `execute` fires with `{ sessionID, prompt: { text }, delivery }`. No template and no TUI
@@ -263,14 +274,18 @@ plugin needed — and it gets the `sessionID`, so it can drive the review conver
    a command's `execute`, 1.2 s; fire-and-forget from inside the `session.prompt` hook,
    1.2 s; from plugin `setup`, never returns; from the `ctx.event.subscribe` loop, never
    returns. No error, no timeout, no log line — it simply never settles. Awaiting one
-   *inside* a hook that OpenCode awaits deadlocks the session outright. This reshapes
-   decision 5; see "Extraction has to run where a hook is running" below.
-10. **The free-tier restriction is on `generate.text`, not on plugins.** `ctx.generate.text` refuses OpenCode's own free-tier models with *"OpenCode's free tier can only be used from within OpenCode"* — with the model omitted, with it named explicitly, and from a command's `execute` just as much as from `setup`. But `ctx.session.create()` followed by `ctx.session.generate({ sessionID, prompt })` returns normally **on the very same free model**: a session *is* within OpenCode. Measured both ways against `opencode/minimax-m3.1-flash-free`. So the analysis runs through a session of its own, created for the call and removed after it, which means the plugin works with no configuration at all — verified end to end with no `options.model` on a free-tier default. `session.generate` takes no model of its own, so the model is chosen when the session is created; `generate` is its own request kind, with no agent loop, no tools and no history. No credential is involved anywhere: OpenCode holds those and performs the call.
+   *inside* a hook that OpenCode awaits deadlocks the session outright. *Kept as a measured
+   fact, no longer load-bearing: the plugin calls no model at all (decision 5), so nothing of
+   ours is left that could hang this way. Anybody reaching for `generate.text` in this
+   codebase should read this first.*
+10. **The free-tier restriction is on `generate.text`, not on plugins.** `ctx.generate.text` refuses OpenCode's own free-tier models with *"OpenCode's free tier can only be used from within OpenCode"* — with the model omitted, with it named explicitly, and from a command's `execute` just as much as from `setup`. But `ctx.session.create()` followed by `ctx.session.generate({ sessionID, prompt })` returns normally **on the very same free model**: a session *is* within OpenCode. Measured both ways against `opencode/minimax-m3.1-flash-free`. So the analysis runs through a session of its own, created for the call and removed after it, which means the plugin works with no configuration at all — verified end to end with no `options.model` on a free-tier default. `session.generate` takes no model of its own, so the model is chosen when the session is created; `generate` is its own request kind, with no agent loop, no tools and no history. No credential is involved anywhere: OpenCode holds those and performs the call. *Kept as a measured fact; no longer how the analysis runs. The plugin stopped making the call altogether (decision 5), and the property this gotcha was prized for — works with no configuration at all — now comes for free, because the work runs on the session that asked for it.*
 11. **A hung `generate.text` wedges whatever guards it.** My own bug, and worth keeping as a
    warning: the drain had a `draining` flag released in a `finally`, so one call that never
-   settled blocked every later drain for the life of the process — silently. Every model
-   call is now bounded (`extractTimeoutMs`, default 90 s) so a hang becomes a reported
-   failure and a retry instead of a stall.
+   settled blocked every later drain for the life of the process — silently. The bound that
+   answered it (`extractTimeoutMs`) is gone with the call it bounded: there is no model call
+   of ours to hang, and a `/retro` that issues orders and returns cannot wedge anything. The
+   warning is kept because the shape recurs — a guard released in a `finally` is only as
+   bounded as the thing it awaits.
 12. **`session.synthetic` writes to the session's inbox, not to its messages, and does not
    fire the `session.prompt` hook.** Without `resume: true` the message sits in the inbox
    until the user happens to type something, so they never see what they asked for. With it,
@@ -304,12 +319,16 @@ plugin needed — and it gets the `sessionID`, so it can drive the review conver
    instead, and directly against the DeepSeek API the same prompt came back with `content`
    after 90 to 272 seconds of reasoning — 14 to 45 thousand reasoning tokens for a 400-token
    answer. Through OpenCode by default: 38 s and an empty reply. With the model's `none`
-   variant (reasoning off): 2 s and a valid answer, six times in six directly. So the
-   analysis asks for `none` when the model has it (`QUIET_VARIANT` in `index.js`), falls back
-   to the default when OpenCode answers "Variant unavailable", and `options.model.variant`
-   overrides it. `session.generate` returns `{ text }` and nothing else — no finish reason,
-   no usage — which is why the cause was invisible from inside the plugin; the probe that
-   found it calls the provider's API directly with the key OpenCode already holds.
+   variant (reasoning off): 2 s and a valid answer, six times in six directly. The fix at the
+   time was to ask for `none` when the model had it. *This gotcha is why decision 5 was
+   rewritten.* `session.generate` returns `{ text }` and nothing else — no finish reason, no
+   usage — which is why the cause was invisible from inside the plugin for weeks; the probe
+   that found it calls the provider's API directly with the key OpenCode already holds. A
+   plugin that cannot see why an answer was empty should not be the thing asking for it, and
+   a variant named by hand does not mean the same thing on every provider. So there is no
+   variant to choose any more: a subagent runs on the session's own settings, reasoning
+   included, and a model that reasons its whole output away is visible in the session where
+   it happened rather than as an empty string in `plugin.log`.
 16. **`opencode run "/retro all"` does not run the command.** The text arrives as an
    ordinary prompt and the registered command never fires; the agent in that session reads
    "/retro all" as an instruction and improvises. Observed while dogfooding: the session's
@@ -364,12 +383,13 @@ plugin needed — and it gets the `sessionID`, so it can drive the review conver
 
 Decisions 13–15. Everything this plugin decides semantically, it decides in two prompts,
 so both are files in the user's project. What stays in source is the machinery around
-them: the output contract the parser needs, the order of a lesson's fields, the
-`retro_decide` instruction, the recorded-date hint.
+them: the output contract (its prose and the `retro_record` schema), the order of a lesson's
+fields, the hand-over that asks for the analyses, the `retro_decide` instruction, the
+recorded-date hint.
 
 | File | Reads | Writes | Owns the question |
 |---|---|---|---|
-| `.retro/prompts/extract.md` | projection of the shadow log + existing lessons + rejected ids | lessons | *If this session ran again, what should change so it goes shorter and straighter?* |
+| `.retro/prompts/extract.md` | goes into each work order, ahead of the projection, the existing lessons and the rejected ids | lessons, via `retro_record` | *If this session ran again, what should change so it goes shorter and straighter?* |
 | `.retro/prompts/propose.md` | one lesson, or every waiting one, handed to the agent in the user's session | a hand-over, or one plan | *Is this still true, and how do I put it to the human?* |
 
 Resolution per prompt, first hit wins:
@@ -383,19 +403,28 @@ packaged defaults are also the seed: on first run each missing prompt is copied 
 `.retro/prompts/` so there is something concrete to edit, rather than an empty directory
 and a doc telling you what you could have written.
 
-### The output contract is not on disk
+### The output contract is not in the prompt file
 
-The prompt file is wholly the user's. The format the parser needs is a constant in our
-source, wrapped around the prompt at call time:
+The prompt file is wholly the user's. The format is a constant in our source, written into
+each work order after the user's prose:
 
 ```
-generate.text({ prompt: userPrompt + OUTPUT_CONTRACT })
+writeFileSync(workPath(session), userPrompt + ... + OUTPUT_CONTRACT)
 ```
 
 No "managed block", no marker comments, no region the user is told not to touch — because a
 file with a do-not-touch region is a file someone will eventually touch. The seeded prompt
 carries one line saying the output format is appended automatically and is not part of the
 file.
+
+**And the machine half is a schema, not prose.** The answer is a `retro_record` call, and
+`RECORD_INPUT` in `src/contract.js` is its input schema: OpenCode refuses a malformed call
+before the plugin sees it and tells the subagent why, so it can correct itself. There is no
+reply to parse, which retired the whole class of failure that "unparseable reply" named — a
+cheap model fencing JSON twice, trailing a comma, or answering in prose. The tolerant parser
+is still there and still reachable, for one case that remains: a model handed a nested
+structure will sometimes pass `lessons` as a *string* of JSON, and reading it beats refusing
+a good answer.
 
 ### New defaults arrive as news
 
@@ -527,22 +556,29 @@ Two commands. Everything else happens without being asked, or does not happen.
 
 | | |
 |---|---|
-| `/retro` | Analyses the logs that have accumulated, then delivers the top undecided lesson into this session. One invocation, one lesson. |
-| `/retro all` (or `/retro-all`) | The same analysis, then **every** waiting lesson as one plan, approved in one pass. Meant for plan mode. |
+| `/retro` | Issues a work order for every log that has accumulated and asks this session's agent to have them read; once the records are in, `retro_propose` delivers the top undecided lesson here. One invocation, one lesson. |
+| `/retro all` (or `/retro-all`) | The same, and then **every** waiting lesson as one plan, approved in one pass. Meant for plan mode. |
+
+Three tools come with them, and they are the other half of the surface: `retro_record` (a
+subagent's answer to one order), `retro_propose` (hand over what the records made) and
+`retro_decide` (bookkeeping, decision 9). All three only record or render; none of them
+edits the user's harness.
 
 There was a third, `/retro check`, and it is gone. Its free checks — the `ctx` surface, which
 prompt layer is live, what is waiting — now run on every review and land in `selfcheck.md`.
 Its paid checks asked whether the model answers and whether the output contract still
-parses, and both questions are answered by the analysis itself, every time, with the model's
-own words when either fails. A command that charges to ask what the next command answers for
-free is a command that should not exist.
+parses, and both questions are answered by the analysis itself, every time. (Since the
+rewrite, the second question has no asker left: the contract's machine half is a tool schema
+OpenCode enforces.) A command that charges to ask what the next command answers for free is a
+command that should not exist.
 
 The loop around them:
 
 ```
-you work                →  sessions/<id>.jsonl         (no LLM, no attention)
-your next session starts →  lessons/<id>.md             (one clean-context model call)
-you run /retro           →  analysis, then one proposal, in your session
+you work                 →  sessions/<id>.jsonl        (no LLM, no attention)
+you run /retro           →  work/<id>.md               (one order per owed log)
+your agent reads them    →  retro_record → lessons/<id>.md
+                         →  retro_propose → one proposal, in your session
 you and the agent decide →  the change lands, or does not
                          →  retro_decide records it
 ```
@@ -559,15 +595,20 @@ the proposal rather than patching: the agent has the files and the human; we hav
 
 ## When the analysis runs
 
-A session ends in the event stream, and the event stream is the one place a model call
-cannot be made from: `ctx.generate.text` hangs there for good (Gotcha 9), and the session
-route has never been tried from it. So the trigger and the work are not the same moment —
-which turned out to be what we wanted anyway.
+A session ends in the event stream, and there is no session there to ask: an analysis is a
+subagent of the session that asked for one, and the event stream belongs to no session of
+ours. So the trigger and the work are not the same moment — which turned out to be what we
+wanted anyway. *The older reason was narrower and is still true: the event stream is the one
+place `ctx.generate.text` can never be called from, because it hangs there for good
+(Gotcha 9).*
 
 **The work happens in `/retro`.** A finished session's log is kept and nothing more. One
-command then compresses what has accumulated, turns it into lessons, and only then looks
-for something to hand over. A command's `execute` is a working context, so the call is
-simply awaited: no fire-and-forget, no draining guard, no race.
+command then writes a work order per log, hands them over, and the analyses run in the
+session the person is in. A command's `execute` is a working context and the orders are
+written synchronously, so there is no fire-and-forget, no draining guard and no race; what
+is asynchronous is the reading, and it is asynchronous in the place where it belongs — the
+agent loop, where OpenCode already runs several subagents at once and reports when they are
+done.
 
 **"Everything accumulated" includes the sessions that have not finished** — this one among
 them. Their friction is the most recent there is, so there is no reason to wait for a
@@ -582,34 +623,55 @@ unwritten, which is what makes pruning safe without knowing whether a session is
 server that stops takes its sessions with it and no end event ever arrives — and nothing
 waits for one, so such a log is read like any other.
 
-The reason is not the API, it is the bill. A model call costs money, and nothing else in
+The reason is not the API, it is the bill. An analysis costs money, and nothing else in
 this plugin spends the user's money without being asked. Lessons sitting unextracted and
 lessons sitting unreviewed are the same thing from the user's side, since nothing is applied
 automatically either way — so there is no value in paying earlier.
 
-- **Bounded on request.** `extractLimit` caps the attempts one command makes, with the
+- **Bounded on request.** `extractLimit` caps the orders one command issues, with the
   remainder reported; it is unlimited by default, because a backlog that is never finished
-  is a backlog that keeps asking. It counts attempts rather than successes: an attempt is
-  what costs a model call, and a backlog of failing logs would otherwise spend without limit
-  under a limit that only counted the ones that worked.
-- **Cheap when there is nothing to read.** A session of one prompt with no tool calls is
-  skipped without a model call. Anything more is read, including a conversation that ran no
-  tools at all.
-- **Bounded in size, not only in count.** One analysis sends at most `maxInput` characters,
-  and an empty reply — which is what an over-long input produces rather than an error, see
-  Gotcha 17 — is retried once at half that. Without it, the longest sessions were the ones
-  that silently produced nothing.
-- **`asyncExtract` restores the old behaviour** — analysis at the first prompt of the next
-  session — for anyone who wants lessons ready before asking. It was the default until the
-  owner pointed out that it spends money on a schedule the user did not choose.
+  is a backlog that keeps asking. It counts orders rather than answers: an order is what
+  costs a subagent, and a backlog of failing logs would otherwise spend without limit under a
+  limit that only counted the ones that worked.
+- **Cheap when there is nothing to read.** A session of one prompt with no tool calls takes
+  no order. Anything more is read, including a conversation that ran no tools at all.
+- **Bounded in size, not only in count.** One order holds at most `maxInput` characters, and
+  a log too long for one is read a part per command. *The default, 32,000, is inherited from
+  a hypothesis that has since been disproven: it was set against a measured "empty reply
+  above about 40,000 characters" on `deepseek-flash`, which turned out to be reasoning rather
+  than size (Gotcha 17). The number has not been re-derived for a subagent reading a file —
+  see "What the budget is now for".*
+- **Nothing runs unasked.** There used to be an `asyncExtract` option that analysed at the
+  first prompt of the next session. It is gone: an analysis now needs a session to run in and
+  an agent to start it, and the first prompt of a session is neither the place to spend
+  someone's money nor a context that can wait for subagents.
 
-Two claims about the old default turned out to be false, and are worth keeping straight
-because they sound plausible: the fire-and-forget drain did **not** block the user's prompt
-(the hook returned immediately, nothing awaited it), and it did **not** touch the session's
-context (`generate.text` takes no `sessionID` and cannot). What was true was the cost.
+One claim about the old `asyncExtract` default turned out to be false, and is worth keeping
+straight because it sounds plausible: the fire-and-forget drain did **not** block the user's
+prompt (the hook returned immediately, nothing awaited it) and did **not** touch the
+session's context. What was true was the cost.
 
-Rejected: awaiting the call inside a hook OpenCode awaits. That deadlocks the session —
+Rejected: awaiting a model call inside a hook OpenCode awaits. That deadlocks the session —
 the server waits for the hook, the hook waits for the server.
+
+### What the budget is now for
+
+`maxInput` bounds what one subagent is asked to read. That is still worth bounding, but the
+cliff it was measured against is gone, and two things about it are now worth stating plainly
+rather than being discovered later.
+
+**The fixed part is charged to the same budget.** An order is the user's prompt (~4.8 KB) plus
+the contract (~2.5 KB) plus the lesson lists, and the log gets what is left. At the default
+32,000 that is ~24 KB of log — a whole long session in one order. At a small `maxInput` the
+proportions invert: at 9,000 the log gets ~1.5 KB, so a 43 KB log is read two steps at a time
+and needs fifty-odd commands to get through. Both are correct behaviour; the second is only
+surprising if you read `maxInput` as "how much log".
+
+**And the number itself is open.** 32,000 was chosen to stay clear of a provider cliff that
+does not exist. What bounds an order now is what a subagent can comfortably read and reason
+over in one go, which is a different question with a different answer, and nobody has
+measured it. Raising it would mean fewer rounds on long sessions and more read per analysis;
+leaving it means the opposite. **Owner's call, and deliberately not made here.**
 
 ## Self-check
 
@@ -672,13 +734,15 @@ stocked up, so that "is it doing anything" is answered in the same place.
 
 The surface list is only worth what it names, and it got that wrong once: it required
 `generate.text`, which the plugin mentions only to explain why it does not use it, and left
-out `session.create / generate / remove`, which every analysis runs through. A renamed
-`session.generate` would have passed. It is now `REQUIRED_SURFACE` in `src/selfcheck.js`,
-held to what `index.js` actually calls by `test/consistency.test.js`.
+out `session.create / generate / remove`, which every analysis ran through at the time. A
+renamed `session.generate` would have passed. It is `REQUIRED_SURFACE` in `src/selfcheck.js`,
+held to what `index.js` actually calls by `test/consistency.test.js` — which is why the same
+list lost all three of those members when the plugin stopped calling a model, instead of
+going on asserting that a dead dependency was alive.
 
 It used to also ask the model whether it answers and whether the output contract still
-round-trips over a fixture. Both cost a call nobody requested, and both are answered for
-free by every analysis — with the model's own words when they fail.
+round-trips over a fixture. Both cost a call nobody requested; the first is answered free by
+every analysis, and the second is now OpenCode's to enforce.
 
 ### It is about the plugin, not about the session
 
@@ -712,9 +776,10 @@ checkout — then run `/retro`.
 - ok              tool hook       12 tool-call events / 12 hook calls
 - ok              shadow log      sessions/ses_eabb21.jsonl, 47 entries
 - ok              trigger         session.execution.succeeded
-- DEGRADED        extraction      model call failed: Model unavailable: foo/bar
-                                  → no lessons from this session. Check `options.model`
-                                    in opencode.json, then run /retro again.
+- DEGRADED        extraction      no record came back from its analysis
+                                  → no lessons from this session. The subagents have to
+                                    finish and call retro_record before retro_propose;
+                                    the next /retro asks again.
 
 ## Notes
 
@@ -767,7 +832,8 @@ understood is just a diagnostic that was written badly.
       resolution, and `OUTPUT_CONTRACT` as a source constant wrapped at call time
       (`src/prompts.js`, `src/contract.js`).
 - [x] Extractor (`src/extract.js`). Queued at `session.execution.*`, drained from the next
-      `session.prompt` — forced by the API, see "Extraction has to run where a hook is running".
+      `session.prompt`, because `generate.text` only returns where a hook is running
+      (Gotcha 9). *Both the queue and the model call are gone — decisions 21 and 5.*
 - [x] Lesson store (`src/lessons.js`): create / merge (recurrence++) / score / cap / archive,
       in the README format, via a zero-dependency YAML subset (`src/frontmatter.js`).
 - [x] Rejected ids fed back into the prompt and filtered out of the result (`src/state.js`).
@@ -826,15 +892,44 @@ understood is just a diagnostic that was written badly.
       into `index.js`. The copy could not survive the documented release: `npm version` commits
       only `package.json`, and the publish workflow did not run the suite, so a tag would have
       shipped a self-check reporting the previous version. A test still asserts the two agree.
-Shipping with these known, listed so nobody discovers them as surprises:
+**M5 — the analysis moves out of the plugin** (387 tests; not yet exercised live)
+- [x] Decision 5 rewritten: `/retro` issues a work order per owed log and the agent in its
+      session has each read by a subagent. `composeOrder` and `recordAnswer` in
+      `src/extract.js` are the plugin's two halves of an analysis; it makes no model call.
+- [x] `retro_record` and `retro_propose` (`index.js`), with `RECORD_INPUT` in
+      `src/contract.js` as the machine half of the output contract. OpenCode enforces it, so
+      a malformed answer is refused with a reason instead of parsed.
+- [x] Orders are state on disk (`state.issue / orderOf / openOrders / close`), so a round
+      whose process died leaves orders the next command settles as a failed attempt.
+- [x] Gone with the call they served: `options.model`, `extractTimeoutMs`, `asyncExtract`,
+      the variant choice, the model-resolution chain, the empty-reply retry, and
+      `session.create / generate / remove` from the required surface.
+- [x] The plugin's own work — its subagents, the calls that start them, its own tools — is
+      kept out of every log, so an analysis is never analysed.
+- [x] The two hand-overs are told apart in the log (`about`), because the extraction contract
+      discounts work that reviews a lesson and would have discounted work done after a
+      request for an analysis.
+- [ ] **Not yet run live.** Everything here is tested against a fake OpenCode; nothing has
+      been through a real `/retro` with real subagents. Until it has, the live behaviour of
+      the hand-over — whether an agent reliably starts one subagent per order, reads none of
+      them itself, and calls `retro_propose` once rather than after each record — is
+      unverified. That is the next thing to do, in `spike/playground/`, and the release
+      checklist's stranger's-first-hour run is not meaningful before it.
 
-- Subagent sessions are unverified — see "Still unverified".
+Known, listed so nobody discovers them as surprises:
+
+- The analysis path has not been exercised live since the rewrite (M5, last item).
+- Subagent sessions of the *user's* work are unverified — see "Still unverified".
 - The `compaction` payload is unknown, and nothing depends on it.
-- On a free-tier model the analysis sometimes returns a reply the output contract cannot
-  parse. It fails visibly and retries; pinning a model in `options.model` avoids it.
+- `maxInput`'s default is inherited from a disproven hypothesis — see "What the budget is
+  now for". It is not wrong, it is just not re-derived.
 - Whether the agent records a decision is prompted, not enforced. If it does not, the lesson
   stays open and comes back next time with the currency check noting that its target has
   changed — recoverable, but it is the one step the plugin cannot do for itself.
+- Whether the agent answers every order is prompted, not enforced, for the same reason. An
+  order nobody answers is charged as a failed attempt and reported, so this degrades rather
+  than going silent — but three abandoned rounds retire a log that nothing was ever wrong
+  with.
 
 ## Dev environment
 
@@ -945,10 +1040,16 @@ the order it is cheapest to check:
 3. The last audit cycle ran against code that did not change afterwards, and reported no
    defect above "documented limit". Its "wrong, but not touched" list is either empty or
    stated in the concepts as a limit.
+3a. The analysis has been run live on this build at least once: `/retro` in a real session,
+   with real subagents reading real orders. The plugin no longer performs the analysis
+   itself, so the hand-over's wording is now load-bearing in a way no test can check — an
+   agent that reads the orders itself, starts one subagent for all of them, or calls
+   `retro_propose` after each record would all pass the suite. The bench and the stranger's
+   hour below both depend on this working, so it comes first.
 4. A stranger's first hour was run on this exact build: the tarball packed and installed
-   into a fresh project under `/tmp`, no `options.model`, no git; worked in, `/retro` run
-   through the API (Gotcha 16), a prompt edited and seen to take effect, a decision recorded,
-   `/retro` run again. Nothing confusing, silent or maintainer-only.
+   into a fresh project under `/tmp`, with no plugin options at all and no git; worked in,
+   `/retro` run through the API (Gotcha 16), a prompt edited and seen to take effect, a
+   decision recorded, `/retro` run again. Nothing confusing, silent or maintainer-only.
 4a. The planted-friction bench (`bench/friction/`) finds every trap, counts each recurring one
    in more than one session, does not count the review of a lesson as its recurrence, and
    reports no lesson against the control. A recall number, not an impression: it is the one
