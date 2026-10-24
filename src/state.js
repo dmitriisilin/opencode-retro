@@ -455,7 +455,7 @@ export function createState({ path, onError, now = () => Date.now(), probe = nul
     askedFor(session) {
       refresh()
       const o = data.orders[session]
-      return { asked: Number(o?.asked ?? 0), size: Number(o?.size ?? 0) }
+      return { asked: Number(o?.asked ?? 0), size: Number(o?.size ?? 0), done: o?.done ?? null }
     },
     /** Every order still waiting for an answer, by session. */
     openOrders() {

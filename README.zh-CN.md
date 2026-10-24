@@ -1,4 +1,4 @@
-<!-- translated-from: README.en.md@3c3ce00d61de -->
+<!-- translated-from: README.en.md@5623be199291 -->
 # opencode-retro
 
 [Русский](README.md) | [English](README.en.md) | **简体中文** | [Español](README.es.md) | [日本語](README.ja.md)
@@ -229,7 +229,7 @@ OpenCode 会从 npm 获取插件；在 `opencode.json` 中写出包名即可：
 
 因此 `.retro/selfcheck.md` 报告的是存活状况而非安装状况：它把事件流所见与钩子所收到的内容相互对照。该文件自带过期规则：
 
-> 如果工作正在进行，而 `heartbeat` 已超过几分钟，则插件没有在运行。
+> **如果你此刻正在工作，而 `heartbeat` 已超过几分钟，那么这个插件没有在运行。**
 
 这些检查在每次复核时运行且不产生任何花费：插件所依赖的 API 构成、当前生效的是哪一层提示，以及有什么在等待裁决；插件与 OpenCode 的版本则写在文件抬头。分析能否走通则不单独询问：每次 `/retro` 都会实际检验它，而没人回答的工作单会被如实地称为它本来的样子。
 

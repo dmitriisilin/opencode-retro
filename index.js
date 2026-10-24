@@ -133,6 +133,14 @@ export default {
      * the very report that is supposed to claim only what happened.
      */
     const lastExtraction = new Map()
+    /**
+     * session the round was handed to -> the logs it asked about. Only so `retro_propose` can
+     * say how many were analysed when there is nothing to propose: "Nothing to review" on its
+     * own reads the same after five analyses as after none (pre-release review — the line that
+     * said so had been left without anything to feed it). A message, not a decision input, so
+     * it is fine for it to live in this process.
+     */
+    const rounds = new Map()
 
     /**
      * What is waiting, as the marks say it is. A log whose last read failed is named as a
@@ -149,10 +157,15 @@ export default {
       for (const id of log.list()) {
         if (parents.has(id) || !isOwed(id)) continue
         const mark = state.looked(id)
-        const askings = state.askedFor(id).asked
-        if (askings > 1 && state.extractionOf(id)?.ok === false) {
+        // How many askings have actually gone unanswered — not counting one issued a moment ago
+        // that nobody has had the chance to answer yet. Counting it made this line say "up to 2
+        // times" about the same log state.json and the hand-over call "asked 1 time", in the
+        // same moment (pre-release scan).
+        const order = state.askedFor(id)
+        const silent = order.done === null ? order.asked - 1 : order.done === "unanswered" ? order.asked : 0
+        if (silent >= 1) {
           unanswered++
-          asked = Math.max(asked, askings)
+          asked = Math.max(asked, silent)
         }
         if (mark.failed) failing++
         // Read in part and nothing new since: a log too long for one call, which the next
@@ -265,8 +278,10 @@ export default {
     }
 
     await hook("session", "prompt", (p) => {
-      // A subagent reading one of our work orders is the plugin's own work, not the user's.
-      if (isWorkText(p?.prompt?.text)) {
+      // A subagent reading one of our work orders is the plugin's own work, not the user's. Only
+      // ever a fresh session: one that already has a log is somebody's work, and is never
+      // reclassified by what they happen to type.
+      if (p?.sessionID && !log.probe(p.sessionID) && isWorkText(p?.prompt?.text)) {
         if (p?.sessionID) internal.add(p.sessionID)
         return
       }
@@ -294,8 +309,11 @@ export default {
     await hook("tool", "execute.before", (p) => {
       if (ownWork(p)) {
         // Not logged, but counted: the event stream sees this call like any other, and the
-        // self-check compares the two sides. See `ingest.ownCall`.
-        ingest.ownCall(p?.sessionID)
+        // self-check compares the two sides. See `ingest.ownCall`. Not for a call made *inside*
+        // one of our own sessions, though: `handleEvent` drops those sessions' events, so
+        // counting their calls added to one side only, and enough of them would cover a real
+        // shortfall — the dead hook decision 19 exists to catch (pre-release review).
+        if (!internal.has(p?.sessionID)) ingest.ownCall(p?.sessionID)
         return
       }
       ingest.toolBefore(p)
@@ -327,7 +345,7 @@ export default {
         await run(invocation)
       } catch (err) {
         onError(`command.${name}`, err)
-        await say(invocation.sessionID, `_opencode-retro: \`/${name}\` failed: ${err?.message ?? err}. See .retro/plugin.log._`)
+        await say(invocation.sessionID, `_opencode-retro: \`/${name}\` failed: ${err?.message ?? err}. See .retro/plugin.log._`, "notice")
       }
     }
 
@@ -374,8 +392,9 @@ export default {
           name: "retro_record",
           description:
             "Record what one opencode-retro work order found. Call it exactly once per work " +
-            "order, with the session id named in the order and the lessons — an empty list when " +
-            "the session went straight. It only records; it changes no file in the project.",
+            "order, with the session id named in the order, the lessons — an empty list when " +
+            "the session went straight — and `through`, the last step number you actually read. " +
+            "It only records; it changes no file in the project.",
           input: RECORD_INPUT,
           output: DECIDE_OUTPUT,
           execute: async (input) => {
@@ -403,15 +422,17 @@ export default {
              *
              * Calling it too early is therefore possible, and must not destroy the work:
              * `applyRecord` accepts a record that arrives after its order was settled this
-             * way, so a subagent that finishes late is still recorded and the attempt it
-             * was charged is given back.
+             * way, so a subagent that finishes late is still recorded.
              */
             const failures = settleUnanswered()
             // Logs still owed beyond what this round asked for, so the hand-over can say so.
             const left = owedLogs().filter((id) => id !== context?.sessionID).length
-            const text = await proposalText(Boolean(input?.all), { failures, left })
+            const asked = rounds.get(context?.sessionID) ?? []
+            rounds.delete(context?.sessionID)
+            const analysed = asked.filter((s) => state.askedFor(s).done === "answered").length
+            const { text, about } = await proposalText(Boolean(input?.all), { failures, left, analysed })
             // Logged, not sent: the agent asked for this and has it as the tool's result.
-            noteHandover(context?.sessionID, text, "lesson")
+            noteHandover(context?.sessionID, text, about)
             return { output: { ok: true, detail: text }, content: text }
           },
         })
@@ -746,12 +767,16 @@ export default {
             records = []
           }
         }
-        if (!records.length) return null
-        const cited = Array.isArray(steps) && steps.length ? Math.max(...steps) : null
-        const at = cited == null ? null : records.find((r) => r.n === cited)?.t
-        if (Number.isFinite(at)) return at
-        const newest = records.reduce((max, r) => (Number.isFinite(r.t) && r.t > max ? r.t : max), 0)
-        return newest > 0 ? newest : null
+        if (!records.length || !Array.isArray(steps) || !steps.length) return null
+        // The latest of the cited steps that is actually in the log. Not the newest record:
+        // a citation that names a step the log does not have (a wrong upper bound, numbering
+        // moved by a delegation folded in) then took the time of whatever came last, which in
+        // a session left open across a decision is after it — and reopened an accepted lesson
+        // on evidence from before the fix (pre-release review). Nothing cited is in the log:
+        // no date, which reopens as undated evidence always has.
+        const wanted = new Set(steps)
+        const at = records.filter((r) => wanted.has(r.n) && Number.isFinite(r.t)).map((r) => r.t)
+        return at.length ? Math.max(...at) : null
       }
     }
 
@@ -783,11 +808,14 @@ export default {
     async function retro(sessionID, all) {
       const extracted = analyseOwed(sessionID)
       if (extracted.orders.length) {
+        rounds.set(sessionID, extracted.orders.map((o) => o.session))
         await diagnose()
         writeSelfCheck()
         return say(
           sessionID,
-          renderWorkOrders(extracted.orders.map((o) => ({ ...o, path: workName(o.session) })), {
+          // Absolute, like the log path inside the order: the subagent's working directory is not
+          // ours to assume, and `options.dir` outside the project made the relative form `../x/…`.
+          renderWorkOrders(extracted.orders.map((o) => ({ ...o, path: workPath(o.session) })), {
             all,
             failures: extracted.failures,
             left: extracted.left,
@@ -795,26 +823,33 @@ export default {
           "work",
         )
       }
-      return say(sessionID, await proposalText(all, extracted))
+      const handed = await proposalText(all, extracted)
+      return say(sessionID, handed.text, handed.about)
     }
 
     /** What to put to the human: one lesson, every lesson as a plan, or that there is none. */
-    async function proposalText(all, { failures = [], left = 0 } = {}) {
+    /**
+     * What to put to the human, and whether it is a lesson. `about` is what the hand-over is
+     * logged as (handover.md): only a lesson makes the work after it a review, and "nothing to
+     * review" logged as one had the next analysis discount real friction as the review of a
+     * lesson nobody was handed.
+     */
+    async function proposalText(all, { failures = [], left = 0, analysed = 0 } = {}) {
       pruneLogs()
       const present = new Set(log.list())
       state.compact((id) => present.has(id))
-      const extracted = { failures, left }
+      const extracted = { failures, left, analysed }
       const lessons = store.list()
       await diagnose()
       writeSelfCheck()
 
       if (all) {
         const open = pickOpen(lessons, { sessions: state.sessions, halfLife: config.halfLife })
-        if (!open.length) return renderNothing({ queued: left, extracted, dir: retroDir })
+        if (!open.length) return { text: renderNothing({ queued: left, extracted, dir: retroDir }), about: "notice" }
         const currencies = new Map()
         for (const lesson of open.slice(0, config.proposeLimit)) currencies.set(lesson.id, currencyOf(lesson))
         // A failed analysis is news in a batch exactly as it is in a single hand-over.
-        return (
+        const text =
           renderFailures(extracted) +
           renderBatch(open, {
             sessions: state.sessions,
@@ -824,15 +859,15 @@ export default {
             leadIn: prompts.resolve("propose")?.text,
             queued: left,
           })
-        )
+        return { text, about: "lesson" }
       }
 
       // One invocation, one lesson: the top of the list. Deciding is the user's business, in
       // this session, with the agent that is already here.
       const lesson = pickLesson(lessons, { sessions: state.sessions, halfLife: config.halfLife })
-      if (!lesson) return renderNothing({ queued: left, extracted, dir: retroDir })
+      if (!lesson) return { text: renderNothing({ queued: left, extracted, dir: retroDir }), about: "notice" }
       const open = lessons.filter((l) => ["new", "later", undefined, null].includes(l.status)).length
-      return (
+      const text =
         renderFailures(extracted) +
         renderProposal(lesson, {
           total: open,
@@ -844,7 +879,7 @@ export default {
           queued: left,
           logs: logDir,
         })
-      )
+      return { text, about: "lesson" }
     }
 
     /**
@@ -934,8 +969,23 @@ export default {
     }
 
     /** Whether a prompt is one of the plugin's own work orders being handed to a subagent. */
+    /**
+     * Whether a prompt is the plugin asking a subagent to read one of its work orders.
+     *
+     * Strict on purpose. This used to match any text containing the mark or `.retro/work/`, and
+     * a match marks a session as the plugin's own **for good** — every later prompt, tool call
+     * and event of it left out of the log. So a person who asked their own agent "what is in
+     * `.retro/work/`?" silently stopped being logged from that moment, which in this repository,
+     * where the plugin runs on itself, is not a far-fetched thing to type (pre-release review).
+     *
+     * Two ways in, both about an order we actually issued: the exact line the hand-over
+     * prescribes, or — for an agent that reworded it — the exact path of an order that is still
+     * open. Talking *about* work orders matches neither.
+     */
     function isWorkText(text) {
-      return typeof text === "string" && (text.includes(WORK_MARK) || text.includes(`${retroDir}/work/`))
+      if (typeof text !== "string") return false
+      if (text.trimStart().startsWith(`${WORK_MARK}: read `)) return true
+      return state.openOrders().some((o) => text.includes(workPath(o.session)) || text.includes(workName(o.session)))
     }
 
     /**

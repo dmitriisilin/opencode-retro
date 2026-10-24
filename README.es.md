@@ -1,4 +1,4 @@
-<!-- translated-from: README.en.md@3c3ce00d61de -->
+<!-- translated-from: README.en.md@5623be199291 -->
 # opencode-retro
 
 [Русский](README.md) | [English](README.en.md) | [简体中文](README.zh-CN.md) | **Español** | [日本語](README.ja.md)
@@ -230,7 +230,7 @@ Que un hook se registre no demuestra nada. Un hook registrado con un nombre que 
 
 Por eso `.retro/selfcheck.md` informa de que está vivo, no de que está instalado: compara lo que vio el flujo de eventos con lo que recibieron los hooks. El archivo lleva su propia regla de caducidad:
 
-> Si hay trabajo en curso y `heartbeat` tiene más de unos pocos minutos, el plugin no está en marcha.
+> **Si estás trabajando ahora mismo y `heartbeat` tiene más de unos pocos minutos, este plugin no está en marcha.**
 
 Esas comprobaciones se ejecutan en cada revisión y no cuestan nada: la superficie de API de la que el plugin depende, qué capa de prompts está vigente y qué hay esperando, bajo un encabezado que nombra las versiones del plugin y de OpenCode. Si un análisis llega a buen puerto no se pregunta por separado: cada `/retro` lo ejercita, y una orden que volvió sin respuesta se informa por lo que fue.
 

@@ -359,9 +359,9 @@ function renderStock({
     // transcripts nothing will ever read, and the file whose job is to report the stock
     // does not mention them.
     lines.push(
-      `- ${setAside} log${setAside === 1 ? "" : "s"} given up on after three failed analyses — still in ` +
-        "`sessions/`, and nothing will read them. `plugin.log` says why each one failed; a work " +
-        "order nobody answered is the usual reason.",
+      `- ${setAside} log${setAside === 1 ? "" : "s"} the plugin could not read three times — still in ` +
+        "`sessions/`, and nothing will read them unless they grow. `plugin.log` says why each one " +
+        "failed: a file that could not be opened or parsed, or a work order that could not be written.",
     )
   }
   if (failing) {
@@ -369,9 +369,9 @@ function renderStock({
     // yet", which sends the reader to run `/retro` again without telling them it already ran
     // and why it did not work.
     lines.push(
-      `- ${failing} log${failing === 1 ? "" : "s"} whose analysis failed — asked for again on the next ` +
-        "`/retro`, and given up on after three. `plugin.log` says why — usually an order that " +
-        "was issued and never answered, so no subagent recorded anything for it.",
+      `- ${failing} log${failing === 1 ? "" : "s"} the plugin could not read — tried again on the next ` +
+        "`/retro`, and set aside after three. `plugin.log` says why: a file that could not be " +
+        "opened or parsed, or a work order that could not be written.",
     )
   }
   if (unanswered) {
@@ -471,7 +471,7 @@ export async function activeCheck({ ctx, config, prompts, store }) {
           // Whether it was edited, not only which layer it came from: a user who changes the
           // criteria needs to see that the change is in force, and the layer reads the same
           // either way.
-          detail: `${prompt.layer} (base ${prompt.base ?? "?"}${prompts.isEdited?.("extract") ? ", edited here" : ""})`,
+          detail: `${prompt.layer} (base ${prompt.base ?? "?"}${prompts.isEdited?.("extract") === true ? ", edited" : ""})`,
         }
       : { status: BROKEN, name: "extract prompt", detail: "could not be resolved at any layer" },
   )

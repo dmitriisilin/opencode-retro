@@ -14,8 +14,11 @@ nothing is sent. When there was nothing to analyse, `/retro` delivers it with
 person happened to type something.
 
 **Logging our own text.** Either way the hand-over is written into the session's log as a
-`handover` record, with `about` saying which of the two it is: `work` for a request for
-analyses, `lesson` for a lesson put to the human. A synthetic has to be logged because it
+`handover` record, with `about` saying what it is: `work` for a request for analyses,
+`lesson` for a lesson put to the human, `notice` for anything else the plugin says — "nothing
+to review", a command that failed. Only `lesson` means the work that follows is a review: a
+notice logged as a lesson would have the next analysis discount real friction as the review of
+a lesson nobody was handed (pre-release review). A synthetic has to be logged because it
 does not fire the prompt hook, and the log would otherwise show the work with the instruction
 behind it missing (log.md). A tool result has to be logged for a different reason: the
 extraction contract tells an analysis that work following a `handover` with

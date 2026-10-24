@@ -236,3 +236,17 @@ test("an edited prompt is reported as edited, not only as the layer it came from
   writeFileSync(live, readFileSync(live, "utf8") + "\nAlso: never report on src/legacy.js.\n")
   assert.equal(prompts.isEdited("extract"), true, "and an edit is visible")
 })
+
+test("an untouched prompt is not called edited after a newer default ships", () => {
+  // Pre-release review: `isEdited` compared the live file with the *current* default, so after
+  // any release that changed a default every untouched seeded prompt reported "edited". The
+  // plugin no longer has the text the file started as, so it says nothing rather than guess.
+  const dir = mkdtempSync(join(tmpdir(), "retro-upgraded-"))
+  const prompts = createPrompts({ dir: join(dir, "prompts"), updates: join(dir, "prompts", "updates") })
+  prompts.seed("extract")
+  const live = join(dir, "prompts", "extract.md")
+  // As if it had been seeded from an older default: same body, an older base.
+  writeFileSync(live, readFileSync(live, "utf8").replace(/^base: \d+$/m, "base: 1"))
+
+  assert.equal(prompts.isEdited("extract"), null, "unknown, not edited")
+})

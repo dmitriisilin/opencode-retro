@@ -19,11 +19,13 @@ export const OUTPUT_CONTRACT = `
 ## How to answer
 
 Call the \`retro_record\` tool exactly once, with \`session\` set to the session id at the
-top of this file and \`lessons\` set to what you found:
+top of this file, \`lessons\` set to what you found, and \`through\` set to the last step
+number you actually read:
 
 \`\`\`json
 {
   "session": "ses_…",
+  "through": 42,
   "lessons": [
     {
       "id": "short-kebab-case-slug",
@@ -79,9 +81,11 @@ Rules:
 - Work that follows a \`handover\` step with \`"about": "lesson"\` and checks or applies the
   lesson it handed over is the review of that lesson, not the problem happening again: do not
   report it as a recurrence, and do not count its steps as cost. Counting it would make every
-  lesson that gets reviewed look more important for having been reviewed. (A \`handover\` with
-  \`"about": "work"\` is this plugin asking for an analysis — it says nothing about the
-  session, and whatever follows it is ordinary work.)
+  lesson that gets reviewed look more important for having been reviewed. Only
+  \`"about": "lesson"\` means that. A \`handover\` with \`"about": "work"\` is this plugin
+  asking for an analysis, and one with \`"about": "notice"\` is this plugin saying something
+  else — nothing to review, a command that failed. Neither says anything about the session,
+  and whatever follows them is ordinary work.
 - \`proposal\` is optional. Omit it, or use \`null\`, when you can name the problem but not
   the fix — that is a normal and useful answer.
 - \`ask\` is optional and is for when the fix depends on something only the human knows.

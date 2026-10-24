@@ -1867,7 +1867,7 @@ test("an entry that used its three attempts is retired and reported, not skipped
   assert.match(fake.synthetic[0].text, /ses_crashed.*given up after three failed analyses/, "and said out loud")
   assert.equal(fake.generated.length, 0, "without spending anything on it")
   const report = readFileSync(join(directory, ".retro", "selfcheck.md"), "utf8")
-  assert.match(report, /1 log given up on after three failed analyses/, "and the stock section names it")
+  assert.match(report, /1 log the plugin could not read three times/, "and the stock section names it")
 
   await cleanup?.()
 })
@@ -2188,7 +2188,7 @@ test("a successful read clears the failed-read flag the mark was carrying", asyn
   await fake.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
 
   assert.equal(savedState(directory).looked[session].failed, true, "the failure is on the mark, not only in the counter")
-  assert.match(readFileSync(join(directory, ".retro", "selfcheck.md"), "utf8"), /analysis failed/)
+  assert.match(readFileSync(join(directory, ".retro", "selfcheck.md"), "utf8"), /the plugin could not read/)
 
   // The session is picked up again; the next read succeeds while it works.
   fake.emit({ type: "session.execution.started", durable: { seq: 40 }, data: { sessionID: session } })
@@ -2210,7 +2210,7 @@ test("a successful read clears the failed-read flag the mark was carrying", asyn
   const mark = savedState(directory).looked[session]
   assert.equal(mark.failed, undefined, "a successful read is not still a failure")
   const report = readFileSync(join(directory, ".retro", "selfcheck.md"), "utf8")
-  assert.doesNotMatch(report, /whose analysis failed/, "the report describes the last read, not the first")
+  assert.doesNotMatch(report, /the plugin could not read/, "the report describes the last read, not the first")
 
   await cleanup?.()
 })
@@ -2398,7 +2398,7 @@ test("a log given up on and then grown is not reported as beyond reading", async
   await fake.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
 
   const report = readFileSync(join(directory, ".retro", "selfcheck.md"), "utf8")
-  assert.doesNotMatch(report, /given up on after three failed analyses/, "it is owed, not given up on")
+  assert.doesNotMatch(report, /could not read three times/, "it is owed, not given up on")
   assert.match(report, /not analysed yet/, "what is true is that the new material is still owed")
   await cleanup?.()
 })

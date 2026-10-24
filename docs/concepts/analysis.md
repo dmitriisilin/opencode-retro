@@ -151,8 +151,11 @@ the plugin's bookkeeping never turns into a lesson about the plugin.
   `a record for a log replaced since its order is refused`
 - A record with no lessons is an answer: the log is read, and the session went straight.
   `a record with no lessons settles the log as read`
-- A record that arrives after its round was closed is still applied, and the attempt the
-  log was charged is given back — unless its log was replaced since.
+- A record that arrives after its round was closed is still applied — unless its log was
+  replaced since. (A limit, not an invariant: if another `/retro` has already issued a new
+  order for the same log, the late record satisfies the new one, and the new reader's record
+  is then refused. Reaching it takes an early `retro_propose`, a second `/retro` and a slow
+  reader still running at once; the cost is one analysis done again, never a lost log.)
   `a record that arrives after its round was closed is still recorded`
   `a record is refused once its log was replaced, even if its round is still closeable`
 - An order not answered by the next `/retro` is reported with how many times the log has been

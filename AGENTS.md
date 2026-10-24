@@ -462,7 +462,7 @@ wanted, it is a new decision and needs the hash to go with it.*
 
 Whether the file was edited is still worth **knowing**, and that is what the self-check
 answers, by comparing the live body with the current default's rather than with a stored
-hash: `extract prompt  project (base 5, edited here)`. A person who changes their criteria
+hash: `extract prompt  project (base 5, edited)`. A person who changes their criteria
 needs to see the change is in force, and the layer alone reads the same either way.
 
 Updates accumulate like release notes and are never applied on the user's behalf. We never
@@ -813,7 +813,7 @@ checkout — then run `/retro`.
 
 ## Checked
 
-- ok              extract prompt  project (base 5, edited here)
+- ok              extract prompt  project (base 5, edited)
 
 ## Notes
 
@@ -1007,6 +1007,13 @@ Known, listed so nobody discovers them as surprises:
   recovery for a log that is owed for ever and therefore never prunable, and over the horizon
   this plugin is for, what matters is that the next session works rather than that no session
   is ever lost. Not to be relitigated without a case from a real workspace.
+- A late record satisfies whichever order is open for its log. If another `/retro` has already
+  issued a new order for the same log, the old reader's record closes the new order and the
+  new reader's record is refused. It takes an early `retro_propose`, a second `/retro` and a
+  slow reader still running at once, and the cost is one analysis done again — the log is
+  never lost, because a coverage short of the new order leaves it owed. Found by the
+  pre-release review and left alone on purpose: fixing it means an order token in the schema,
+  for a case the owner has said not to build for.
 - Subagent sessions of the *user's* work are unverified — see "Still unverified".
 - The `compaction` payload is unknown, and nothing depends on it.
 - How much of a log an analysis reads is the subagent's judgement, and the plugin believes

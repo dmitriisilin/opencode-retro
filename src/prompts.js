@@ -78,11 +78,6 @@ export function createPrompts({
     },
 
     /**
-     * If our default has moved past what the live file was seeded from, drop the new
-     * default in `updates/` and return a note for selfcheck.md. The live file is never
-     * touched — not even when it looks untouched (decision 15).
-     */
-    /**
      * Whether the live prompt differs from the packaged default it was seeded from.
      *
      * Compared body to body, not against a stored hash. A user who edits a prompt has to be
@@ -94,9 +89,20 @@ export function createPrompts({
       const live = this.resolve(name)
       const packaged = defaultFor(name)
       if (!live || !packaged) return false
-      return live.text.trim() !== parseFrontmatter(packaged).body.trim()
+      const def = parseFrontmatter(packaged)
+      // Only against the default it was seeded from. Once a newer default ships the plugin no
+      // longer has the text this file started as, and comparing with the new one called every
+      // untouched file "edited" — the one false line in a file whose job is to be accurate
+      // (pre-release review). Unknown is `null`, and the report says nothing either way.
+      if (live.base == null || (def.data?.base ?? null) !== live.base) return null
+      return live.text.trim() !== def.body.trim()
     },
 
+    /**
+     * If our default has moved past what the live file was seeded from, drop the new
+     * default in `updates/` and return a note for selfcheck.md. The live file is never
+     * touched — not even when it looks untouched (decision 15).
+     */
     checkForUpdate(name) {
       const live = this.resolve(name)
       const text = defaultFor(name)

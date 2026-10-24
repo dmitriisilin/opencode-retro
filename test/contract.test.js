@@ -3,7 +3,7 @@ import assert from "node:assert/strict"
 import { readFileSync, readdirSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
-import { OUTPUT_CONTRACT, normaliseLessons, parseLessons, slug } from "../src/contract.js"
+import { OUTPUT_CONTRACT, RECORD_INPUT, normaliseLessons, parseLessons, slug } from "../src/contract.js"
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..")
 
@@ -114,4 +114,19 @@ test("a scalar step is a one-step citation, not a missing one", () => {
   const { lessons } = parseLessons(JSON.stringify({ lessons: [{ ...good, steps: 9 }] }))
   assert.deepEqual(lessons[0].steps, [9, 9], "it used to be dropped, and cost fell to 1")
   assert.equal(lessons[0].cost, 9, "the explicit cost is still the one that counts")
+})
+
+test("the example a reader copies carries every field the schema requires", () => {
+  // Pre-release scan: `through` was required by the schema and missing from the example, and
+  // from the sentence introducing it. A reader following the example to the letter is refused
+  // by OpenCode and has to go round again — it worked in every live run only because the
+  // requirement is spelled out further down, in prose. A required field the example leaves out
+  // is now a failing test rather than a second round trip.
+  const example = OUTPUT_CONTRACT.match(/```json\n([\s\S]*?)```/)[1]
+  const top = [...example.matchAll(/^  "([a-z]+)":/gm)].map((m) => m[1])
+  const intro = OUTPUT_CONTRACT.split("```json")[0]
+  for (const field of RECORD_INPUT.required) {
+    assert.ok(top.includes(field), `the example leaves out the required \`${field}\``)
+    assert.ok(intro.includes(`\`${field}\``), `the sentence introducing the call does not name \`${field}\``)
+  }
 })

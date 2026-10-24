@@ -46,7 +46,9 @@ hand-over degrades to a terse built-in text rather than to silence.
   `a prompt that cannot be seeded reports it and leaves nothing behind`
   `a seed that fails half-way leaves no partial prompt behind`
 - Resolution is project, then global, then packaged, and the report says whether the live
-  file was edited — not only which layer it came from.
+  file was edited — not only which layer it came from. "Edited" is only claimed against the
+  default it was seeded from: after a newer default ships, the plugin no longer has the text
+  the file started as, so it says nothing either way rather than call an untouched file edited.
   `resolution is project, then global, then packaged`
   `an edited prompt is reported as edited, not only as the layer it came from`
 - Only the user's prose reaches the model.

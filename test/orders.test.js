@@ -3,7 +3,7 @@ import assert from "node:assert/strict"
 import { existsSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs"
 import { parseFrontmatter } from "../src/frontmatter.js"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { isAbsolute, join } from "node:path"
 import plugin from "../index.js"
 import { fakeOpenCode } from "./fake-opencode.js"
 
@@ -84,7 +84,9 @@ test("/retro issues a work order per owed log and asks the agent to analyse them
   assert.match(handover, /Do not read the work orders yourself/, "the agent reading them itself defeats the point")
 
   for (const path of paths) {
-    const order = readFileSync(join(dir, path), "utf8")
+    // Absolute, so it opens from wherever the subagent happens to be.
+    assert.ok(isAbsolute(path), `the hand-over names the order absolutely: ${path}`)
+    const order = readFileSync(path, "utf8")
     assert.match(order, /^<!-- opencode-retro work order -->/)
     const session = (order.match(/^id: (ses_[ab])$/m) ?? [])[1]
     assert.ok(session, "each order names the session it is about")
@@ -231,7 +233,7 @@ test("an order nobody answered is reported and asked again, not held against the
   await work(fake, "ses_a")
   const first = await retro(fake)
   assert.equal(first.paths.length, 1)
-  assert.equal(existsSync(join(dir, path0(first))), true, "the order is on disk while it is open")
+  assert.equal(existsSync(path0(first)), true, "the order is on disk while it is open")
 
   // The agent never started a subagent, or they all died. The next command settles the round.
   const second = await retro(fake)
@@ -481,5 +483,149 @@ test("the proposal retro_propose returns is written into the session's log", asy
 
   // And it is logged, not sent: the agent already has it as the tool's result.
   assert.deepEqual(fake.synthetic.filter((s) => s.via === undefined), [], "nothing was delivered twice")
+  await cleanup?.()
+})
+
+test("talking about work orders does not stop a session being logged", async () => {
+  // Pre-release review: recognising the plugin's own subagents matched any text containing
+  // `.retro/work/` or the mark, and a match marks a session as ours for good — every later
+  // prompt and tool call of it dropped from the log. A person who asked their own agent what
+  // was in `.retro/work/` silently stopped being logged from that moment.
+  const dir = sandbox()
+  const fake = fakeOpenCode({ directory: dir, agent: false })
+  const cleanup = await plugin.setup(fake.ctx)
+
+  await work(fake, "ses_user")
+  await retro(fake) // an order is open now, so the path exists to be talked about
+  await fake.hooks.get("session.prompt")({
+    sessionID: "ses_user",
+    messageID: "m9",
+    prompt: { text: "why is there an opencode-retro work order in .retro/work/ses_user.md?" },
+  })
+  await fake.hooks.get("tool.execute.before")({ sessionID: "ses_user", id: "c9", tool: "read", input: { path: "x" } })
+  await fake.hooks.get("tool.execute.after")({ sessionID: "ses_user", id: "c9", tool: "read", input: { path: "x" }, status: "completed", result: { output: "ok" } })
+
+  const records = readFileSync(logOf(dir, "ses_user"), "utf8").trim().split("\n").map((l) => JSON.parse(l))
+  assert.ok(records.some((r) => r.k === "prompt" && /why is there/.test(r.text)), "the question is logged")
+  assert.ok(records.some((r) => r.k === "tool" && r.id === "c9"), "and so is the work after it")
+  await cleanup?.()
+})
+
+test("a fresh session given the prescribed line is recognised as the plugin's own reader", async () => {
+  const dir = sandbox()
+  const fake = fakeOpenCode({ directory: dir, agent: false })
+  const cleanup = await plugin.setup(fake.ctx)
+
+  await work(fake, "ses_a")
+  const { paths } = await retro(fake)
+  await fake.hooks.get("session.prompt")({
+    sessionID: "ses_reader",
+    messageID: "r1",
+    prompt: { text: `opencode-retro work order: read ${paths[0]} and do what it says.` },
+  })
+  await fake.hooks.get("tool.execute.before")({ sessionID: "ses_reader", id: "r1", tool: "read", input: { path: paths[0] } })
+  await fake.hooks.get("tool.execute.after")({ sessionID: "ses_reader", id: "r1", tool: "read", input: { path: paths[0] }, status: "completed", result: { output: "x" } })
+
+  assert.equal(existsSync(logOf(dir, "ses_reader")), false, "the reader leaves no log of its own")
+  await cleanup?.()
+})
+
+test("only a lesson is logged as a lesson hand-over", async () => {
+  // Pre-release review: "nothing to review" and a failed command's message were both logged as
+  // `about: "lesson"`, and the contract tells an analysis that work after a lesson hand-over is
+  // the review of that lesson. Real friction after "nothing to review" would have been
+  // discounted as the review of a lesson nobody was handed.
+  const dir = sandbox()
+  const fake = fakeOpenCode({ directory: dir, agent: false })
+  const cleanup = await plugin.setup(fake.ctx)
+
+  await work(fake, "ses_a")
+  await retro(fake)
+  await record(fake, "ses_a", [], { dir }) // the session went straight
+  await propose(fake) // so there is nothing to review
+
+  const kinds = readFileSync(logOf(dir, "ses_review"), "utf8")
+    .trim()
+    .split("\n")
+    .map((l) => JSON.parse(l))
+    .filter((r) => r.k === "handover")
+    .map((r) => r.about)
+  assert.deepEqual(kinds, ["work", "notice"], "a request for analyses, then a notice — no lesson was handed over")
+  await cleanup?.()
+})
+
+test("every report of how many times a log was asked names the same number", async () => {
+  // Pre-release scan: in the same moment state.json and the hand-over said "asked 1 time" and
+  // the self-check said "up to 2 times" — it counted the order issued a moment ago, which
+  // nobody has had the chance to answer yet. One fact, two counts.
+  const dir = sandbox()
+  const fake = fakeOpenCode({ directory: dir, agent: false })
+  const cleanup = await plugin.setup(fake.ctx)
+
+  await work(fake, "ses_a")
+  for (let round = 1; round <= 4; round++) {
+    await retro(fake)
+    if (round === 1) continue // nothing has gone unanswered yet
+    const silent = round - 1
+    const times = `${silent} time${silent === 1 ? "" : "s"}`
+    assert.match(state(dir).extracted.ses_a.detail, new RegExp(`asked ${times} and no record came back`))
+    assert.match(fake.orders.at(-1).text, new RegExp(`asked ${times}`))
+    const report = readFileSync(join(dir, ".retro", "selfcheck.md"), "utf8")
+    assert.match(report, silent === 1 ? /1 log asked about with no answer —/ : new RegExp(`up to ${silent} times`), `round ${round}`)
+  }
+  await cleanup?.()
+})
+
+test("evidence is dated by the steps it cites, not by whatever came last in the log", async () => {
+  // Pre-release review: when a cited step was not in the log, the date fell back to the newest
+  // record. In a session left open across a decision that is after the decision, so pre-fix
+  // evidence reopened the accepted lesson as "the fix did not hold".
+  const dir = sandbox()
+  const fake = fakeOpenCode({ directory: dir, agent: false })
+  const cleanup = await plugin.setup(fake.ctx)
+
+  await work(fake, "ses_first")
+  await retro(fake)
+  await record(fake, "ses_first", [LESSON], { dir })
+  await fake.tools.get("retro_decide").execute({ id: LESSON.id, status: "accepted", note: "fixed" }, { sessionID: "ses_review" })
+  const decided = Date.now()
+
+  // A session whose friction happened before the decision and whose log goes on after it.
+  writeFileSync(
+    logOf(dir, "ses_spanning"),
+    [
+      { v: 1, n: 1, t: decided - 3_600_000, k: "prompt", text: "do a thing" },
+      { v: 1, n: 2, t: decided - 3_500_000, k: "tool", id: "c1", tool: "shell", input: { command: "npx eslint ." }, status: "completed", exit: 2 },
+      { v: 1, n: 3, t: decided + 3_600_000, k: "text", text: "carried on long after" },
+    ]
+      .map((r) => JSON.stringify(r))
+      .join("\n") + "\n",
+  )
+  await retro(fake)
+  // The reader cites the friction, with an upper bound the log does not have.
+  const result = await record(fake, "ses_spanning", [{ ...LESSON, steps: [2, 99] }], { dir })
+
+  assert.match(result.output.detail, /already fixed before this session ran/)
+  assert.equal(existsSync(join(dir, ".retro", "lessons", `${LESSON.id}.md`)), false, "the accepted lesson stays closed")
+  await cleanup?.()
+})
+
+test("nothing to review still says how many logs were analysed to find that out", async () => {
+  // Pre-release review: "Nothing to review" reads the same after five analyses as after none.
+  // The line that says "Analysed N session logs just now" was still in the renderer, but since
+  // the analysis moved into subagents nothing fed it a number.
+  const dir = sandbox()
+  const fake = fakeOpenCode({ directory: dir, agent: false })
+  const cleanup = await plugin.setup(fake.ctx)
+
+  await work(fake, "ses_a")
+  await work(fake, "ses_b")
+  await retro(fake)
+  await record(fake, "ses_a", [], { dir })
+  await record(fake, "ses_b", [], { dir })
+  const handed = await propose(fake)
+
+  assert.match(handed.content, /Nothing to review/)
+  assert.match(handed.content, /Analysed 2 session logs just now, with nothing to learn from them/)
   await cleanup?.()
 })

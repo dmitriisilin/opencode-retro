@@ -226,7 +226,7 @@ A registered hook proves nothing. A hook registered under a name the API no long
 
 `.retro/selfcheck.md` therefore reports liveness rather than setup, by comparing what the event stream saw against what the hooks received. It carries its own staleness rule:
 
-> If work is in progress and `heartbeat` is more than a few minutes old, the plugin is not running.
+> **If you are working right now and `heartbeat` is more than a few minutes old, this plugin is not running.**
 
 Those checks run on every review and cost nothing: the API surface the plugin depends on, which prompt layer is in force, and what is waiting, under a header naming the plugin and OpenCode versions. Whether an analysis gets through is not asked separately — every `/retro` exercises it, and an order that came back unanswered is reported as what it was.
 
