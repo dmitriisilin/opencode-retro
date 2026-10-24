@@ -22,7 +22,7 @@ Motivating example: a project carries a `lint` skill borrowed from another harne
 
 1. **Name:** `opencode-retro` (retrospective). npm name reserved by `dmitriisilin`. "loop" was rejected: in the OpenCode ecosystem `/loop` already means recurring prompts / Ralph loops.
 2. **v2 only.** No v1 compatibility layer.
-3. **Shadow log.** Plugin writes its own append-only log of every tool call and prompt to `.opencode/retro/sessions/<sessionID>.jsonl` in real time. No LLM, no batching. We do *not* depend on session history surviving compaction.
+3. **Shadow log.** Plugin writes its own append-only log of every tool call and prompt to `.retro/sessions/<sessionID>.jsonl` in real time (not under `.opencode/` — see the layout section for why). No LLM, no batching. We do *not* depend on session history surviving compaction.
 4. **No detectors in front of the model.** There were three — `repeat`, `revert`, `skill-failure` — marking suspicious step ranges in the prompt. They are gone, and `fixtures/ab-anchors/` is why: given the same log, the model found the same lessons with them and without. What they encoded was never really detection, it was *guidance about what to look for*, and guidance belongs in `prompts/extract.md`, where the user can read it, disagree with it and change it — not in 196 lines of JavaScript that decide in advance what the model is allowed to notice. So the signals the detectors knew are now prose in that prompt: a call repeated with nothing changed between attempts, an edit undone, a skill followed into a dead end, a non-zero exit hiding behind a "completed" status, a task quietly dropped, a correction the user had to repeat. Stated as a place to start, explicitly not a checklist. The one mechanical thing left is a cost guard: one prompt and no tool calls at all, and no work order is written — which claims nothing about the session, only that there is nothing in it to read. A conversation with no tool calls *is* analysed, because a wrong instruction file shows up exactly there: a wrong answer and a correction, with nothing executed.
 5. **Extraction runs when asked, in a clean context — and the plugin does not perform it.** `/retro` writes a **work order** per owed log (`.retro/work/<session>.md`: the criteria, which log to read and which part of it is new, the lesson lists, how to answer) and asks the agent in the session it was run in to start one subagent per order. Each subagent opens the log the order names, and answers by calling `retro_record`; when the records are in, the agent calls `retro_propose`. The order points at the log rather than carrying a rendering of it — see "The budget was the last thing left over from one model call". Core question unchanged: *"If this session were run again, what should change so it goes shorter and straighter?"* The clean context is still the point — a subagent was not in the session it reads and has nothing of its own to defend — but it now comes from OpenCode's own agent loop rather than from a session the plugin builds. **When** it runs is still a deliberate choice: see "When the analysis runs".
    *Replaces one `session.generate` call in a session of the plugin's own, with a model and a variant the plugin picked. Three things were wrong with it, and only the third was visible at the time. (a) That call returns `{ text }` and nothing else — no finish reason, no usage — so a reasoning model that spent its whole output on reasoning came back empty with no way to see why, and it took a probe against the provider's own API to find out (Gotcha 17). (b) The plugin had to choose a model and a variant, which meant an option, a fallback chain, a workspace default, a remedy to name when all of them came up empty, and a `none` variant that does not mean the same thing on every provider. (c) It had to bound the call itself, because a hang wedged whatever guarded it (Gotcha 11). All three are now OpenCode's problem, which is the right place for them: a subagent runs with the agent loop, the tools, the retries and the model of the session that asked for it. What the plugin gives up is control over the analysis model — the work is billed where the work happens — and that was never worth the three mechanisms it cost.*
@@ -33,8 +33,8 @@ Motivating example: a project carries a `lint` skill borrowed from another harne
 10. **Lessons are always local to the workspace. There is no such thing as a global lesson.** A lesson is evidence from sessions in one project, so it lives in that project and nowhere else — this is by design, not a stage we grow out of. What *can* be global is the **target of the proposed change**: some friction is about this repository (a skill that does not fit it, an `AGENTS.md` claim that is not true here), and some is about how the person works everywhere (how they deal with Jira, how they want branches named, a convention they carry between projects). The first belongs in the project's harness, the second in the user's global harness — `~/.config/opencode/AGENTS.md`, a global skill. Choosing between them is an integration decision, made when a lesson is handed over, by the agent and the human looking at what the lesson actually says. Not a storage question, and not something the plugin decides. *Replaces an earlier version of this decision that had lessons themselves being promoted to global scope after recurring in ≥2 workspaces. That model was wrong: it would have required a global lesson store, a cross-workspace index and a way to match the same problem across repositories, all to answer a question that belongs to the proposal rather than to the lesson.*
 11. **Autonomy ladder L0–L3.** v1 target is L1, and `/retro all` is the step that makes the rest reachable: the same lessons, the same currency checks, the same `retro_decide` bookkeeping, but batched into one plan a human approves once instead of a decision per lesson. The ladder from here is about how much of that plan runs without being asked, not about new machinery. Promotion between levels is to be driven by accept/reject stats, later.
 12. **Not a memory plugin.** We edit artifacts the harness already reads; we don't build a knowledge base the agent must remember to query.
-13. **The prompts live in the user's project, not in the package.** Two of them, in `.retro/prompts/`: `extract.md` (what counts as a lesson) and `propose.md` (what the agent treats as its job when a lesson is handed over — check currency, relay, touch nothing before a decision, record the outcome). The package ships defaults; on first run each missing one is copied in. Resolution order: project → global (`~/.config/opencode/retro/prompts/`) → packaged default → a terse built-in fallback, so a deleted file degrades rather than going silent. `options` can override the directory and the extractor model. *Narrowed in M3 to one prompt on the reasoning that there was no application step to drive, then restored: the hand-over texts do not drive the application, but they do decide what the agent considers its job, which is exactly the semantics worth iterating on in practice.* *Named `review.md` and `review-auto.md` until the owner pointed out that "review" says nothing: the file decides how a lesson is put to a human, and the plugin stops there, so `propose` is what it does — a verb, in a pair with `extract`.* **And there is one rule, not one per command.** `propose-all.md` was the same judgement rewritten shorter — currency, where the fix belongs, local or global, change nothing before a decision, record the outcome — which is two copies of one rule: one the user edits, and one that silently disagrees with it. What a batch actually needs from the rule is nothing, and what it adds is only the shape of the answer (one plan, grouped by file, the dropped ones named, globals separately), so that is a conditional section at the end of the same file. Both commands send the same rule. The alternative — putting the batch shape in source, next to the output contract — was rejected because it is judgement, and judgement belongs in a file the user can argue with. Nothing is published yet, so there is no migration: resolution is by name, and a file left under an old name is simply never read.*
-14. **The prompts are editable; the machine parts are compiled in.** The project files are entirely the user's — criteria, emphasis, project-specific wording. The output format the parser needs lives in the plugin's source and is wrapped around the prompt at call time. It is never written to disk, so it cannot be edited away by accident, and the prompt file has no "do not touch" region in it. It is `OUTPUT_CONTRACT` in `src/contract.js` for anyone who wants to read it, and the seeded prompt says in one line that it is appended and is not part of the file. *This used to say `/retro check` prints it. That command was removed and this sentence was not, so the brief sent people to a command the same file says further down is gone — found by the extractor reading a session log, not by the audit.*
+13. **The prompts live in the user's project, not in the package.** Two of them, in `.retro/prompts/`: `extract.md` (what counts as a lesson) and `propose.md` (what the agent treats as its job when a lesson is handed over — check currency, relay, touch nothing before a decision, record the outcome). The package ships defaults; on first run each missing one is copied in. Resolution order: project → global (`~/.config/opencode/retro/prompts/`) → packaged default → a terse built-in fallback, so a deleted file degrades rather than going silent. `options` can override the directories. *Narrowed in M3 to one prompt on the reasoning that there was no application step to drive, then restored: the hand-over texts do not drive the application, but they do decide what the agent considers its job, which is exactly the semantics worth iterating on in practice.* *Named `review.md` and `review-auto.md` until the owner pointed out that "review" says nothing: the file decides how a lesson is put to a human, and the plugin stops there, so `propose` is what it does — a verb, in a pair with `extract`.* **And there is one rule, not one per command.** `propose-all.md` was the same judgement rewritten shorter — currency, where the fix belongs, local or global, change nothing before a decision, record the outcome — which is two copies of one rule: one the user edits, and one that silently disagrees with it. What a batch actually needs from the rule is nothing, and what it adds is only the shape of the answer (one plan, grouped by file, the dropped ones named, globals separately), so that is a conditional section at the end of the same file. Both commands send the same rule. The alternative — putting the batch shape in source, next to the output contract — was rejected because it is judgement, and judgement belongs in a file the user can argue with. Nothing is published yet, so there is no migration: resolution is by name, and a file left under an old name is simply never read.*
+14. **The prompts are editable; the machine parts are compiled in.** The project files are entirely the user's — criteria, emphasis, project-specific wording. The output format lives in the plugin's source and is written into each work order after the user's prose — never into the prompt file, so it cannot be edited away by accident, and the prompt file has no "do not touch" region in it. It is `OUTPUT_CONTRACT` in `src/contract.js` for anyone who wants to read it, and the seeded prompt says in one line that it is appended and is not part of the file. *This used to say `/retro check` prints it. That command was removed and this sentence was not, so the brief sent people to a command the same file says further down is gone — found by the extractor reading a session log, not by the audit.*
 15. **New defaults arrive as news, never as changes.** One live file per prompt, seeded from our default, carrying `base` (the default's version) in frontmatter. We never write to it again — not even when the user has not touched it. A newer default lands in `updates/extract.v3.md` beside the live prompts — `.retro/prompts/updates/` by default, and inside an overridden `options.prompts` when there is one, since a notice written to the directory the user just stopped using is a notice nobody sees — headed by a statement that *this file is not used*, that the live file is what runs, and that if they have their own version they should keep it and consider adapting it to what changed. Named in `selfcheck.md` so it is not just a file in a directory nobody opens. Updates accumulate like release notes; deleting them is the user's call. Rejected alternative: shipping a default file plus a user override file. It forces the user to know what the default said before they can write a meaningful override, makes partial overrides ambiguous, and gives two sources of truth for one prompt.
 15.1. **The decision is the third artifact, and it records the work, not the proposal.** Raw log, lesson, decision — and the decision is where `retro_decide` writes what actually happened: `status`, `note`, `decidedIn` (the session it was decided in, which is where the conversation that produced the decision can still be read), the files really changed (`changed`, often not the ones the lesson named), and `discovered`, anything the work turned up that is not in the lesson. That last field exists because the review produces knowledge the log never contained — in one live run the agent found that deleting a skill would leave an `AGENTS.md` line pointing at nothing, which was in neither the lesson nor the proposal. Without recording it, that disappears when the session ends, and the accept/reject record that decision 11 wants autonomy to be earned from is too thin to learn from.
 16. **A lesson is checked for currency before it is proposed.** A lesson can sit for weeks, and by the time anyone looks the thing it complains about may be fixed, moved or gone. Proposing a fix for a problem that no longer exists wastes the attention this plugin exists to save. So `/retro` runs a cheap deterministic check first — is the target file gone, or changed since the lesson was recorded (a content fingerprint taken at extraction time) — and when it has, the proposal carries that warning at the top. It never decides on its own: a changed file is a reason to look, not proof. The other half is the agent receiving the proposal, which is told to verify the claims against the repository before relaying them, and does it well.
@@ -478,7 +478,6 @@ is also the patch to propose back upstream.
       "package": "opencode-retro",
       "options": {
         "dir": ".retro",                                  // where everything lives
-        "model": { "providerID": "deepseek", "id": "deepseek-flash" },  // extractor model
         "prompts": "./prompts"                            // override the prompt directory
       }
     }
@@ -748,7 +747,7 @@ Evaluated from the first prompt of a session and again when it ends, written int
 | Check | Assertion | What a failure means |
 |---|---|---|
 | prompt hook | a session that ran at all produced ≥1 `session.prompt` — a session whose only input was a `/retro` hand-over proves nothing, because `session.synthetic` does not fire this hook | the prompt hook is dead |
-| tool hook | once the session has ended, `session.tool.called` events seen ⇒ at least as many `tool.execute.after` hook calls (counts, not ids: an interrupted call has an event and no after-hook, and that is not a dead hook); while it runs, a shortfall is just calls still in flight | the tool hook is dead, or the payload shape moved |
+| tool hook | once the session has ended, `session.tool.called` events seen ⇒ at least as many `tool.execute.after` hook calls, counting the plugin's own calls whose hooks it drops on purpose (counts, not ids: an interrupted call has an event and no after-hook, and that is not a dead hook); while it runs, a shortfall is just calls still in flight | the tool hook is dead, or the payload shape moved |
 | shadow log | the session's `.jsonl` exists and is non-empty | writing is broken (permissions, path) |
 | trigger | the end-of-session event arrived | our extraction trigger is gone |
 | extraction | ran, and produced either lessons or an explicit "nothing to learn" | the model call or the output contract broke |
@@ -801,21 +800,25 @@ is not running.** Nothing else will tell you: OpenCode does not report a plugin 
 to load. Check that `opencode.json` still names the plugin — an absolute path if you run a
 checkout — then run `/retro`.
 
-## Last session — ses_eabb21faaffeVlcHi1DAhqgq1p
+## Is it working
 
 - ok              prompt hook     3 prompts seen
-- ok              tool hook       12 tool-call events / 12 hook calls
+- ok              tool hook       12 tool-call events seen, 10 reached the hook, 2 were our
+                                  own and not logged
 - ok              shadow log      sessions/ses_eabb21.jsonl, 47 entries
 - ok              trigger         session.execution.succeeded
-- DEGRADED        extraction      no record came back from its analysis
-                                  → no lessons from this session. The subagents have to
-                                    finish and call retro_record before retro_propose;
-                                    the next /retro asks again.
+- DEGRADED        extraction      asked 2 times and no record came back
+                                  → no lessons from this session yet, and nothing is held
+                                    against the log for it; the next /retro asks again.
+
+## Checked
+
+- ok              extract prompt  project (base 5, edited here)
 
 ## Notes
 
-- prompts/extract.md is locally edited (base 2). A newer default is in
-  prompts/updates/extract.v3.md. Nothing was changed for you.
+- prompts/updates/extract.v6.md is a newer default waiting to be read. Nothing was changed
+  for you.
 ```
 
 Every failing line carries what broke and what to do about it, next to each other. The
@@ -924,7 +927,7 @@ understood is just a diagnostic that was written badly.
       into `index.js`. The copy could not survive the documented release: `npm version` commits
       only `package.json`, and the publish workflow did not run the suite, so a tag would have
       shipped a self-check reporting the previous version. A test still asserts the two agree.
-**M5 — the analysis moves out of the plugin** (387 tests; not yet exercised live)
+**M5 — the analysis moves out of the plugin** (375 tests; run live in cycles 9–11)
 - [x] Decision 5 rewritten: `/retro` issues a work order per owed log and the agent in its
       session has each read by a subagent. `composeOrder` and `recordAnswer` in
       `src/extract.js` are the plugin's two halves of an analysis; it makes no model call.
@@ -932,7 +935,8 @@ understood is just a diagnostic that was written badly.
       `src/contract.js` as the machine half of the output contract. OpenCode enforces it, so
       a malformed answer is refused with a reason instead of parsed.
 - [x] Orders are state on disk (`state.issue / orderOf / openOrders / close`), so a round
-      whose process died leaves orders the next command settles as a failed attempt.
+      whose process died leaves orders the next command settles — reporting the asking and
+      asking again, never holding it against the log.
 - [x] Gone with the call they served: `options.model`, `extractTimeoutMs`, `asyncExtract`,
       the variant choice, the model-resolution chain, the empty-reply retry, and
       `session.create / generate / remove` from the required surface.
@@ -1012,9 +1016,8 @@ Known, listed so nobody discovers them as surprises:
   stays open and comes back next time with the currency check noting that its target has
   changed — recoverable, but it is the one step the plugin cannot do for itself.
 - Whether the agent answers every order is prompted, not enforced, for the same reason. An
-  order nobody answers is charged as a failed attempt and reported, so this degrades rather
-  than going silent — but three abandoned rounds retire a log that nothing was ever wrong
-  with.
+  order nobody answers is reported with how many times it has been asked and asked again, so
+  this degrades visibly rather than going silent; it is never held against the log.
 
 ## Dev environment
 
@@ -1031,7 +1034,7 @@ Known, listed so nobody discovers them as surprises:
   A clone therefore loads no plugin until you write one:
 
   ```jsonc
-  { "plugins": [{ "package": "/abs/path/to/opencode-retro", "options": { "model": { "providerID": "…", "id": "…" } } }] }
+  { "plugins": [{ "package": "/abs/path/to/opencode-retro" }] }
   ```
 - **A live test can edit the plugin.** `/retro` delivers its message into a session and
   resumes it, so the agent there acts on what it was told — and if that message says the
@@ -1058,7 +1061,7 @@ Known, listed so nobody discovers them as surprises:
   a command left its name in six places in shipped code, in the seeded prompt and twice in
   every README, and nothing failed. That file checks what can be checked mechanically — every
   command named in shipped text exists, every settable option is documented in every
-  language, every record kind written to the log is rendered to the extractor, nothing
+  language, every record kind written to the log is explained in the output contract, nothing
   exported from `src/` is unreachable. Add to it whenever a claim becomes checkable.
 - **The plugin writes `.retro/.gitignore` itself**, seeded once and never rewritten. Git
   applies a `.gitignore` to the directory holding it, so everything can be decided from

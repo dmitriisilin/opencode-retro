@@ -283,7 +283,7 @@ export default {
     /**
      * The plugin's own work, kept out of every log: its subagents, the calls that start them,
      * and the calls to the tools only that work uses. Otherwise the next analysis reads the
-     * last one — a work order's projection of another session inside this one.
+     * last one — a subagent reading another session's log, inside this one.
      */
     const ownWork = (p) =>
       internal.has(p?.sessionID) ||
@@ -865,8 +865,8 @@ export default {
     }
 
     function analyseOwed(sessionID) {
-      // What the last round left unanswered is a failed attempt, decided before anything new
-      // is asked for — a round whose agent never called `retro_propose` ends here.
+      // What the last round left unanswered is settled first — reported and asked again, not
+      // held against the log — so a round whose agent never called `retro_propose` ends here.
       const failures = settleUnanswered()
 
       // A mark at three failed attempts with no outcome to say so — a state written by a

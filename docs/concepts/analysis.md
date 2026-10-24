@@ -53,11 +53,10 @@ it reaches the plugin, and the subagent is told why and can try again. A record 
 lessons is an answer — the session went straight.
 
 **Late record.** A record that arrives after its round was closed. Calling `retro_propose`
-is how the agent says the analyses are done, so an order still open then is charged as a
-failed attempt — the plugin cannot tell a subagent that died from one still reading, and
-will not guess with a clock. Which makes calling it early possible, and so a record for an
-order settled that way is still applied, against the coverage of the order it answers, and
-the attempt is given back. Only `unanswered` reopens: an order already answered must not be
+is how the agent says the analyses are done, so an order still open then is settled as
+unanswered — the plugin cannot tell a subagent that died from one still reading, and will not
+guess with a clock. Which makes calling it early possible, and so a record for an order
+settled that way is still applied, against the coverage of the order it answers. Only `unanswered` reopens: an order already answered must not be
 answered twice, and one voided because its log was replaced is about a session that is gone.
 
 **Capture clamp.** Tool output is clamped head-and-tail to `maxOutput` (8,000 characters by

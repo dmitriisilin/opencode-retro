@@ -420,9 +420,9 @@ export function createState({ path, onError, now = () => Date.now(), probe = nul
 
     /**
      * A work order issued for this session (analysis.md): the log's identity and the size it
-     * was read at, how far the order covers (`through`), the last step in it (`lastN`), the
-     * mark it was read from (`n`), and whether it is an excerpt. One per session; a newer
-     * order replaces an older one.
+     * was read at, the last step in it (`lastN`), the mark it was read from (`n`), and how many
+     * times this log has been asked about (`asked`). One per session; a newer order replaces
+     * an older one.
      */
     issue(session, order) {
       refresh()

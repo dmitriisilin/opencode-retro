@@ -276,12 +276,23 @@ export function renderWorkOrders(orders, { all = false, failures = [], left = 0 
       "in a context of its own, and records what it found with `retro_record`. When every subagent " +
       `has finished, call \`retro_propose\`${all ? " with `all: true`" : ""} and follow what it returns.`,
   ]
-  // Not "could not analyse": the plugin may not have analysed anything — it asked, and the
-  // asking is all it knows (analysis.md, "Unanswered"). A failure it saw itself says so in
-  // its own detail.
-  for (const f of failures) lines.push("", `_From the last round, \`${f.session}\`: ${f.detail}_`)
+  for (const f of failures) lines.push("", `_${failureLine(f)}_`)
   if (left > 0) lines.push("", backlogLine(left))
   return lines.join("\n")
+}
+
+/**
+ * One line about one log the last round did not get an answer for, or could not read.
+ *
+ * One function, because there were three. The same failure was rendered by the work-order
+ * hand-over, by the proposal and by the "nothing to review" message, each in its own words —
+ * and when the words had to change, cycle 10 fixed two of the three and cycle 11 found the
+ * third still saying "Could not analyse" about a log nobody had tried to analyse. Not "could
+ * not analyse", either: the plugin may not have analysed anything — it asked, and the asking
+ * is all it knows (analysis.md, "Unanswered"). A failure it saw itself says so in its detail.
+ */
+export function failureLine(f) {
+  return `opencode-retro on \`${f.session}\`: ${f.detail}`
 }
 
 export function renderFailures(extracted) {
@@ -289,7 +300,7 @@ export function renderFailures(extracted) {
   if (!failures.length) return ""
   return (
     failures
-      .map((f) => `_opencode-retro on \`${f.session}\`: ${f.detail}_`)
+      .map((f) => `_${failureLine(f)}_`)
       .join("\n") + "\n\n"
   )
 }
@@ -298,7 +309,7 @@ export function renderNothing({ queued = 0, extracted = null, dir = DEFAULTS.dir
   const failures = extracted?.failures ?? []
   const lines = ["# retro", "", "Nothing to review."]
   for (const f of failures) {
-    lines.push("", `Could not analyse \`${f.session}\`: ${f.detail}`)
+    lines.push("", failureLine(f))
   }
   if (extracted?.analysed) {
     lines.push("", `Analysed ${extracted.analysed} session log${extracted.analysed === 1 ? "" : "s"} just now, with nothing to learn from ${extracted.analysed === 1 ? "it" : "them"}.`)

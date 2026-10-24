@@ -7,7 +7,9 @@ runs, by the plugin and nobody else. It is the raw material — the only account
 session did that does not depend on the session's own history surviving compaction.
 
 **Record.** One line, with `k` naming its kind: `prompt`, `handover`, `tool`, `text`,
-`step`, `session`. Every record the plugin can write has a rendering in the projection.
+`step`, `session`. Every kind the plugin can write is explained to the reader in the
+output contract, because an analysis reads the log itself — a kind nothing explains is a kind
+nobody can interpret.
 
 **Owner.** The session a record is written under: the root of the delegation chain.
 

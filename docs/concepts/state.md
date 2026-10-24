@@ -27,7 +27,8 @@ session wins, issued or answered, whoever wrote it. An answered order is kept as
 rather than deleted, so a writer that still holds the open one cannot bring it back by
 saving after the answer. An order outlives the process that issued it on purpose — a `/retro`
 whose process died left orders nobody will answer, and the next command has to be able to
-settle them as a failed attempt rather than wait for an answer for ever.
+settle them — report how many times the log was asked about, and ask again — rather than wait
+for an answer for ever. Settling one concludes nothing about the log (analysis.md).
 
 **Tombstone.** A deliberate removal the data cannot otherwise express, kept so a merge does
 not bring the thing back: `uncounted`, a session that turned out to be a delegation. It has

@@ -30,7 +30,8 @@ still yields a usable layout.
 
 **Capture clamp.** `maxOutput` applies when a tool result is *captured*: the head and the
 tail are kept and a notice says how much of the middle went, unless the notice would
-cost more than it saves. This happens before projection, which trims again.
+cost more than it saves. It is the one place the plugin decides what an analysis can see,
+and it decides it once, when the record is written (analysis.md, "Capture clamp").
 
 **The project's git.** The plugin writes `.retro/.gitignore` once and never again. Git
 applies it to the directory holding it, so the decision is made inside the one directory

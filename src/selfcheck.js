@@ -231,9 +231,10 @@ export function assess(session) {
       name: "extraction",
       detail: x.detail,
       meaning:
-        "no lessons from this session yet; the next `/retro` asks again, three times in all. " +
-        "`plugin.log` says why. The usual reason is an order nobody answered: the subagents " +
-        "have to finish and call `retro_record` before `retro_propose` is called.",
+        "no lessons from this session yet, and nothing is held against the log for it; the " +
+        "next `/retro` asks again. `plugin.log` says why. The usual reason is an order nobody " +
+        "answered — a hand-over waiting in the inbox of a session that is still working, or " +
+        "subagents that had not called `retro_record` before `retro_propose` was called.",
     })
   }
 

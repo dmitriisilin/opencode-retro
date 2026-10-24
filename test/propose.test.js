@@ -15,6 +15,7 @@ import {
   renderNothing,
   renderProposal,
   renderWorkOrders,
+  failureLine,
 } from "../src/propose.js"
 import { createStore } from "../src/lessons.js"
 import { createState } from "../src/state.js"
@@ -119,7 +120,7 @@ test("a log that could not be read is not reported as a session that went straig
       failures: [{ session: "ses_bad", detail: "unparseable reply — the model returned nothing" }],
     },
   })
-  assert.match(text, /Could not analyse `ses_bad`/)
+  assert.match(text, /opencode-retro on `ses_bad`/)
   assert.match(text, /Analysed 1 session log just now/, "the one that was read is still reported")
   assert.doesNotMatch(text, /going straight/, "a failed read is not evidence that nothing went wrong")
   assert.match(text, /not read, so this is not a clean result/, "say what the failure means")
@@ -298,4 +299,17 @@ test("a round with several orders asks for them one at a time, and says why", ()
   const one = renderWorkOrders([{ session: "ses_a", path: ".retro/work/ses_a.md" }])
   assert.match(one, /Start one subagent per work order/)
   assert.doesNotMatch(one, /One at a time/)
+})
+
+test("every message that names a failed log names it the same way", () => {
+  // The same failure was rendered by three functions in three phrasings, and a change to the
+  // words reached two of them twice running: cycle 10 fixed the work-order hand-over and the
+  // proposal, and cycle 11 found the "nothing to review" message still saying "Could not
+  // analyse" about a log nobody had tried to analyse. One helper now, held to by this test.
+  const f = { session: "ses_bad", detail: "asked 2 times and no record came back" }
+  const line = failureLine(f)
+  assert.ok(renderFailures({ failures: [f] }).includes(line), "the proposal")
+  assert.ok(renderNothing({ extracted: { failures: [f] } }).includes(line), "nothing to review")
+  assert.ok(renderWorkOrders([{ session: "ses_x", path: ".retro/work/ses_x.md" }], { failures: [f] }).includes(line), "the work orders")
+  assert.doesNotMatch(line, /could not analyse/i, "and none of them claims an analysis that may not have happened")
 })

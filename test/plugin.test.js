@@ -736,7 +736,7 @@ test("a log that cannot be read is reported as a failure, not as a clean analysi
   await fake.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
 
   const [delivered] = fake.synthetic
-  assert.match(delivered.text, /Could not analyse `ses_vanished`/)
+  assert.match(delivered.text, /opencode-retro on `ses_vanished`/)
   assert.match(delivered.text, /shadow log could not be read/, "with the reason, not a shrug")
   assert.doesNotMatch(delivered.text, /nothing to learn/, "it learned nothing because it read nothing")
   assert.equal(fake.generated.length, 0, "and spent nothing on a log that was not there")
@@ -2016,7 +2016,7 @@ test("a log with no parseable record is reported as a failure, not as a clean an
   await fake.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
 
   const [delivered] = fake.synthetic
-  assert.match(delivered.text, /Could not analyse `ses_garbled`/)
+  assert.match(delivered.text, /opencode-retro on `ses_garbled`/)
   assert.match(delivered.text, /could not be parsed/, "with the reason")
   assert.doesNotMatch(delivered.text, /nothing to learn/, "not a clean analysis of a file it could not read")
   assert.equal(fake.generated.length, 0, "and no model call is spent on it")
