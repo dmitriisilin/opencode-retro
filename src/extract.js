@@ -76,8 +76,9 @@ export function ownRounds(records) {
         break
       }
     }
-    // The hand-over is a marker and holds nothing to read; the round is what answers it.
-    for (let j = from; j < end; j++) steps.add(sorted[j].n)
+    // A `work` hand-over is a marker and holds nothing to read, the opening one and any second
+    // one alike; the round is what answers it (thirty-sixth review).
+    for (let j = from; j < end; j++) if (!(sorted[j].k === "handover" && sorted[j].about === "work")) steps.add(sorted[j].n)
     i = end - 1
   }
   // A delegated session that began inside a round — a reader worded its own way — is ours in
@@ -250,7 +251,8 @@ export function composeOrder({
     rounds.length
       ? section(
           "The plugin's own work — leave it out",
-          "These steps are rounds of this plugin's own, as the rules below describe: " +
+          "These steps are the plugin's own — its rounds and its own calls, as the rules below " +
+            "describe: " +
             rounds.map(([a, b]) => (a === b ? `step ${a}` : `steps ${a}–${b}`)).join(", ") +
             ". So is any call to `retro_record` or `retro_propose`, and any `subagent` call whose " +
             "prompt is a work order's line, wherever it is.",

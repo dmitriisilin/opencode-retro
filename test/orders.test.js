@@ -402,7 +402,7 @@ test("the order tells the reader where the plugin's own work is and to leave it 
   const { paths } = await retro(fake, { invoker: "ses_other" })
   const order = readFileSync(paths.find((path) => path.includes("ses_review")), "utf8")
   assert.match(order, /The plugin's own work — leave it out/)
-  assert.match(order, /steps 1–\d+/, "the round, by its steps")
+  assert.match(order, /describe: steps? \d+/, "the round, by its steps")
   assert.match(order, /asks for a round of this plugin's own/, "and the rule that says what a round is")
   await cleanup?.()
 })
@@ -1645,5 +1645,23 @@ test("a turn that added only a round does not report its log as waiting", async 
   const report = readFileSync(join(dir, ".retro", "selfcheck.md"), "utf8")
   assert.doesNotMatch(report, /this session's log is waiting/, report)
   assert.doesNotMatch(report, /not analysed yet/, "and the stock agrees")
+  await cleanup?.()
+})
+
+test("a reworded reader calling retro_propose is told so too", async () => {
+  // Thirty-sixth pre-release review: the guard asked only whether the caller was a reader known
+  // by its line; one worded its own way is an ordinary child, and still closed every order.
+  const dir = sandbox()
+  const fake = fakeOpenCode({ directory: dir, agent: false })
+  const cleanup = await plugin.setup(fake.ctx)
+  await work(fake, "ses_a")
+  await retro(fake)
+  await fake.hooks.get("session.prompt")({ sessionID: "ses_kid", messageID: "k1", prompt: { text: "have a look" } })
+  fake.emit({ type: "session.created", durable: { seq: 90 }, data: { sessionID: "ses_kid", parentID: "ses_review", location: { directory: dir } } })
+  await new Promise((r) => setImmediate(r))
+  const result = await fake.tools.get("retro_propose").execute({}, { sessionID: "ses_kid" })
+  assert.match(result.content, /Not yours to call/)
+  assert.equal(result.output.ok, false, "with an output the declared schema accepts")
+  assert.ok(!state(dir).orders.ses_a.done, "nothing closed")
   await cleanup?.()
 })

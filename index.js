@@ -433,14 +433,15 @@ export default {
           input: PROPOSE_INPUT,
           output: DECIDE_OUTPUT,
           execute: async (input, context) => {
-            // A reader calling it would write a hand-over into a log of its own and close every
-            // other open order mid-round; it is the delegating agent's to call (thirty-fifth).
-            if (internal.has(context?.sessionID)) {
-              return {
-                content:
-                  "Not yours to call: `retro_propose` is for the agent that started you, once every " +
-                  "reader has recorded. Your work is done once `retro_record` has been called.",
-              }
+            // A reader calling it would write a hand-over into a log and close every other open
+            // order mid-round; it is the delegating agent's to call — not a reader's, nor any
+            // delegated session's, a reader worded its own way included (thirty-fifth and
+            // thirty-sixth reviews).
+            if (context?.sessionID && !standsAlone(context.sessionID)) {
+              const detail =
+                "Not yours to call: `retro_propose` is for the agent that started you, once every " +
+                "reader has recorded. Your work is done once `retro_record` has been called."
+              return { content: detail, output: { ok: false, detail } }
             }
             /**
              * Calling this is how the agent says the analyses are done, so an order still
@@ -557,8 +558,6 @@ export default {
         // Kept with the snapshot, so a report replayed from it later says when it really ended.
         endedAt: Date.now(),
       }
-      check.verify(verified)
-      writeSelfCheck()
       ingest.forget(sessionID)
       turnSeen.delete(sessionID)
 
@@ -568,8 +567,9 @@ export default {
       state.countSession(sessionID)
       lastVerified.delete(sessionID) // re-inserted: the map is in order of the latest end
       lastVerified.set(sessionID, verified)
-      // As the stock has it: a turn that added nothing to read — a round of the plugin's own —
-      // leaves the log not owed, and the line says what is known instead (thirty-fifth review).
+      // One write for the end of a turn (thirty-sixth review), and as the stock has it: a turn
+      // that added nothing to read — a round of the plugin's own — leaves the log not owed, and
+      // the line says what is known instead (thirty-fifth review).
       check.verify({ ...verified, extraction: extractionFor(sessionID, { owedIfUnknown: true }) })
       writeSelfCheck()
     }
