@@ -593,7 +593,7 @@ export default {
 
     return () => controller.abort()
 
-    async function say(sessionID, text, about = "lesson") {
+    async function say(sessionID, text, about = "lesson", { resume = true } = {}) {
       // Logged before it is sent: a hand-over marks where a round of the plugin's own starts,
       // and a marker written after the work it opens — an agent answering fast enough, or a
       // fake answering at once — put the round's start behind its end, and the person's next
@@ -602,7 +602,7 @@ export default {
       try {
         // The synthetic goes to the session's inbox; without `resume` it sits there until
         // the user happens to type something, and they never see what they asked for.
-        await ctx.session.synthetic({ sessionID, text, description: "opencode-retro", resume: true })
+        await ctx.session.synthetic({ sessionID, text, description: "opencode-retro", resume })
       } catch (err) {
         onError("session.synthetic", err)
         // Logged first, so the log says it was never delivered — and a notice ends the round
@@ -640,9 +640,10 @@ export default {
      * checking.
      */
     function noteHandover(sessionID, text, about = "lesson") {
-      // Never into a reader's session, which is not logged at all — a layer under the gate in
-      // `retro_propose`, for whatever reaches here another way (fortieth review).
-      if (internal.has(sessionID)) return
+      // Never for a delegated session: a reader's is not logged at all, and no hand-over of the
+      // plugin's is that session's — a layer under the gates in `retro_propose` and `/retro`,
+      // for whatever reaches here another way (fortieth and forty-first reviews).
+      if (sessionID && !standsAlone(sessionID)) return
       try {
         // Our own text is not material, so it does not make the log owed — `isOwed` says so
         // through `nothingNew`, in one place, for every kind of growth that holds nothing to read.
@@ -857,8 +858,10 @@ export default {
         // Never past what the order covered: records written after it — the session working on
         // while it was read — would date old evidence as new (third pre-release review).
         const last = Math.min(cited.length ? Math.max(...cited) : Infinity, upTo)
-        const at = records.filter((r) => r.n >= first && r.n <= last && Number.isFinite(r.t)).map((r) => r.t)
-        return at.length ? Math.max(...at) : null
+        // A loop, not `Math.max(...)`: step-less evidence spans the whole log.
+        let at = null
+        for (const r of records) if (r.n >= first && r.n <= last && Number.isFinite(r.t) && (at === null || r.t > at)) at = r.t
+        return at
       }
     }
 
@@ -882,7 +885,8 @@ export default {
     }
 
     /**
-     * Both commands begin the same way: settle what the last round left unanswered, then
+     * Both commands begin the same way — in a session of the person's own; in a delegated one
+     * they issue nothing (analysis.md): settle what the last round left unanswered, then
      * write a work order for every owed log. With orders out, the hand-over asks the agent to
      * have them read and to call `retro_propose` when they are in; with none, there is nothing
      * to wait for and the proposal goes straight out.
@@ -892,11 +896,13 @@ export default {
       // could never be proposed — orders written and readers paid for, for nothing. Said before
       // any order is issued (fortieth review).
       if (sessionID && !standsAlone(sessionID)) {
+        // Not resumed: the subagent's agent would take a note meant for the person as work.
         return say(
           sessionID,
           "_opencode-retro: `/retro` runs in a session of your own, not in a subagent's — it starts " +
             "readers and proposes to you there. Nothing was issued._",
           "notice",
+          { resume: false },
         )
       }
       const extracted = analyseOwed(sessionID)

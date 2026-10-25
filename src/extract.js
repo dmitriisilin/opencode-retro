@@ -23,7 +23,8 @@ export const WORK_MARK = "opencode-retro work order"
 export const formatRanges = (ranges) => ranges.map(([a, b]) => (a === b ? `step ${a}` : `steps ${a}–${b}`)).join(", ")
 
 /** A hand-over asking for a round: a marker, holding nothing to read. */
-const isWorkHandover = (r) => r.k === "handover" && r.about === "work"
+// Only the person's session's: a delegated one's neither opens a round nor ends one.
+const isWorkHandover = (r) => r.k === "handover" && r.about === "work" && !r.from
 
 /** The plugin's own tools: a call to one is the plugin's work wherever it is (analysis.md). */
 const OWN_TOOLS = new Set(["retro_record", "retro_propose"])
@@ -47,8 +48,9 @@ const WORK_LINE = new RegExp(`^\\s*(?:[^\\n]*\\n\\s*)?${WORK_MARK}: read `)
  * The plugin's own rounds in a log, as step ranges (analysis.md, "The plugin's own work").
  *
  * A round is answered by the turn its `handover` with `about: "work"` starts, and runs to the
- * next `handover` of another kind or the next `prompt` of the person's (one with no `from`),
- * whichever comes first — neither of which is part of it.
+ * next `handover` of another kind or the next `prompt`, whichever comes first — neither part of
+ * it, and only the person's session's (no `from`) counts: a delegated one's opens nothing and
+ * ends nothing.
  * A call to one of the plugin's own tools is the plugin's wherever it is. One definition,
  * read two ways: the order lists the rounds for its reader to leave out, and the plugin does
  * not count them as new material.

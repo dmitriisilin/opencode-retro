@@ -1670,7 +1670,7 @@ test("a reworded reader calling retro_propose is told so too", async () => {
   assert.ok(!state(dir).orders.ses_a.done, "nothing closed")
   assert.ok(existsSync(join(dir, ".retro", "work", "ses_a.md")), "and no order removed")
   const parentLog = readFileSync(logOf(dir, "ses_review"), "utf8").trim().split("\n").map((l) => JSON.parse(l))
-  assert.ok(!parentLog.some((r) => r.k === "handover" && r.about === "lesson"), "and no hand-over written")
+  assert.ok(!parentLog.some((r) => r.k === "handover" && r.from), "and no hand-over written for it")
   await cleanup?.()
 })
 
@@ -1703,7 +1703,19 @@ test("/retro in a subagent's session issues nothing", async () => {
   await fake.commands.get("retro").execute({ sessionID: "ses_kid", prompt: { text: "" } })
   assert.equal(state(dir).orders?.ses_a, undefined, "no order issued")
   assert.match(fake.synthetic.at(-1).text, /runs in a session of your own/)
+  assert.equal(fake.synthetic.at(-1).resume, false, "a note to the person, not a turn for the subagent")
+  const parent = existsSync(logOf(dir, "ses_p")) ? readFileSync(logOf(dir, "ses_p"), "utf8") : ""
+  assert.doesNotMatch(parent, /"k":"handover"/, "and nothing of it in any log")
   await cleanup?.()
+})
+
+test("a work hand-over noted for a subagent opens no round", async () => {
+  const { ownRounds } = await import("../src/extract.js")
+  const records = [
+    { n: 1, k: "handover", about: "work", from: "ses_kid", text: "the logs come first" },
+    { n: 2, k: "tool", tool: "shell", input: { command: "npm test" }, exit: 1 },
+  ]
+  assert.ok(!ownRounds(records).steps.has(2), "the person's work after it is theirs")
 })
 
 test("a reader's call to retro_propose writes nothing into any log", async () => {

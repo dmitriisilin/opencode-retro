@@ -240,6 +240,7 @@ rare, since the hand-over asks it to start readers and nothing else — is left 
   `a reader calling retro_propose is told it is not its call, and nothing happens`
   `a delegated hand-over in a log does not end the round`
   `/retro in a subagent's session issues nothing`
+  `a work hand-over noted for a subagent opens no round`
   `a reader's call to retro_propose writes nothing into any log`
   `a reworded reader calling retro_propose is told so too`
 - One command issues at most `extractLimit` orders; the rest stay owed and are named. A
