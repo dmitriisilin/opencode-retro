@@ -93,6 +93,9 @@ last analysis of the session whichever path ran it.
   `a recorded outcome is evaluated anew without moving the heartbeat, and a round's own calls move it`
   `an outcome for a session still working leaves the heartbeat, and a reader's own hooks move it`
   `a report written while a hook runs carries that hook's beat`
+- A write a hook causes is a measured one: while a session works, its checks are evaluated
+  again at most once a minute, with the heartbeat, never the heartbeat alone over stale checks.
+  `while a session works, its checks are evaluated again once a minute, not only the heartbeat`
   `a reader that reported reading nothing new is not reported as no answer`
   `a session whose log was set aside is not told the next /retro asks again`
 - A call the turn ended in the middle of accounts for its event: an interrupted turn with a

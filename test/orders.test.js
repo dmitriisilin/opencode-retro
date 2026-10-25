@@ -1666,3 +1666,30 @@ test("a report written while a hook runs carries that hook's beat", async () => 
     Date.now = real
   }
 })
+
+test("while a session works, its checks are evaluated again once a minute, not only the heartbeat", async () => {
+  // Twenty-sixth pre-release review, reproduced: a hook's plain write reset the clock that also
+  // throttled `observe`, so `verified` and the counts froze at the first prompt while the
+  // heartbeat moved — a fresh heartbeat over stale checks.
+  const real = Date.now
+  let now = Date.parse("2026-10-25T10:00:00Z")
+  Date.now = () => now
+  try {
+    const dir = sandbox()
+    const fake = fakeOpenCode({ directory: dir, agent: false })
+    const cleanup = await plugin.setup(fake.ctx)
+    await fake.hooks.get("session.prompt")({ sessionID: "ses_x", messageID: "m1", prompt: { text: "go" } })
+    for (let i = 0; i < 5; i++) {
+      now += 61_000
+      const call = { sessionID: "ses_x", id: `c${i}`, tool: "read", input: { path: "x" } }
+      await fake.hooks.get("tool.execute.before")(call)
+      await fake.hooks.get("tool.execute.after")({ ...call, status: "completed", result: { output: "y" } })
+    }
+    const report = readFileSync(join(dir, ".retro", "selfcheck.md"), "utf8")
+    assert.match(report, /verified\s+2026-10-25 10:05/, report)
+    assert.doesNotMatch(report, /ses_x\.jsonl, 1 entries/, "and the log's count with it")
+    await cleanup?.()
+  } finally {
+    Date.now = real
+  }
+})
