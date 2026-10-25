@@ -19,6 +19,9 @@ import { OUTPUT_CONTRACT, normaliseLessons } from "./contract.js"
 /** The first line of every work order, which is also how the plugin knows its own subagents. */
 export const WORK_MARK = "opencode-retro work order"
 
+/** A hand-over asking for a round: a marker, holding nothing to read. */
+const isWorkHandover = (r) => r.k === "handover" && r.about === "work"
+
 /** The plugin's own tools: a call to one is the plugin's work wherever it is (analysis.md). */
 const OWN_TOOLS = new Set(["retro_record", "retro_propose"])
 
@@ -49,10 +52,10 @@ const WORK_LINE = new RegExp(`^\\s*(?:[^\\n]*\\n\\s*)?${WORK_MARK}: read `)
  */
 export function ownRounds(records) {
   const sorted = [...records].sort((a, b) => (a.n ?? 0) - (b.n ?? 0))
-  const ends = (r) => (r.k === "prompt" && !r.from) || (r.k === "handover" && r.about !== "work")
+  const ends = (r) => (r.k === "prompt" && !r.from) || (r.k === "handover" && !isWorkHandover(r))
   const steps = new Set()
   for (let i = 0; i < sorted.length; i++) {
-    if (!(sorted[i].k === "handover" && sorted[i].about === "work")) continue
+    if (!isWorkHandover(sorted[i])) continue
     // Where it ends, and whether a turn starts before that: a hand-over delivered into a turn
     // still running waits for it, and what that turn does is the person's (thirty-second
     // review). With no turn start to go by, the round starts at the hand-over itself.
@@ -76,9 +79,11 @@ export function ownRounds(records) {
         break
       }
     }
-    // A `work` hand-over is a marker and holds nothing to read, the opening one and any second
-    // one alike; the round is what answers it (thirty-sixth review).
-    for (let j = from; j < end; j++) if (!(sorted[j].k === "handover" && sorted[j].about === "work")) steps.add(sorted[j].n)
+    // A `work` hand-over is the plugin's own text, the opening one and any second one alike:
+    // named with its round, so the order's ranges stay whole and no hand-over goes unnamed
+    // (thirty-sixth and thirty-seventh reviews). It holds nothing to read either way.
+    steps.add(sorted[i].n)
+    for (let j = from; j < end; j++) steps.add(sorted[j].n)
     i = end - 1
   }
   // A delegated session that began inside a round — a reader worded its own way — is ours in
@@ -123,7 +128,7 @@ function repliesToPlugin(records) {
   const out = new Set()
   let answering = null
   for (const r of [...records].sort((a, b) => (a.n ?? 0) - (b.n ?? 0))) {
-    if (r.k === "prompt" || (r.k === "handover" && r.about !== "work")) answering = r.k
+    if (r.k === "prompt" || (r.k === "handover" && !isWorkHandover(r))) answering = r.k
     else if (r.k === "text" && answering === "handover") out.add(r.n)
   }
   return out

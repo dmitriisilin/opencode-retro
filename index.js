@@ -433,11 +433,14 @@ export default {
           input: PROPOSE_INPUT,
           output: DECIDE_OUTPUT,
           execute: async (input, context) => {
-            // A reader calling it would write a hand-over into a log and close every other open
-            // order mid-round; it is the delegating agent's to call — not a reader's, nor any
-            // delegated session's, a reader worded its own way included (thirty-fifth and
-            // thirty-sixth reviews).
-            if (context?.sessionID && !standsAlone(context.sessionID)) {
+            // While a round is open it is the call of the session the round was handed to, and
+            // never a reader's: anyone else calling it would close every open order mid-round
+            // and write a hand-over into a log. Decided by who it is, not by what it is not —
+            // the exclusion it replaced raced the event stream for a reader worded its own way,
+            // and refused a round handed to a delegated session (thirty-fifth to
+            // thirty-seventh reviews). With no round known — after a reload — anyone may.
+            const caller = context?.sessionID
+            if (caller && (internal.has(caller) || (rounds.size > 0 && !rounds.has(caller)))) {
               const detail =
                 "Not yours to call: `retro_propose` is for the agent that started you, once every " +
                 "reader has recorded. Your work is done once `retro_record` has been called."

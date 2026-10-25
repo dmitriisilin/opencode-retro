@@ -402,7 +402,11 @@ test("the order tells the reader where the plugin's own work is and to leave it 
   const { paths } = await retro(fake, { invoker: "ses_other" })
   const order = readFileSync(paths.find((path) => path.includes("ses_review")), "utf8")
   assert.match(order, /The plugin's own work — leave it out/)
-  assert.match(order, /describe: steps? \d+/, "the round, by its steps")
+  const { ownRounds } = await import("../src/extract.js")
+  const logged = readFileSync(logOf(dir, "ses_review"), "utf8").trim().split("\n").map((l) => JSON.parse(l))
+  const named = ownRounds(logged).ranges.map(([a, b]) => (a === b ? `step ${a}` : `steps ${a}–${b}`)).join(", ")
+  assert.ok(named.length > 0)
+  assert.ok(order.includes(`describe: ${named}.`), `the order names exactly the plugin's own steps: ${named}`)
   assert.match(order, /asks for a round of this plugin's own/, "and the rule that says what a round is")
   await cleanup?.()
 })
@@ -1430,7 +1434,7 @@ test("a /retro posted into a turn still running leaves the rest of that turn the
   const { steps, ranges } = ownRounds(records)
   assert.ok(!steps.has(4), "the person's turn finishing is theirs")
   assert.ok(steps.has(6) && steps.has(7), "the round is the turn the hand-over started")
-  assert.deepEqual(ranges, [[6, 7]])
+  assert.deepEqual(ranges, [[3, 3], [6, 7]], "the hand-over named, and its round after the person's turn")
 })
 
 test("a delegation of ours written after an early retro_propose is still ours", async () => {
@@ -1594,7 +1598,7 @@ test("the rounds an order names include a reworded reader's records after the ro
     { n: 11, k: "tool", from: "c1", tool: "read", input: { path: "/x/.retro/sessions/ses_b.jsonl" } },
     { n: 12, k: "text", from: "c1", text: "session B had eslint problems" },
   ]
-  assert.deepEqual(ownRounds(records).ranges, [[6, 9], [11, 12]])
+  assert.deepEqual(ownRounds(records).ranges, [[5, 9], [11, 12]])
 })
 
 test("a second /retro inside a running round continues it", async () => {
@@ -1663,5 +1667,23 @@ test("a reworded reader calling retro_propose is told so too", async () => {
   assert.match(result.content, /Not yours to call/)
   assert.equal(result.output.ok, false, "with an output the declared schema accepts")
   assert.ok(!state(dir).orders.ses_a.done, "nothing closed")
+  await cleanup?.()
+})
+
+test("while a round is open, only the session it was handed to may call retro_propose", async () => {
+  // Thirty-seventh pre-release review: decided by who the caller is, which needs no event to
+  // have arrived first — a reader worded its own way, calling before its creation is known, is
+  // refused like any other session.
+  const dir = sandbox()
+  const fake = fakeOpenCode({ directory: dir, agent: false })
+  const cleanup = await plugin.setup(fake.ctx)
+  await work(fake, "ses_a")
+  await retro(fake) // handed to ses_review
+  const stranger = await fake.tools.get("retro_propose").execute({}, { sessionID: "ses_kid_not_yet_known" })
+  assert.match(stranger.content, /Not yours to call/)
+  assert.ok(!state(dir).orders.ses_a.done, "nothing closed")
+  await record(fake, "ses_a", [], { dir })
+  const owner = await fake.tools.get("retro_propose").execute({}, { sessionID: "ses_review" })
+  assert.doesNotMatch(owner.content, /Not yours to call/, "the session it was handed to may")
   await cleanup?.()
 })

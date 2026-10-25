@@ -227,10 +227,12 @@ rare, since the hand-over asks it to start readers and nothing else — is left 
   `the rounds an order names include a reworded reader's records after the round closed`
   `a second /retro inside a running round continues it`
   `a turn that added only a round does not report its log as waiting`
-- `retro_propose` is the delegating agent's to call: a delegated session calling it — a reader,
-  however its delegation was worded — is told so, with nothing recorded and nothing closed.
+- While a round is open, `retro_propose` is the call of the session the round was handed to,
+  and never a reader's: any other caller is told so, with nothing recorded and nothing closed.
+  With no round known — after a reload — anyone may call it.
   `a reader calling retro_propose is told it is not its call, and nothing happens`
   `a reworded reader calling retro_propose is told so too`
+  `while a round is open, only the session it was handed to may call retro_propose`
 - One command issues at most `extractLimit` orders; the rest stay owed and are named. A
   skipped log takes no order.
   `extractLimit caps what one command analyses and leaves the rest owed`
