@@ -180,8 +180,9 @@ the plugin's bookkeeping never turns into a lesson about the plugin.
   of the prescribed line — or, for a fresh session, the very prompt one of our own delegations
   is handing its reader at that moment, or a parent with a delegation of ours in flight and
   nothing of the person's in flight beside it.
-  A call is remembered while it is in flight; one that never finishes is bounded, not swept
-  with its turn, and an after-hook whose start was never seen is decided by what it says.
+  A call is remembered while it is in flight; one its turn ended in the middle of recognises
+  nothing afterwards, but its own after-hook still finds it. An after-hook whose start was
+  never seen is decided by what it says.
   `talking about work orders does not stop a session being logged`
   `a person who names an open order's path in a new session is still logged`
   `a reworded delegation of a work order stays out of the person's log`
@@ -193,7 +194,9 @@ the plugin's bookkeeping never turns into a lesson about the plugin.
   `an own call run through Code Mode's execute is ours in both of its hook pairs`
   `a reader whose prompt reads nothing like the delegation is still recognised by its parent`
   `a person's call is not taken for ours because one of ours elsewhere has the same id`
-  `a call id reused in a later message of the same session is decided afresh`
+  `an own delegation interrupted with its turn recognises nothing afterwards`
+  `an interrupted call of the person's does not stop a later reader being recognised by its parent`
+  `a Code Mode wrapper reported ahead of an own call leaves nothing unpaired in the person's log`
   `a turn's end arriving late does not make the next turn's own calls the person's`
   `a child is not taken for a reader while anything of the person's runs beside our delegation`
 - One command issues at most `extractLimit` orders; the rest stay owed and are named. A

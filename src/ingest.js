@@ -132,6 +132,15 @@ export function createIngest({
     sessions: () => [...sessions.keys()],
     forget: (sessionID) => sessions.delete(sessionID),
 
+    /**
+     * Take back a call's start: it turned out to be the plugin's own, after its first half —
+     * a Code Mode wrapper reported ahead of what it wraps — was taken as the person's. Left
+     * pending, it was flushed into their log as an unpaired call when the session ended.
+     */
+    unstart(sessionID, id) {
+      sessions.get(owner(sessionID))?.pending.delete(id)
+    },
+
     /** Unpaired calls, flushed when a session ends so an interrupt leaves no silent gap. */
     pending: (sessionID) => [...session(sessionID).pending.values()],
 

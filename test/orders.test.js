@@ -953,16 +953,58 @@ test("an analysis does not take over a report that describes another session", a
 
 /* Fifth pre-release review. */
 
-test("a call id reused in a later message of the same session is decided afresh", async () => {
+test("an own delegation interrupted with its turn recognises nothing afterwards", async () => {
+  // Third and sixth pre-release reviews: a call its turn ended in the middle of never reaches
+  // its after-hook, and its prompt went on recognising fresh sessions — a person pasting the
+  // same text later, or an interrupted call of theirs blocking recognition by parent for good.
+  const dir = sandbox()
+  const fake = fakeOpenCode({ directory: dir, agent: false })
+  const cleanup = await plugin.setup(fake.ctx)
+  await work(fake, "ses_a")
+  const { paths } = await retro(fake)
+  const prompt = `Please read ${paths[0]} and follow it.`
+  await fake.hooks.get("tool.execute.before")({ sessionID: "ses_review", id: "d1", tool: "subagent", input: { agent: "general", prompt } })
+  fake.emit({ type: "session.execution.interrupted", durable: { seq: 91 }, data: { sessionID: "ses_review" } })
+  await new Promise((r) => setImmediate(r))
+  await fake.hooks.get("session.prompt")({ sessionID: "ses_later", messageID: "l1", prompt: { text: prompt } })
+  assert.ok(existsSync(logOf(dir, "ses_later")), "a session typed after the call was interrupted is the person's")
+  await cleanup?.()
+})
+
+test("an interrupted call of the person's does not stop a later reader being recognised by its parent", async () => {
+  const dir = sandbox()
+  const fake = fakeOpenCode({ directory: dir, agent: false })
+  const cleanup = await plugin.setup(fake.ctx)
+  await work(fake, "ses_a")
+  await fake.hooks.get("session.prompt")({ sessionID: "ses_review", messageID: "rv", prompt: { text: "read something" } })
+  await fake.hooks.get("tool.execute.before")({ sessionID: "ses_review", id: "p1", tool: "read", input: { path: "x" } })
+  fake.emit({ type: "session.execution.interrupted", durable: { seq: 60 }, data: { sessionID: "ses_review" } })
+  await new Promise((r) => setImmediate(r))
+  const { paths } = await retro(fake)
+  await fake.hooks.get("tool.execute.before")({ sessionID: "ses_review", id: "d1", tool: "subagent", input: { agent: "general", prompt: `Please read ${paths[0]}.` } })
+  await fake.hooks.get("session.prompt")({ sessionID: "ses_reader", messageID: "r1", prompt: { text: "Your task is in a file." } })
+  fake.emit({ type: "session.created", durable: { seq: 90 }, data: { sessionID: "ses_reader", parentID: "ses_review", location: { directory: dir } } })
+  await new Promise((r) => setImmediate(r))
+  assert.ok(!kindsIn(dir, "ses_review").some((r) => r.k === "prompt" && /Your task/.test(r.text)), "the reader is not in the person's log")
+  await cleanup?.()
+})
+
+test("a Code Mode wrapper reported ahead of an own call leaves nothing unpaired in the person's log", async () => {
+  // Sixth pre-release review: the wrapper's start was taken as the person's and left pending,
+  // to be flushed into their log as an unpaired call when the session ended.
   const dir = sandbox()
   const fake = fakeOpenCode({ directory: dir, agent: false })
   const cleanup = await plugin.setup(fake.ctx)
   await fake.hooks.get("session.prompt")({ sessionID: "ses_person", messageID: "pm", prompt: { text: "go" } })
-  await fake.hooks.get("tool.execute.before")({ sessionID: "ses_person", messageID: "m1", id: "call_0", tool: "retro_propose", input: {} })
-  const edit = { sessionID: "ses_person", messageID: "m2", id: "call_0", tool: "shell", input: { command: "ls" } }
-  await fake.hooks.get("tool.execute.before")(edit)
-  await fake.hooks.get("tool.execute.after")({ ...edit, status: "completed", result: { output: "a" } })
-  assert.ok(kindsIn(dir, "ses_person").some((r) => r.k === "tool" && r.tool === "shell"), "the person's call is logged")
+  const wrapper = { sessionID: "ses_person", id: "w1", tool: "execute", input: { code: "await tools.retro_propose({})" } }
+  const inner = { sessionID: "ses_person", id: "w1", tool: "retro_propose", input: {} }
+  await fake.hooks.get("tool.execute.before")(wrapper)
+  await fake.hooks.get("tool.execute.before")(inner)
+  await fake.hooks.get("tool.execute.after")({ ...inner, status: "completed", result: { output: "ok" } })
+  await fake.hooks.get("tool.execute.after")({ ...wrapper, status: "completed", result: { output: "ok" } })
+  fake.emit({ type: "session.execution.succeeded", durable: { seq: 70 }, data: { sessionID: "ses_person" } })
+  await new Promise((r) => setImmediate(r))
+  assert.deepEqual(kindsIn(dir, "ses_person").filter((r) => r.k === "tool"), [])
   await cleanup?.()
 })
 

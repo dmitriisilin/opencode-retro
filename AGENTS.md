@@ -1023,6 +1023,15 @@ Known, listed so nobody discovers them as surprises:
 - Whether the agent records a decision is prompted, not enforced. If it does not, the lesson
   stays open and comes back next time with the currency check noting that its target has
   changed — recoverable, but it is the one step the plugin cannot do for itself.
+- **Call ids are taken to be unique within a session**, as measured (`call_00_<random>`), and
+  the log, the pairing of hooks and the record of which calls are the plugin's own all rest on
+  it. A provider that numbered calls per message would lose a call's record when an id came
+  round again. Not guarded against: no provider OpenCode drives has been seen doing it, and a
+  finer key risks splitting a Code Mode wrapper from what it wraps.
+- **A turn's end is taken to arrive before the next turn's hooks.** The event stream lags the
+  hooks by milliseconds, and the next turn starts after a model has answered; an end delivered
+  later than that would close the new turn's bookkeeping. Raised in the sixth pre-release
+  review as a possibility, not seen; nothing here orders the two.
 - Whether the agent answers every order is prompted, not enforced, for the same reason. An
   order nobody answers is reported with how many times it has been asked and asked again, so
   this degrades visibly rather than going silent; it is never held against the log.

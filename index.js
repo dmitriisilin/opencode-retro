@@ -155,19 +155,20 @@ export default {
      * wrapper after (measured, `test/ingest.test.js`) — and the wrapper is whatever it wraps
      * (the cycle 12 bench logged an `execute` wrapping `retro_propose` as the person's). So
      * `open` counts the pairs still open, and the entry goes when it reaches zero; the map
-     * holds what is in flight and nothing else. Keyed by message as well as session and id,
-     * because some providers number calls per message (fourth and fifth reviews).
+     * holds what is in flight. Keyed by session and id: ids are unique within a session as
+     * measured (`call_00_<random>`), so nothing finer is needed, and anything finer would
+     * risk splitting a wrapper from what it wraps.
      *
-     * A call interrupted before its after-hook leaves its entry behind, and `MAX_CALLS` is
-     * what bounds those. Not swept at the end of a turn: the event stream lags the hooks, so a
-     * sweep on a turn's end could take the next turn's calls with it (fifth review).
+     * A call its turn ended in the middle of is marked `stale` when the end arrives, not
+     * dropped: its after-hook can still follow, and must find it. Stale entries recognise no
+     * session (`delegatedByUs`, `startedByUs`) and are the first to go past `MAX_CALLS`.
      *
      * `prompt` is what an own delegation hands its reader, whose session starts before the call
      * ends and is recognised by it (`delegatedByUs`).
      */
     const calls = new Map()
     const MAX_CALLS = 1000
-    const callKey = (p) => (p?.id != null ? `${p?.sessionID}\u0000${p?.messageID ?? ""}\u0000${p.id}` : null)
+    const callKey = (p) => (p?.id != null ? `${p?.sessionID}\u0000${p.id}` : null)
 
     /**
      * What is waiting, as the marks say it is. A log whose last read failed is named as a
@@ -342,9 +343,15 @@ export default {
         // Either half naming `subagent` makes it a delegation, whichever arrived first.
         const tool = known?.tool === "subagent" ? "subagent" : (p?.tool ?? known?.tool)
         calls.delete(key) // re-inserted last, so the oldest is first to go
-        calls.set(key, { session: p?.sessionID, tool, ours, prompt: prompt || known?.prompt || null, open: (known?.open ?? 0) + 1 })
-        if (calls.size > MAX_CALLS) calls.delete(calls.keys().next().value)
+        calls.set(key, { session: p?.sessionID, tool, ours, prompt: prompt || known?.prompt || null, open: (known?.open ?? 0) + 1, stale: Boolean(known?.stale) })
+        if (calls.size > MAX_CALLS) {
+          let evict = calls.keys().next().value
+          for (const [k, call] of calls) if (call.stale) { evict = k; break }
+          calls.delete(evict)
+        }
       }
+      // Its first half was taken for the person's; it is ours, so that start is taken back.
+      if (ours && known && !known.ours) ingest.unstart(p?.sessionID, p?.id)
       if (ours) {
         // A wrapper of a call already counted is the same call.
         if (known?.ours) return
@@ -369,9 +376,7 @@ export default {
       if (child && (ours || internal.has(child))) {
         // One of ours. If its own prompt did not carry the mark (the agent may have worded the
         // delegation its own way), whatever it wrote before the link was known goes now.
-        internal.add(child)
-        log.remove(child)
-        state.uncountSession(child)
+        claimReader(child, p.sessionID)
       } else if (child) {
         adopt(child, p.sessionID)
       }
@@ -530,19 +535,16 @@ export default {
         if (isForeign(event)) return
         if (internal.has(sessionID)) return
         if (event.data?.parentID && startedByUs(event.data.parentID)) {
-          // One of our readers whose prompt did not give it away. Its prompt may already be in
-          // a log of its own, and the report may be about it; both go back to the person's.
-          internal.add(sessionID)
-          log.remove(sessionID)
-          state.uncountSession(sessionID)
-          ingest.forget(sessionID)
-          observedSessions.delete(sessionID)
-          turnSeen.delete(sessionID)
-          observe(rootOf(event.data.parentID), { force: true })
+          // One of our readers whose prompt did not give it away.
+          claimReader(sessionID, event.data.parentID)
           return
         }
         if (event.data?.parentID) adopt(sessionID, event.data.parentID)
       }
+      // The calls its turn ended in the middle of recognise nothing any more. Before the gates:
+      // a reader's own turn ends behind them.
+      if (sessionID && isTurnEnd(event)) for (const call of calls.values()) if (call.session === sessionID) call.stale = true
+
       if (sessionID && (foreign.has(sessionID) || internal.has(sessionID))) return
       ingest.event(event)
 
@@ -563,13 +565,7 @@ export default {
       // session that is perfectly healthy somewhere else.
       if (!sessionID || !ingest.owned(sessionID)) return
 
-      // session.idle never fires outside the TUI (AGENTS.md Gotcha 2), so the end of work
-      // is session.execution.*.
-      const done =
-        event.type === "session.execution.succeeded" ||
-        event.type === "session.execution.failed" ||
-        event.type === "session.execution.interrupted"
-      if (!done) return
+      if (!isTurnEnd(event)) return
 
       if (ended.has(sessionID)) return
       // A subagent finishing is a step in its parent's task, not a session to analyse.
@@ -1042,6 +1038,35 @@ export default {
     }
 
     /**
+     * The end of a turn. session.idle never fires outside the TUI (AGENTS.md Gotcha 2), so the
+     * end of work is session.execution.*.
+     */
+    function isTurnEnd(event) {
+      return (
+        event?.type === "session.execution.succeeded" ||
+        event?.type === "session.execution.failed" ||
+        event?.type === "session.execution.interrupted"
+      )
+    }
+
+    /**
+     * Take a session for one of our readers: nothing of it is logged from now on, whatever it
+     * already wrote goes, and the report — which its first prompt may have made about it — goes
+     * back to the session that delegated it. One helper for both ways a reader is recognised,
+     * because the two copies had already drifted (sixth review).
+     */
+    function claimReader(child, parent) {
+      internal.add(child)
+      log.remove(child)
+      state.uncountSession(child)
+      ingest.forget(child)
+      observedSessions.delete(child)
+      turnSeen.delete(child)
+      ended.delete(child)
+      if (parent) observe(rootOf(parent), { force: true })
+    }
+
+    /**
      * Whether a fresh session's first prompt is the one one of our own delegations, still
      * running, handed its reader — however the agent worded it. The reader's session starts,
      * and announces its parent, before the delegating call ends; recognised only by the exact
@@ -1053,7 +1078,7 @@ export default {
     function delegatedByUs(text) {
       if (typeof text !== "string") return false
       const prompt = flat(text)
-      for (const call of calls.values()) if (call.ours && call.prompt && prompt.includes(call.prompt)) return true
+      for (const call of calls.values()) if (call.ours && !call.stale && call.prompt && prompt.includes(call.prompt)) return true
       return false
     }
 
@@ -1067,7 +1092,7 @@ export default {
     function startedByUs(parent) {
       let ours = false
       for (const call of calls.values()) {
-        if (call.session !== parent) continue
+        if (call.session !== parent || call.stale) continue
         if (!call.ours) return false
         if (call.tool === "subagent") ours = true
       }
