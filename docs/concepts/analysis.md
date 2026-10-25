@@ -201,7 +201,11 @@ then a session of its own. AGENTS.md, "Known".)
   `an own call run through Code Mode's execute is ours in both of its hook pairs`
   `a reader whose prompt reads nothing like the delegation is still recognised by its parent`
   `a reworded reader is not folded into the person's log while its delegation runs`
-  `a report about a session that turns out to be ours describes no session rather than stay`
+  `a report about a session that turns out to be ours goes back to the last that ended, rather than stay`
+  `a deferred child's turn is a step, not a session`
+  `a child left deferred by a delegation that never ended becomes a session of its own`
+  `a deferred child is not counted as waiting while /retro would not ask about it`
+  `a child already adopted is not deferred by its creation arriving late`
   `a person's call is not taken for ours because one of ours elsewhere has the same id`
   `an own delegation interrupted with its turn recognises nothing afterwards`
   `an interrupted call of the person's does not stop a later reader being recognised by its parent`

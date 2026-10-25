@@ -54,7 +54,7 @@ export function createSelfCheck({ versions, repo, loadedAt = Date.now() }) {
       state.verified = at
       state.heartbeat = at
       state.session = session.id
-      state.sessionEnded = session.ended === false ? null : at
+      state.sessionEnded = session.ended === false ? null : (session.endedAt ?? at)
       state.checks = assess(session)
       return state
     },
@@ -65,6 +65,7 @@ export function createSelfCheck({ versions, repo, loadedAt = Date.now() }) {
       state.session = null
       state.sessionEnded = null
       state.checks = []
+      state.verified = null
     },
     render: () => render(state),
   }

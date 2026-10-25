@@ -176,8 +176,16 @@ export default {
      * Recognising it any earlier — by its prompt, or by what else its parent had in flight —
      * took four review rounds of interleavings to get wrong (sixth to ninth).
      */
-    const deferred = new Set()
+    const deferred = new Map() // child -> the parent it appeared under
     const MAX_CALLS = 1000
+
+    /**
+     * Whether a log is a session of its own — the person's, read and reported as one. Not a
+     * delegation (`parents`), not ours (`internal`), not waiting to be told which (`deferred`).
+     * One predicate for every consumer, because each set added in review was checked by hand
+     * in the places noticed and missed in the rest (tenth review).
+     */
+    const standsAlone = (id) => !parents.has(id) && !internal.has(id) && !deferred.has(id)
     const callKey = (p) => (p?.id != null ? `${p?.sessionID}\u0000${p.id}` : null)
 
     /**
@@ -193,7 +201,7 @@ export default {
       let asked = 0
       let unanswered = 0
       for (const id of log.list()) {
-        if (parents.has(id) || !isOwed(id)) continue
+        if (!standsAlone(id) || !isOwed(id)) continue
         const mark = state.looked(id)
         // How many askings have actually gone unanswered — not counting one issued a moment ago
         // that nobody has had the chance to answer yet. Counting it made this line say "up to 2
@@ -259,7 +267,7 @@ export default {
     function observe(sessionID, { force = false } = {}) {
       // Never about one of ours: a reader, or a reader's helper, has no log to measure, and a
       // report about it said BROKEN about a healthy plugin (seventh and eighth reviews).
-      if (!sessionID || internal.has(sessionID) || deferred.has(sessionID)) return
+      if (!sessionID || !standsAlone(sessionID)) return
       // A hook that arrives after the session's end belongs to that session, and its record is
       // written — but it is not news about liveness. Re-measuring here would recreate the
       // forgotten ingest counts and report `BROKEN prompt hook` about a session that was fine
@@ -558,8 +566,8 @@ export default {
           claimReader(sessionID, event.data.parentID)
           return
         }
-        if (event.data?.parentID && oursInFlight(event.data.parentID)) {
-          deferred.add(sessionID)
+        if (event.data?.parentID && !parents.has(sessionID) && oursInFlight(event.data.parentID)) {
+          deferred.set(sessionID, event.data.parentID)
           handBack(sessionID)
           return
         }
@@ -567,9 +575,20 @@ export default {
       }
       // The calls its turn ended in the middle of recognise nothing any more. Before the gates:
       // a reader's own turn ends behind them.
-      if (sessionID && isTurnEnd(event)) for (const call of calls.values()) if (call.session === sessionID) call.stale = true
+      if (sessionID && isTurnEnd(event)) {
+        for (const call of calls.values()) if (call.session === sessionID) call.stale = true
+        // A delegation cannot outlive the turn it runs in, so whatever is still deferred under
+        // this session was started by one that will never say so: interrupted. It becomes a
+        // session of its own (AGENTS.md, "Known"), rather than wait for the life of the process
+        // (tenth review).
+        for (const [child, parent] of deferred) if (parent === sessionID) deferred.delete(child)
+      }
 
-      if (sessionID && (foreign.has(sessionID) || internal.has(sessionID))) return
+      // A deferred session's events are dropped like ours: its start and end are a delegation's
+      // steps, not a session's, and recorded as one they put a `session end` into the middle of
+      // the parent's turn when it was adopted, counted it towards freshness, and pointed the
+      // report at it (tenth review).
+      if (sessionID && (foreign.has(sessionID) || internal.has(sessionID) || deferred.has(sessionID))) return
       ingest.event(event)
 
       if (event.type === "session.execution.started" && sessionID) {
@@ -603,6 +622,8 @@ export default {
         log: logFacts(sessionID),
         triggered: event.type,
         extraction: null,
+        // Kept with the snapshot, so a report replayed from it later says when it really ended.
+        endedAt: Date.now(),
       }
       check.verify(verified)
       writeSelfCheck()
@@ -613,6 +634,7 @@ export default {
       // in — a work order is read by a subagent of the session that ran `/retro`. The log is
       // owed because it grew; the next `/retro` asks about it.
       state.countSession(sessionID)
+      lastVerified.delete(sessionID) // re-inserted: the map is in order of the latest end
       lastVerified.set(sessionID, verified)
       check.verify({ ...verified, extraction: { owed: true } })
       writeSelfCheck()
@@ -978,7 +1000,7 @@ export default {
     function owedLogs(skip = new Set()) {
       return log
         .list()
-        .filter((id) => !skip.has(id) && !parents.has(id) && !internal.has(id) && !deferred.has(id) && isOwed(id))
+        .filter((id) => !skip.has(id) && standsAlone(id) && isOwed(id))
         .map((id) => ({ id, at: log.probe(id)?.mtimeMs ?? 0 }))
         .sort((a, b) => a.at - b.at)
         .map((x) => x.id)
@@ -1103,12 +1125,13 @@ export default {
      */
     function handBack(sessionID) {
       if (check.describing() !== sessionID) return
-      const person = [...observedSessions].reverse().find((s) => s !== sessionID && !internal.has(s) && !deferred.has(s) && !ended.has(s))
-      if (person) observe(person, { force: true })
-      else {
-        check.clear()
-        writeSelfCheck()
-      }
+      const person = [...observedSessions].reverse().find((s) => s !== sessionID && standsAlone(s) && !ended.has(s))
+      if (person) return observe(person, { force: true })
+      // None working: the last one that ended, as it was measured then (tenth review).
+      const last = [...lastVerified.keys()].reverse().find((s) => s !== sessionID && standsAlone(s))
+      if (last) check.verify({ ...lastVerified.get(last), extraction: lastExtraction.get(last) ?? null })
+      else check.clear()
+      writeSelfCheck()
     }
 
     /**

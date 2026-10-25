@@ -1209,7 +1209,7 @@ test("a reworded reader is not folded into the person's log while its delegation
   await cleanup?.()
 })
 
-test("a report about a session that turns out to be ours describes no session rather than stay", async () => {
+test("a report about a session that turns out to be ours goes back to the last that ended, rather than stay", async () => {
   // Ninth pre-release review: with no session of the person's live to hand it back to, the
   // report stayed about the helper its first prompt made it about.
   const dir = sandbox()
@@ -1225,6 +1225,90 @@ test("a report about a session that turns out to be ours describes no session ra
   assert.match(readFileSync(join(dir, ".retro", "selfcheck.md"), "utf8"), /ses_helper/, "its first prompt made the report about it")
   fake.emit({ type: "session.created", durable: { seq: 91 }, data: { sessionID: "ses_helper", parentID: "ses_reader", location: { directory: dir } } })
   await new Promise((r) => setImmediate(r))
-  assert.doesNotMatch(readFileSync(join(dir, ".retro", "selfcheck.md"), "utf8"), /ses_helper/)
+  const report = readFileSync(join(dir, ".retro", "selfcheck.md"), "utf8")
+  assert.doesNotMatch(report, /ses_helper/)
+  // Tenth review: not an empty "nothing measured yet" under a fresh timestamp, but the last
+  // session that ended, as it was measured then.
+  assert.match(report, /measured on session\s+`ses_a`, which ended at/)
+  await cleanup?.()
+})
+
+/* Tenth pre-release review: a deferred session is no session of its own. */
+
+async function deferHelper(fake, dir) {
+  await work(fake, "ses_a")
+  const { paths } = await retro(fake)
+  await fake.hooks.get("session.prompt")({ sessionID: "ses_review", messageID: "rv", prompt: { text: "go on" } })
+  await fake.hooks.get("tool.execute.before")({ sessionID: "ses_review", id: "d1", tool: "subagent", input: { agent: "general", prompt: `Have a look at ${paths[0]}` } })
+  await fake.hooks.get("tool.execute.before")({ sessionID: "ses_review", id: "p1", tool: "subagent", input: { agent: "explore", prompt: "explore the repo" } })
+  await fake.hooks.get("session.prompt")({ sessionID: "ses_helper", messageID: "h1", prompt: { text: "explore the repo" } })
+  fake.emit({ type: "session.created", durable: { seq: 90 }, data: { sessionID: "ses_helper", parentID: "ses_review", location: { directory: dir } } })
+  fake.emit({ type: "session.execution.started", durable: { seq: 91 }, data: { sessionID: "ses_helper" } })
+  await new Promise((r) => setImmediate(r))
+  await fake.hooks.get("tool.execute.before")({ sessionID: "ses_helper", id: "hx", tool: "read", input: { path: "src" } })
+  await fake.hooks.get("tool.execute.after")({ sessionID: "ses_helper", id: "hx", tool: "read", input: { path: "src" }, status: "completed", result: { output: "a.js" } })
+  fake.emit({ type: "session.execution.succeeded", durable: { seq: 92 }, data: { sessionID: "ses_helper" } })
+  await new Promise((r) => setImmediate(r))
+  return paths
+}
+
+test("a deferred child's turn is a step, not a session", async () => {
+  const dir = sandbox()
+  const fake = fakeOpenCode({ directory: dir, agent: false })
+  const cleanup = await plugin.setup(fake.ctx)
+  await deferHelper(fake, dir)
+  assert.doesNotMatch(readFileSync(join(dir, ".retro", "selfcheck.md"), "utf8"), /ses_helper/, "the report is not about it")
+  assert.ok(!("ses_helper" in (state(dir).counted ?? {})), "it did not age the workspace")
+  await fake.hooks.get("tool.execute.after")({ sessionID: "ses_review", id: "p1", tool: "subagent", input: { agent: "explore", prompt: "explore the repo" }, status: "completed", result: { output: "done", metadata: { sessionID: "ses_helper" } } })
+  const kinds = kindsIn(dir, "ses_review").map((r) => r.k)
+  assert.ok(kinds.includes("tool"), "adopted with its work")
+  assert.ok(!kinds.includes("session"), `and no session start or end in the middle of the parent's turn: ${kinds}`)
+  await cleanup?.()
+})
+
+test("a child left deferred by a delegation that never ended becomes a session of its own", async () => {
+  const dir = sandbox()
+  const fake = fakeOpenCode({ directory: dir, agent: false })
+  const cleanup = await plugin.setup(fake.ctx)
+  await deferHelper(fake, dir)
+  fake.emit({ type: "session.execution.interrupted", durable: { seq: 95 }, data: { sessionID: "ses_review" } })
+  await new Promise((r) => setImmediate(r))
+  const { paths } = await retro(fake, { invoker: "ses_other" })
+  assert.ok(paths.some((path) => path.includes("ses_helper")), "a later /retro asks about it")
+  await cleanup?.()
+})
+
+test("a deferred child is not counted as waiting while /retro would not ask about it", async () => {
+  const dir = sandbox()
+  const fake = fakeOpenCode({ directory: dir, agent: false })
+  const cleanup = await plugin.setup(fake.ctx)
+  await deferHelper(fake, dir)
+  await record(fake, "ses_a", [], { dir }) // the one real order is answered; the report is rewritten
+  const report = readFileSync(join(dir, ".retro", "selfcheck.md"), "utf8")
+  // On disk: ses_a (read), ses_review (the person's, waiting) and ses_helper (deferred).
+  assert.match(report, /- 1 log not analysed yet/, "the person's log is waiting, the deferred helper's is not")
+  const { paths } = await retro(fake, { invoker: "ses_other" })
+  assert.ok(!paths.some((path) => path.includes("ses_helper")), "and /retro does not ask about it either")
+  await cleanup?.()
+})
+
+test("a child already adopted is not deferred by its creation arriving late", async () => {
+  // Pins the order the tenth review raised: hooks run ahead of the event stream, so a child can
+  // be adopted by its delegation's end before its creation arrives — and must stay adopted.
+  const dir = sandbox()
+  const fake = fakeOpenCode({ directory: dir, agent: false })
+  const cleanup = await plugin.setup(fake.ctx)
+  await work(fake, "ses_a")
+  const { paths } = await retro(fake)
+  await fake.hooks.get("session.prompt")({ sessionID: "ses_review", messageID: "rv", prompt: { text: "go on" } })
+  await fake.hooks.get("tool.execute.before")({ sessionID: "ses_review", id: "d1", tool: "subagent", input: { agent: "general", prompt: `Have a look at ${paths[0]}` } })
+  const mine = { sessionID: "ses_review", id: "p1", tool: "subagent", input: { agent: "explore", prompt: "explore the repo" } }
+  await fake.hooks.get("tool.execute.before")(mine)
+  await fake.hooks.get("tool.execute.after")({ ...mine, status: "completed", result: { output: "done", metadata: { sessionID: "ses_helper" } } })
+  fake.emit({ type: "session.created", durable: { seq: 90 }, data: { sessionID: "ses_helper", parentID: "ses_review", location: { directory: dir } } })
+  await new Promise((r) => setImmediate(r))
+  await fake.hooks.get("tool.execute.before")({ sessionID: "ses_helper", id: "late", tool: "read", input: { path: "z" } })
+  await fake.hooks.get("tool.execute.after")({ sessionID: "ses_helper", id: "late", tool: "read", input: { path: "z" }, status: "completed", result: { output: "z" } })
+  assert.ok(kindsIn(dir, "ses_review").some((r) => r.id === "late"), "its later work still goes to the person's log")
   await cleanup?.()
 })
