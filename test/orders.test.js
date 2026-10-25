@@ -1488,3 +1488,59 @@ test("a hand-over that could not be delivered is followed by a notice saying so"
   assert.match(handovers.at(-1).text, /could not be delivered: session is gone/)
   await cleanup?.()
 })
+
+/* Thirty-third pre-release review. */
+
+test("a hand-over that landed in a running turn with no turn after it opens an empty round", async () => {
+  const { ownRounds, nothingNew } = await import("../src/extract.js")
+  const records = [
+    { n: 1, k: "prompt", text: "fix the build" },
+    { n: 2, k: "session", event: "start" },
+    { n: 3, k: "handover", about: "work", text: "the logs come first" },
+    { n: 4, k: "tool", tool: "shell", input: { command: "npm run build" }, exit: 1 },
+    { n: 5, k: "text", text: "the build is broken because…" },
+    { n: 6, k: "session", event: "end" },
+    { n: 7, k: "prompt", text: "and now?" },
+  ]
+  const { steps } = ownRounds(records)
+  assert.ok(!steps.has(4) && !steps.has(5), "the person's turn is theirs")
+  assert.equal(nothingNew(records, records.slice(3, 6)), false, "and their answer is something to read")
+})
+
+test("a person who pastes the hand-over into a new session is still logged", async () => {
+  // The hand-over carries the reader's line indented deep inside it; only a prompt that starts
+  // with it, or has it right after one line (OpenCode's own), is a reader's.
+  const dir = sandbox()
+  const fake = fakeOpenCode({ directory: dir, agent: false })
+  const cleanup = await plugin.setup(fake.ctx)
+  const pasted = [
+    "_opencode-retro — the logs come first:_",
+    "",
+    "1 session log is waiting to be analysed.",
+    "",
+    "    opencode-retro work order: read /x/.retro/work/ses_a.md and do what it says.",
+    "",
+    "what does this mean?",
+  ].join("\n")
+  await fake.hooks.get("session.prompt")({ sessionID: "ses_curious", messageID: "m1", prompt: { text: pasted } })
+  assert.ok(existsSync(logOf(dir, "ses_curious")))
+  await cleanup?.()
+})
+
+test("a reader that read up to a trailing turn's end has read it all", async () => {
+  const dir = sandbox()
+  const fake = fakeOpenCode({ directory: dir, agent: false })
+  const cleanup = await plugin.setup(fake.ctx)
+  const t = Date.now()
+  const lines = [
+    { v: 1, n: 1, t, k: "prompt", text: "fix the build" },
+    { v: 1, n: 2, t, k: "tool", id: "c1", tool: "shell", input: { command: "npm run build" }, status: "completed", exit: 1 },
+    { v: 1, n: 3, t, k: "session", event: "end", outcome: "succeeded" },
+  ]
+  mkdirSync(join(dir, ".retro", "sessions"), { recursive: true })
+  writeFileSync(logOf(dir, "ses_old"), lines.map((l) => JSON.stringify(l)).join("\n") + "\n")
+  await retro(fake, { invoker: "ses_other" })
+  await record(fake, "ses_old", [], { dir, through: 2 })
+  assert.ok(!state(dir).looked.ses_old.open, "a turn's end holds nothing to read")
+  await cleanup?.()
+})

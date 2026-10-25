@@ -215,6 +215,9 @@ rare, since the hand-over asks it to start readers and nothing else — is left 
   `a delegation of ours written after an early retro_propose is still ours`
   `a reader that read everything but a trailing round has read it all`
   `a hand-over that could not be delivered is followed by a notice saying so`
+  `a hand-over that landed in a running turn with no turn after it opens an empty round`
+  `a person who pastes the hand-over into a new session is still logged`
+  `a reader that read up to a trailing turn's end has read it all`
 - One command issues at most `extractLimit` orders; the rest stay owed and are named. A
   skipped log takes no order.
   `extractLimit caps what one command analyses and leaves the rest owed`

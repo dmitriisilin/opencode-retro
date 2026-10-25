@@ -7,7 +7,7 @@ import { createShadowLog, identityOf, isReplacedLog, parseShadowLog } from "./sr
 import { createState } from "./src/state.js"
 import { concludedIn, createStore, score } from "./src/lessons.js"
 import { assessCurrency, fingerprintOf } from "./src/currency.js"
-import { composeOrder, isWorkLine, nothingNew, ownRounds, recordAnswer } from "./src/extract.js"
+import { composeOrder, isWorkLine, lastReadable, nothingNew, ownRounds, recordAnswer } from "./src/extract.js"
 import { RECORD_INPUT } from "./src/contract.js"
 import {
   PROPOSE_INPUT,
@@ -1144,7 +1144,9 @@ export default {
       }
       const text = raw == null ? null : raw.toString("utf8")
       const records = text == null ? null : parseShadowLog(text)
-      const lastN = records?.length ? Math.max(...records.map((r) => r.n ?? 0)) : 0
+      // A loop, not `Math.max(...)`: a log left open for weeks outgrows the argument limit.
+      let lastN = 0
+      for (const r of records ?? []) if ((r.n ?? 0) > lastN) lastN = r.n
 
       // Which log this is, from the bytes that were actually read. A log can be replaced
       // between `markOf` and the read, and the old mark must not filter the new log's first
@@ -1220,9 +1222,10 @@ export default {
       // where it was on purpose, so the mark cannot say whether this is new material.
       const previous = state.askedFor(sessionID)
       const asked = (readSize > previous.size ? 0 : previous.asked) + 1
-      // `lastReal`: the last step that is not the plugin's own. A reader leaves a trailing round
-      // out as it is told to, and reading up to here is reading all of it (thirty-second review).
-      const lastReal = Math.max(mark.n, ...records.filter((r) => !own.steps.has(r.n)).map((r) => r.n ?? 0))
+      // `lastReal`: the last step anything could be read in — not the plugin's own, not a turn's
+      // end. A reader leaves a trailing round out as it is told to, and reading up to here is
+      // reading all of it (thirty-second and thirty-third reviews).
+      const lastReal = Math.max(mark.n, lastReadable(records))
       const order = { id: identity, size: readSize, lastN, lastReal, n: mark.n, asked }
       state.issue(sessionID, order)
       return { ok: true, order: { session: sessionID, ...order } }

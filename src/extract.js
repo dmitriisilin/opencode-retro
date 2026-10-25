@@ -23,16 +23,19 @@ export const WORK_MARK = "opencode-retro work order"
 const OWN_TOOLS = new Set(["retro_record", "retro_propose"])
 
 /**
- * Whether a text carries the line the hand-over prescribes for a reader, at the start of one of
- * its lines. Not only at the start of the text: OpenCode puts a line of its own ahead of a
+ * Whether a text carries the line the hand-over prescribes for a reader, at its start or right
+ * after its first line. Not only at the start of the text: OpenCode puts a line of its own ahead of a
  * subagent's prompt ("You are a subagent spawned by another session."), so a check anchored
  * there never matched a live reader at all — found in the first bench run without the path
  * matching that had been catching them instead. A person can type a path, but does not type
  * this line by accident.
  */
 export function isWorkLine(text) {
-  return typeof text === "string" && new RegExp(`(^|\\n)\\s*${WORK_MARK}: read `).test(text)
+  return typeof text === "string" && WORK_LINE.test(text)
 }
+// At the start, or after one line before it — OpenCode's — and no further: a person pasting the
+// whole hand-over, where the line sits indented deep in it, is not a reader (thirty-third review).
+const WORK_LINE = new RegExp(`^\\s*(?:[^\\n]*\\n\\s*)?${WORK_MARK}: read `)
 
 /**
  * The plugin's own rounds in a log, as step ranges (analysis.md, "The plugin's own work").
@@ -56,7 +59,16 @@ export function ownRounds(records) {
     // review). With no turn start to go by, the round starts at the hand-over itself.
     let end = i + 1
     while (end < sorted.length && !ends(sorted[end]) && !(sorted[end].k === "handover" && sorted[end].about === "work")) end++
-    let from = i
+    // Was a turn running when the hand-over landed? Then it waits for that turn, and with no
+    // turn starting after it the round is empty: the rest is the person's (thirty-third review).
+    let inTurn = false
+    for (let j = i - 1; j >= 0; j--) {
+      const r = sorted[j]
+      if (r.k !== "session" || r.from) continue
+      inTurn = r.event === "start"
+      break
+    }
+    let from = inTurn ? end : i
     for (let j = i + 1; j < end; j++) {
       if (sorted[j].k === "session" && sorted[j].event === "start" && !sorted[j].from) {
         from = j
@@ -69,7 +81,7 @@ export function ownRounds(records) {
       steps.add(sorted[j].n)
       range[1] = sorted[j].n
     }
-    if (from !== i) range[0] = sorted[from].n
+    if (from !== i && from < end) range[0] = sorted[from].n
     ranges.push(range)
     i = end - 1
   }
@@ -89,19 +101,40 @@ export function ownRounds(records) {
  * owed for it (log.md, "Owed"): otherwise every `/retro` left its own session waiting, and the
  * next one paid a read to skip the round.
  */
+/**
+ * The last step an analysis could read something in: not the plugin's own, not a step that holds
+ * nothing. Reading up to it is reading all of it, whatever trails after (thirty-third review).
+ */
+export function lastReadable(records) {
+  const own = ownRounds(records).steps
+  const plugin = repliesToPlugin(records)
+  let last = 0
+  for (const r of records) if (readable(r, plugin) && !own.has(r.n) && (r.n ?? 0) > last) last = r.n
+  return last
+}
+
+/** Texts that answer one of the plugin's own hand-overs (not `work`: that one has a round). */
+function repliesToPlugin(records) {
+  const out = new Set()
+  let answering = null
+  for (const r of [...records].sort((a, b) => (a.n ?? 0) - (b.n ?? 0))) {
+    if (r.k === "prompt" || (r.k === "handover" && r.about !== "work")) answering = r.k
+    else if (r.k === "text" && answering === "handover") out.add(r.n)
+  }
+  return out
+}
+
+/** A step that could hold evidence: what someone said or did (log.md, "Owed"). */
+function readable(r, plugin) {
+  return r.k === "prompt" || r.k === "tool" || (r.k === "text" && !plugin.has(r.n)) || (r.k === "step" && r.files?.length > 0)
+}
+
 export function nothingNew(all, added) {
   // The common case, cheaply: nothing added that could be material at all.
-  if (!added.some((r) => r.k === "prompt" || r.k === "tool" || r.k === "text" || (r.k === "step" && r.files?.length > 0))) return true
+  if (!added.some((r) => readable(r, new Set()))) return true
   const own = ownRounds(all).steps
-  const answersPlugin = new Set()
-  let answering = null
-  for (const r of [...all].sort((a, b) => (a.n ?? 0) - (b.n ?? 0))) {
-    if (r.k === "prompt" || r.k === "handover") answering = r.k
-    else if (r.k === "text" && answering === "handover") answersPlugin.add(r.n)
-  }
-  const material = (r) =>
-    r.k === "prompt" || r.k === "tool" || (r.k === "text" && !answersPlugin.has(r.n)) || (r.k === "step" && r.files?.length > 0)
-  return added.every((r) => !material(r) || own.has(r.n))
+  const plugin = repliesToPlugin(all)
+  return added.every((r) => !readable(r, plugin) || own.has(r.n))
 }
 
 /**
@@ -165,7 +198,8 @@ export function composeOrder({
   let answering = null
   let newReply = false
   for (const r of [...records].sort((a, b) => (a.n ?? 0) - (b.n ?? 0))) {
-    if (r.k === "prompt" || r.k === "handover") answering = r.k
+    // As in `nothingNew`: the `work` hand-over's replies are its round's, already left out.
+    if (r.k === "prompt" || (r.k === "handover" && r.about !== "work")) answering = r.k
     else if (r.k === "text" && answering !== "handover") newReply = true
   }
   if (reread ? asked === 0 && toolCalls === 0 && !newReply : asked <= 1 && toolCalls === 0) {
@@ -206,7 +240,8 @@ export function composeOrder({
           "The plugin's own work — leave it out",
           "These steps are rounds of this plugin's own, as the rules below describe: " +
             rounds.map(([a, b]) => (a === b ? `step ${a}` : `steps ${a}–${b}`)).join(", ") +
-            ". So is any call to `retro_record` or `retro_propose`.",
+            ". So is any call to `retro_record` or `retro_propose`, and any `subagent` call whose " +
+            "prompt is a work order's line, wherever it is.",
         )
       : null,
     section("Already concluded from this session", renderConcluded(concluded)),
