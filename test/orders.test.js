@@ -1583,6 +1583,38 @@ test("a report with no session to describe keeps when its checks were last evalu
   await fake.hooks.get("session.prompt")({ sessionID: "ses_reader", messageID: "r1", prompt: { text: "opencode-retro work order: read /x/.retro/work/ses_a.md and do what it says." } })
   fake.emit({ type: "session.created", durable: { seq: 91 }, data: { sessionID: "ses_helper", parentID: "ses_reader", location: { directory: dir } } })
   await new Promise((r) => setImmediate(r))
-  assert.doesNotMatch(readFileSync(join(dir, ".retro", "selfcheck.md"), "utf8"), /verified\s+never/)
+  const report = readFileSync(join(dir, ".retro", "selfcheck.md"), "utf8")
+  assert.doesNotMatch(report, /verified\s+never/)
+  assert.match(report, /none are shown, see below/, "and the label does not point at checks that are not there")
   await cleanup?.()
+})
+
+/* Only a hook moves the heartbeat (selfcheck.md). */
+
+test("a recorded outcome is evaluated anew without moving the heartbeat, and a round's own calls move it", async () => {
+  const real = Date.now
+  let now = Date.parse("2026-10-25T10:00:00Z")
+  Date.now = () => now
+  try {
+    const dir = sandbox()
+    const fake = fakeOpenCode({ directory: dir, agent: false })
+    const cleanup = await plugin.setup(fake.ctx)
+    await work(fake, "ses_a")
+    fake.emit({ type: "session.execution.succeeded", durable: { seq: 50 }, data: { sessionID: "ses_a" } })
+    await new Promise((r) => setImmediate(r))
+    now += 10 * 60_000
+    await retro(fake)
+    await record(fake, "ses_a", [LESSON], { dir })
+    let report = readFileSync(join(dir, ".retro", "selfcheck.md"), "utf8")
+    assert.match(report, /heartbeat\s+2026-10-25 10:00/, "a tool of ours is not a hook firing")
+    assert.match(report, /verified\s+2026-10-25 10:10/, "but the checks were evaluated again, now")
+    // The person's session delegating for the round is a hook firing.
+    now += 10 * 60_000
+    await fake.hooks.get("tool.execute.before")({ sessionID: "ses_review", id: "d9", tool: "retro_propose", input: {} })
+    report = readFileSync(join(dir, ".retro", "selfcheck.md"), "utf8")
+    assert.match(report, /heartbeat\s+2026-10-25 10:20/)
+    await cleanup?.()
+  } finally {
+    Date.now = real
+  }
 })

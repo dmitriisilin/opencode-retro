@@ -371,6 +371,9 @@ export default {
       // Its first half was taken for the person's; it is ours, so that start is taken back.
       if (ours && known && !known.ours) ingest.unstart(p?.sessionID, p?.id)
       if (ours) {
+        // A hook fired, in a session of the person's: during a /retro round these are most of
+        // what does, so they keep the heartbeat honest (selfcheck.md).
+        if (!internal.has(p?.sessionID)) observe(rootOf(p.sessionID))
         // A wrapper of a call already counted is the same call.
         if (known?.ours) return
         // Not logged, but counted: the event stream sees this call like any other, and the
@@ -1348,11 +1351,10 @@ export default {
         if (!ended.has(sessionID)) {
           if (observe(sessionID, { force: true })) return
         } else {
-          // Re-evaluated now, with the outcome that just arrived: the extraction line is new, and
-          // the plugin has just shown it is alive — during a /retro round, recording outcomes is
-          // most of what moves the heartbeat (twelfth and twenty-first reviews).
+          // Evaluated again with the outcome that just arrived, and the heartbeat left alone: a
+          // tool of ours is not a hook firing (selfcheck.md, "Only a hook moves the heartbeat").
           const verified = lastVerified.get(sessionID)
-          if (verified) check.verify({ ...verified, extraction: result })
+          if (verified) check.replay({ ...verified, extraction: result })
         }
       }
       // Once per record: observing writes the report itself (nineteenth review).
@@ -1394,7 +1396,7 @@ export default {
       if (!file || (order.id && file.id && order.id !== file.id)) {
         state.close(session, "void")
         removeWork(session)
-        writeSelfCheck()
+        reportOutcome(session, { ok: false, detail: "the log was replaced since its order was written; it is asked for again" })
         return { ok: false, detail: `the log of \`${session}\` was replaced since its order was written; it will be asked for again.` }
       }
       /**

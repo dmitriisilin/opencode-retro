@@ -64,11 +64,12 @@ export function createSelfCheck({ versions, repo, loadedAt = Date.now() }) {
       return state
     },
     /**
-     * Show a session as it was measured when its turn ended. Nothing is measured now, so the
-     * heartbeat does not move and `verified` says when the checks really were (eleventh review).
+     * Evaluate the checks again over what was measured when a session's turn ended — with a new
+     * outcome, or to show it again. `verified` is now; the heartbeat does not move, because only
+     * a hook firing may move it (selfcheck.md, "Only a hook moves the heartbeat").
      */
-    replay(session) {
-      state.verified = session.endedAt ?? state.verified
+    replay(session, at = Date.now()) {
+      state.verified = at
       describe(session, session.endedAt ?? null)
       return state
     },
@@ -295,7 +296,9 @@ export function render(state) {
     "```",
     `loaded     ${stamp(state.loaded)}   (plugin start)`,
     `heartbeat  ${stamp(state.heartbeat)}   (refreshed while a session works, at most once a minute)`,
-    `verified   ${stamp(state.verified)}   (when the checks below were last evaluated)`,
+    state.checks.length
+      ? `verified   ${stamp(state.verified)}   (when the checks below were last evaluated)`
+      : `verified   ${stamp(state.verified)}   (when checks were last evaluated; none are shown, see below)`,
     "```",
     "",
     "**If you are working right now and `heartbeat` is more than a few minutes old, this",

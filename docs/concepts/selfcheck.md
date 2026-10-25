@@ -16,6 +16,15 @@ it came from.
 while a session works, at most once a minute), `verified` (when the assertions were last
 evaluated — from the first prompt of a session onward, not only at its end).
 
+**Only a hook moves the heartbeat.** Its whole meaning is that hooks fire, so nothing else may
+refresh it: an outcome recorded through `retro_record`, or a session's report shown again, is
+evaluated anew — `verified` moves — and leaves the heartbeat where the hooks left it. Otherwise
+the plugin's own tools, which still run when every hook has silently died (Gotcha 8), would
+keep a dead plugin looking alive. The calls of a `/retro` round in the person's session are
+hooks firing, though, ours or not, and they move it: a round with readers working for minutes
+is not a plugin that stopped. (The eleventh, twelfth, twentieth and twenty-first reviews each
+flipped this one way or the other; this is why it is written down.)
+
 **The assertions.** Prompt hook, tool hook, shadow log, trigger, extraction. Each is
 `ok`, `DEGRADED`, `BROKEN` or `not exercised`. **The report may claim only what the
 traffic proved.** A session without tool calls proves nothing about the tool hook; a turn
@@ -76,6 +85,9 @@ last analysis of the session whichever path ran it.
   `a reader recognised by its parent takes the report back to the person's session`
   `a report with no session of the person's to describe does not say no hook has fired`
   `a report with no session to describe keeps when its checks were last evaluated`
+- Only a hook moves the heartbeat: a recorded outcome is evaluated anew and leaves it alone, and
+  the calls of a `/retro` round in the person's session move it.
+  `a recorded outcome is evaluated anew without moving the heartbeat, and a round's own calls move it`
   `a reader that reported reading nothing new is not reported as no answer`
   `a session whose log was set aside is not told the next /retro asks again`
 - A call the turn ended in the middle of accounts for its event: an interrupted turn with a
