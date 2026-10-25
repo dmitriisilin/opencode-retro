@@ -313,3 +313,12 @@ test("every message that names a failed log names it the same way", () => {
   assert.ok(renderWorkOrders([{ session: "ses_x", path: ".retro/work/ses_x.md" }], { failures: [f] }).includes(line), "the work orders")
   assert.doesNotMatch(line, /could not analyse/i, "and none of them claims an analysis that may not have happened")
 })
+
+test("nothing to review does not promise another try for a log set aside", async () => {
+  // Fifth pre-release review.
+  const { renderNothing } = await import("../src/propose.js")
+  const { SET_ASIDE } = await import("../src/selfcheck.js")
+  const text = renderNothing({ extracted: { failures: [{ session: "ses_x", detail: `${SET_ASIDE}: shadow log could not be read` }] } })
+  assert.doesNotMatch(text, /tries again/)
+  assert.match(text, /unless it grows/)
+})

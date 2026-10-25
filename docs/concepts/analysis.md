@@ -166,29 +166,36 @@ the plugin's bookkeeping never turns into a lesson about the plugin.
   `/retro all reports a log it could not read, as well as the plan`
 - A read the plugin could not complete is an attempt, and three on one input retire the log.
   A reader that reported reading nothing new is one of these — an answer that covered nothing —
-  and is never also reported as no answer. A retired log is called the same thing everywhere.
+  and is never also reported as no answer. A retired log is called the same thing everywhere,
+  and nothing says it will be tried again.
   `a failed read is owed, and tried again on the next command`
   `a session is given up on after three attempts, not billed forever`
   `a reader that reported reading nothing new is not reported as no answer`
   `a log set aside is described in the same words everywhere it is reported`
+  `the third read that covered nothing new says the log is set aside, not that it will be asked again`
+  `nothing to review does not promise another try for a log set aside`
 - What decides that a call or a session is the plugin's own is decided when it starts, and
   never again when it ends — per session and call id, and for a Code Mode wrapper the same as
   for what it wraps. A session a person types into is never taken for ours by anything short
   of the prescribed line — or, for a fresh session, the very prompt one of our own delegations
-  is handing its reader at that moment, or a parent whose only delegations in flight are ours.
-  A turn's calls are forgotten with it; an after-hook that outlives its turn is decided by
-  what it says.
+  is handing its reader at that moment, or a parent with a delegation of ours in flight and
+  nothing of the person's in flight beside it.
+  A call is remembered while it is in flight; one that never finishes is bounded, not swept
+  with its turn, and an after-hook whose start was never seen is decided by what it says.
   `talking about work orders does not stop a session being logged`
   `a person who names an open order's path in a new session is still logged`
   `a reworded delegation of a work order stays out of the person's log`
   `a fresh session given the prescribed line is recognised as the plugin's own reader`
   `a reworded delegation's reader stays out of the person's log, in the order the events arrive`
   `a person's own delegation stays logged even if an order naming its path is issued while it runs`
-  `an own delegation interrupted with its turn is forgotten, so a later session quoting it is still logged`
+  `own calls that never finish are bounded, so a later session quoting one is logged in the end`
   `an own delegation whose after-hook outlives its turn is still ours`
   `an own call run through Code Mode's execute is ours in both of its hook pairs`
   `a reader whose prompt reads nothing like the delegation is still recognised by its parent`
   `a person's call is not taken for ours because one of ours elsewhere has the same id`
+  `a call id reused in a later message of the same session is decided afresh`
+  `a turn's end arriving late does not make the next turn's own calls the person's`
+  `a child is not taken for a reader while anything of the person's runs beside our delegation`
 - One command issues at most `extractLimit` orders; the rest stay owed and are named. A
   skipped log takes no order.
   `extractLimit caps what one command analyses and leaves the rest owed`

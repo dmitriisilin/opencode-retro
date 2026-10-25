@@ -142,23 +142,32 @@ export default {
      */
     const rounds = new Map()
     /**
-     * Every tool call of this turn, and whether it is the plugin's own — decided when the call
-     * starts, and never again: `session\0id` -> { session, tool, ours, prompt, done }.
+     * Tool calls in flight, and whether each is the plugin's own — decided when the call starts,
+     * and never again: `session\0message\0id` -> { session, tool, ours, prompt, open }.
      *
      * Which call is ours used to be re-decided when it finished. By then the reader has recorded
      * and its order is closed, so a delegation recognised by the order's path no longer matched
      * and was written into the person's log (second pre-release review); and a person's own
      * subagent could become ours if an order naming its path was issued while it ran (third).
      *
-     * Kept until the turn of its session ends, not until its after-hook: Code Mode reports one
-     * call twice under one id — the inner tool, then its `execute` wrapper — and the wrapper is
-     * whatever it wraps (measured live: a `retro_propose` run through `execute` was logged as the
-     * person's). Keyed by session as well as id, because ids are not unique across sessions.
+     * One entry can stand for two hook pairs: Code Mode reports a call as its inner tool and
+     * again as its `execute` wrapper, under one id — inner before, wrapper before, inner after,
+     * wrapper after (measured, `test/ingest.test.js`) — and the wrapper is whatever it wraps
+     * (the cycle 12 bench logged an `execute` wrapping `retro_propose` as the person's). So
+     * `open` counts the pairs still open, and the entry goes when it reaches zero; the map
+     * holds what is in flight and nothing else. Keyed by message as well as session and id,
+     * because some providers number calls per message (fourth and fifth reviews).
+     *
+     * A call interrupted before its after-hook leaves its entry behind, and `MAX_CALLS` is
+     * what bounds those. Not swept at the end of a turn: the event stream lags the hooks, so a
+     * sweep on a turn's end could take the next turn's calls with it (fifth review).
+     *
      * `prompt` is what an own delegation hands its reader, whose session starts before the call
      * ends and is recognised by it (`delegatedByUs`).
      */
     const calls = new Map()
-    const callKey = (p) => (p?.id != null ? `${p?.sessionID}\u0000${p.id}` : null)
+    const MAX_CALLS = 1000
+    const callKey = (p) => (p?.id != null ? `${p?.sessionID}\u0000${p?.messageID ?? ""}\u0000${p.id}` : null)
 
     /**
      * What is waiting, as the marks say it is. A log whose last read failed is named as a
@@ -330,7 +339,11 @@ export default {
       const ours = Boolean(known?.ours) || ownWork(p)
       if (key) {
         const prompt = ours && p?.tool === "subagent" && typeof p?.input?.prompt === "string" ? flat(p.input.prompt) : null
-        calls.set(key, { session: p?.sessionID, tool: known?.tool ?? p?.tool, ours, prompt: prompt || known?.prompt || null, done: false })
+        // Either half naming `subagent` makes it a delegation, whichever arrived first.
+        const tool = known?.tool === "subagent" ? "subagent" : (p?.tool ?? known?.tool)
+        calls.delete(key) // re-inserted last, so the oldest is first to go
+        calls.set(key, { session: p?.sessionID, tool, ours, prompt: prompt || known?.prompt || null, open: (known?.open ?? 0) + 1 })
+        if (calls.size > MAX_CALLS) calls.delete(calls.keys().next().value)
       }
       if (ours) {
         // A wrapper of a call already counted is the same call.
@@ -348,10 +361,10 @@ export default {
     await hook("tool", "execute.after", (p) => {
       const child = p.tool === "subagent" ? p.result?.metadata?.sessionID : null
       // Decided at the start (`calls`). Only a call whose start this process never saw — it was
-      // reloaded mid-call, or the turn ended before the call did — is decided here, the only way
-      // left.
-      const known = callKey(p) ? calls.get(callKey(p)) : undefined
-      if (known) known.done = true
+      // reloaded mid-call — is decided here, by what the call says, the only way left.
+      const key = callKey(p)
+      const known = key ? calls.get(key) : undefined
+      if (known && --known.open <= 0) calls.delete(key)
       const ours = known ? known.ours : ownWork(p)
       if (child && (ours || internal.has(child))) {
         // One of ours. If its own prompt did not carry the mark (the agent may have worded the
@@ -508,16 +521,6 @@ export default {
 
     function handleEvent(event) {
       const sessionID = event?.data?.sessionID
-      // session.idle never fires outside the TUI (AGENTS.md Gotcha 2), so the end of work
-      // is session.execution.*.
-      const done =
-        event.type === "session.execution.succeeded" ||
-        event.type === "session.execution.failed" ||
-        event.type === "session.execution.interrupted"
-
-      // The turn's calls go with it, including one interrupted before its after-hook, which
-      // would otherwise stay for the life of the process (third pre-release review).
-      if (done && sessionID) for (const [key, call] of calls) if (call.session === sessionID) calls.delete(key)
 
       if (event.type === "session.created" && sessionID) {
         // A directory that names the same place two ways is still ours. Comparing raw
@@ -528,10 +531,14 @@ export default {
         if (internal.has(sessionID)) return
         if (event.data?.parentID && startedByUs(event.data.parentID)) {
           // One of our readers whose prompt did not give it away. Its prompt may already be in
-          // a log of its own; that goes, and nothing of it reaches the person's.
+          // a log of its own, and the report may be about it; both go back to the person's.
           internal.add(sessionID)
           log.remove(sessionID)
           state.uncountSession(sessionID)
+          ingest.forget(sessionID)
+          observedSessions.delete(sessionID)
+          turnSeen.delete(sessionID)
+          observe(rootOf(event.data.parentID), { force: true })
           return
         }
         if (event.data?.parentID) adopt(sessionID, event.data.parentID)
@@ -556,6 +563,12 @@ export default {
       // session that is perfectly healthy somewhere else.
       if (!sessionID || !ingest.owned(sessionID)) return
 
+      // session.idle never fires outside the TUI (AGENTS.md Gotcha 2), so the end of work
+      // is session.execution.*.
+      const done =
+        event.type === "session.execution.succeeded" ||
+        event.type === "session.execution.failed" ||
+        event.type === "session.execution.interrupted"
       if (!done) return
 
       if (ended.has(sessionID)) return
@@ -1040,22 +1053,23 @@ export default {
     function delegatedByUs(text) {
       if (typeof text !== "string") return false
       const prompt = flat(text)
-      for (const call of calls.values()) if (call.ours && !call.done && call.prompt && prompt.includes(call.prompt)) return true
+      for (const call of calls.values()) if (call.ours && call.prompt && prompt.includes(call.prompt)) return true
       return false
     }
 
     /**
      * Whether a session announcing `parent` can only have been started by us: the parent has a
-     * delegation in flight, and every one it has is ours. Needs no wording at all, so it holds
-     * however OpenCode presents the reader its prompt. A person's delegation running beside
-     * ours leaves it to `delegatedByUs`.
+     * delegation of ours in flight and nothing of the person's in flight at all. Needs no
+     * wording, so it holds however OpenCode presents the reader its prompt. Anything of the
+     * person's running beside ours — a delegation, a wrapper, a tool that might start a session
+     * some other way — leaves it to `delegatedByUs` and the exact line (fifth review).
      */
     function startedByUs(parent) {
       let ours = false
       for (const call of calls.values()) {
-        if (call.session !== parent || call.tool !== "subagent" || call.done) continue
+        if (call.session !== parent) continue
         if (!call.ours) return false
-        ours = true
+        if (call.tool === "subagent") ours = true
       }
       return ours
     }
@@ -1240,6 +1254,20 @@ export default {
       return failures
     }
 
+    /**
+     * An analysis's outcome, on the session's own line of the report — only when the report is
+     * about that session, since an old snapshot of it would otherwise replace the session
+     * somebody is working in (fourth review). A session working again is measured afresh, not
+     * replayed from the end of its last turn (fifth). The stock section says what became of
+     * every log either way.
+     */
+    function reportOutcome(sessionID, result) {
+      if (check.describing() !== sessionID) return
+      if (!ended.has(sessionID)) return observe(sessionID, { force: true })
+      const verified = lastVerified.get(sessionID)
+      if (verified) check.verify({ ...verified, extraction: result })
+    }
+
     function removeWork(sessionID) {
       try {
         rmSync(workPath(sessionID), { force: true })
@@ -1296,14 +1324,18 @@ export default {
       const reported = Number.isFinite(through)
       const claimed = reported ? Math.min(Math.trunc(through), order.lastN) : order.n
       if (reported && claimed <= order.n && order.lastN > order.n) {
+        const failed = fail(session, order, "the analysis reported reading nothing new")
+        // Said as it is: the third such read sets the log aside, and the reply used to promise
+        // another ask regardless (fifth review).
         const detail =
           `\`${session}\` was read only as far as step ${claimed}, which is no further than the ` +
-          `${order.n} already analysed. Nothing was recorded; the log will be asked about again.`
-        const failed = fail(session, order, "the analysis reported reading nothing new")
+          `${order.n} already analysed. Nothing was recorded; ` +
+          (failed.detail.startsWith(SET_ASIDE)
+            ? `the log is now ${SET_ASIDE}, and is not asked about again unless it grows.`
+            : "the log will be asked about again.")
         // The session's own line in the report too, which still said the log was waiting (third
         // pre-release review).
-        const verified = lastVerified.get(session)
-        if (verified && check.describing() === session) check.verify({ ...verified, extraction: failed })
+        reportOutcome(session, failed)
         // Closed as `empty`, not `unanswered`: an answer came back, it just covered nothing new.
         // As "unanswered" the self-check reported no record about a log whose reader had
         // answered, while counting the same read as failed (second pre-release review).
@@ -1347,11 +1379,7 @@ export default {
       state.close(session, "answered")
       removeWork(session)
       lastExtraction.set(session, result)
-      // Only when the report is about this session: otherwise an old snapshot of it would
-      // replace the session somebody is working in (third pre-release review). The stock
-      // section says what became of every log either way.
-      const verified = lastVerified.get(session)
-      if (verified && check.describing() === session) check.verify({ ...verified, extraction: result })
+      reportOutcome(session, result)
       writeSelfCheck()
       return result
     }

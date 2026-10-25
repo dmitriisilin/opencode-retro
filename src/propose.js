@@ -1,5 +1,6 @@
 import { score, staleSessions } from "./lessons.js"
 import { DEFAULTS } from "./config.js"
+import { SET_ASIDE } from "./selfcheck.js"
 
 /**
  * `/retro` (AGENTS.md decision 9, as amended).
@@ -321,9 +322,18 @@ export function renderNothing({ queued = 0, extracted = null, dir = DEFAULTS.dir
   // sessions have been going straight". It sent a stranger looking at the project instead
   // of at the failure.
   if (failures.length) {
+    // A log set aside is not tried again, and saying it is sent the reader to a `/retro` that
+    // would not touch it (fifth review).
+    const aside = failures.filter((f) => String(f.detail ?? "").startsWith(SET_ASIDE)).length
+    const next =
+      aside === failures.length
+        ? `nothing reads ${aside === 1 ? "it" : "them"} again unless ${aside === 1 ? "it grows" : "they grow"}.`
+        : aside
+          ? `the next \`/retro\` tries again, except for what was ${SET_ASIDE}, which is read again only if it grows.`
+          : "the next `/retro` tries again."
     lines.push(
       "",
-      `The log${failures.length === 1 ? "" : "s"} above ${failures.length === 1 ? "was" : "were"} not read, so this is not a clean result: the next \`/retro\` tries again.`,
+      `The log${failures.length === 1 ? "" : "s"} above ${failures.length === 1 ? "was" : "were"} not read, so this is not a clean result: ${next}`,
       `\`${dir}/plugin.log\` says why each read failed; \`${dir}/selfcheck.md\` says whether the plugin is still watching.`,
     )
   } else {
