@@ -119,16 +119,22 @@ nothing done, or an end marker, still proves nothing.
 **The plugin's own work.** The subagents it asks for and the calls to its own tools are its
 work, not the person's, and an analysis must never be analysed. Two kinds, handled two ways:
 
-1. **A reader's session is not logged.** A fresh session whose first prompt is the prescribed
-   line is one of ours, and so is anything such a session starts. Its whole job is reading
+1. **A reader's session is not logged.** A fresh session whose first prompt carries the
+   prescribed line, at the start of one of its lines — OpenCode puts a line of its own ahead
+   of a subagent's prompt — is one of ours, and so is anything such a session starts. Its whole job is reading
    other sessions' logs, so its own log would be copies of them. Recognised by the line alone,
    because a session is never taken for ours by anything less.
-2. **Everything else is logged, and marked.** A **round** is the stretch of a log from a
-   `handover` with `about: "work"` to the next `handover` of another kind or the next
-   `prompt` of the person's — one without `from` (log.md) — whichever comes first: the agent starting readers, the records coming back,
-   `retro_propose`. Calls to `retro_record` and `retro_propose` are ours wherever they are. A
-   reader whose delegation was worded its own way is an ordinary child, folded into the
-   person's log like any subagent — inside the round. The order tells the reader to leave a
+2. **Everything else is logged, and marked.** A **round** is the turn a `handover` with
+   `about: "work"` starts — from the next turn start after it, since a hand-over delivered
+   into a turn still running waits for that turn, and what the turn does is the person's —
+   to the next `handover` of another kind or the next `prompt` of the person's (one without
+   `from`, log.md), whichever comes first: the agent starting readers, the records coming
+   back, `retro_propose`. With no turn start to go by, it starts at the hand-over. Calls to
+   `retro_record` and `retro_propose`, and a `subagent` call whose prompt is a work order's
+   line, are ours wherever they are — a delegation is written when its reader is done, which
+   an early `retro_propose` puts after the round has closed. A reader whose delegation was
+   worded its own way is an ordinary child, folded into the person's log like any subagent —
+   inside the round, its reading of other logs with it. The order tells the reader to leave a
    round out (no lesson, no cost, no recurrence), and the plugin does not count a round as new
    material, so a log that grew by nothing but a round takes no order.
 
@@ -204,6 +210,11 @@ rare, since the hand-over asks it to start readers and nothing else — is left 
   `a round of the plugin's own is logged, and a log grown by nothing else takes no order`
   `the order tells the reader where the plugin's own work is and to leave it out`
   `a reworded reader is folded into the person's log inside the round`
+  `a reader whose prompt OpenCode prefixed with its own line is still not logged`
+  `a /retro posted into a turn still running leaves the rest of that turn the person's`
+  `a delegation of ours written after an early retro_propose is still ours`
+  `a reader that read everything but a trailing round has read it all`
+  `a hand-over that could not be delivered is followed by a notice saying so`
 - One command issues at most `extractLimit` orders; the rest stay owed and are named. A
   skipped log takes no order.
   `extractLimit caps what one command analyses and leaves the rest owed`

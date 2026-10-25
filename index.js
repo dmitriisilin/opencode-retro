@@ -7,7 +7,7 @@ import { createShadowLog, identityOf, isReplacedLog, parseShadowLog } from "./sr
 import { createState } from "./src/state.js"
 import { concludedIn, createStore, score } from "./src/lessons.js"
 import { assessCurrency, fingerprintOf } from "./src/currency.js"
-import { WORK_MARK, composeOrder, nothingNew, ownRounds, recordAnswer } from "./src/extract.js"
+import { composeOrder, isWorkLine, nothingNew, ownRounds, recordAnswer } from "./src/extract.js"
 import { RECORD_INPUT } from "./src/contract.js"
 import {
   PROPOSE_INPUT,
@@ -586,6 +586,9 @@ export default {
         await ctx.session.synthetic({ sessionID, text, description: "opencode-retro", resume: true })
       } catch (err) {
         onError("session.synthetic", err)
+        // Logged first, so the log says it was never delivered — and a notice ends the round
+        // the hand-over would have opened (thirty-second review).
+        noteHandover(sessionID, `_opencode-retro: the hand-over above could not be delivered: ${err?.message ?? err}_`, "notice")
       }
     }
 
@@ -608,17 +611,9 @@ export default {
      */
     function noteHandover(sessionID, text, about = "lesson") {
       try {
-        const owner = rootOf(sessionID)
-        const before = log.stat(owner).size
-        const mark = state.looked(owner)
+        // Our own text is not material, so it does not make the log owed — `isOwed` says so
+        // through `nothingNew`, in one place, for every kind of growth that holds nothing to read.
         ingest.handover(sessionID, text, about)
-        // Our own text is not material (analysis.md), so a log read to its end is not owed for
-        // it: otherwise every `/retro` left its own session "not analysed yet" in the report,
-        // and the next command paid a read to skip it. It is still in the log, and the next
-        // read carries it along with whatever the agent does after it.
-        if (before > 0 && before === mark.size && !mark.open && !mark.failed) {
-          state.look(owner, { size: log.stat(owner).size })
-        }
       } catch (err) {
         onError("handover.log", err)
       }
@@ -1021,16 +1016,6 @@ export default {
     }
 
     /**
-     * Whether a prompt is the exact line the hand-over prescribes for a reader. The only thing
-     * that makes a *session* ours: a session is never reclassified by anything less, because a
-     * session taken for ours is not logged again, and a person can type a path but does not type
-     * this line by accident.
-     */
-    function isWorkLine(text) {
-      return typeof text === "string" && text.trimStart().startsWith(`${WORK_MARK}: read `)
-    }
-
-    /**
      * Any hook fired — the person's, or a reader's of ours. The heartbeat moves, and nothing
      * else may move it: not the event stream, which keeps running when hooks die, nor a tool of
      * ours (selfcheck.md, "Only a hook moves the heartbeat"; twenty-third review). Once a
@@ -1235,7 +1220,10 @@ export default {
       // where it was on purpose, so the mark cannot say whether this is new material.
       const previous = state.askedFor(sessionID)
       const asked = (readSize > previous.size ? 0 : previous.asked) + 1
-      const order = { id: identity, size: readSize, lastN, n: mark.n, asked }
+      // `lastReal`: the last step that is not the plugin's own. A reader leaves a trailing round
+      // out as it is told to, and reading up to here is reading all of it (thirty-second review).
+      const lastReal = Math.max(mark.n, ...records.filter((r) => !own.steps.has(r.n)).map((r) => r.n ?? 0))
+      const order = { id: identity, size: readSize, lastN, lastReal, n: mark.n, asked }
       state.issue(sessionID, order)
       return { ok: true, order: { session: sessionID, ...order } }
     }
@@ -1377,7 +1365,9 @@ export default {
        * settled log.
        */
       const reported = Number.isFinite(through)
-      const claimed = reported ? Math.min(Math.trunc(through), order.lastN) : order.n
+      const reach = reported ? Math.min(Math.trunc(through), order.lastN) : order.n
+      // Up to the last step that is not the plugin's own is all of it.
+      const claimed = reported && reach >= (order.lastReal ?? order.lastN) ? order.lastN : reach
       if (reported && claimed <= order.n && order.lastN > order.n) {
         const failed = fail(session, order, "the analysis reported reading nothing new")
         // Said as it is: the third such read sets the log aside, and the reply used to promise

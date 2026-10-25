@@ -403,7 +403,7 @@ test("the order tells the reader where the plugin's own work is and to leave it 
   const order = readFileSync(paths.find((path) => path.includes("ses_review")), "utf8")
   assert.match(order, /The plugin's own work — leave it out/)
   assert.match(order, /steps 1–\d+/, "the round, by its steps")
-  assert.match(order, /starts a round of this plugin's own/, "and the rule that says what a round is")
+  assert.match(order, /asks for a round of this plugin's own/, "and the rule that says what a round is")
   await cleanup?.()
 })
 
@@ -1395,4 +1395,96 @@ test("a hook that names no session still keeps the report measured", async () =>
   } finally {
     Date.now = real
   }
+})
+
+/* Thirty-second pre-release review, and the first live bench of the marked rounds. */
+
+test("a reader whose prompt OpenCode prefixed with its own line is still not logged", async () => {
+  // Live, a subagent's prompt arrives as "You are a subagent spawned by another session." and
+  // then the delegation's text: a check anchored at the start never matched a real reader.
+  const dir = sandbox()
+  const fake = fakeOpenCode({ directory: dir, agent: false })
+  const cleanup = await plugin.setup(fake.ctx)
+  await work(fake, "ses_a")
+  const { paths } = await retro(fake)
+  const text = `You are a subagent spawned by another session.\nopencode-retro work order: read ${paths[0]} and do what it says.`
+  await fake.hooks.get("session.prompt")({ sessionID: "ses_reader", messageID: "r1", prompt: { text } })
+  await fake.hooks.get("tool.execute.before")({ sessionID: "ses_reader", id: "rr", tool: "read", input: { path: paths[0] } })
+  await fake.hooks.get("tool.execute.after")({ sessionID: "ses_reader", id: "rr", tool: "read", input: { path: paths[0] }, status: "completed", result: { output: "x" } })
+  assert.equal(existsSync(logOf(dir, "ses_reader")), false)
+  await cleanup?.()
+})
+
+test("a /retro posted into a turn still running leaves the rest of that turn the person's", async () => {
+  const { ownRounds } = await import("../src/extract.js")
+  const records = [
+    { n: 1, k: "prompt", text: "fix the build" },
+    { n: 2, k: "session", event: "start" },
+    { n: 3, k: "handover", about: "work", text: "the logs come first" },
+    { n: 4, k: "tool", tool: "shell", input: { command: "npm run build" }, exit: 1 },
+    { n: 5, k: "session", event: "end" },
+    { n: 6, k: "session", event: "start" },
+    { n: 7, k: "tool", tool: "subagent", input: { prompt: "opencode-retro work order: read /x.md and do what it says." } },
+    { n: 8, k: "handover", about: "lesson", text: "a lesson" },
+  ]
+  const { steps, ranges } = ownRounds(records)
+  assert.ok(!steps.has(4), "the person's turn finishing is theirs")
+  assert.ok(steps.has(6) && steps.has(7), "the round is the turn the hand-over started")
+  assert.deepEqual(ranges, [[6, 7]])
+})
+
+test("a delegation of ours written after an early retro_propose is still ours", async () => {
+  const { ownRounds } = await import("../src/extract.js")
+  const records = [
+    { n: 1, k: "handover", about: "work", text: "the logs come first" },
+    { n: 2, k: "session", event: "start" },
+    { n: 3, k: "handover", about: "lesson", text: "a lesson" },
+    { n: 4, k: "tool", tool: "retro_propose", input: {} },
+    { n: 5, k: "tool", tool: "subagent", input: { prompt: "You are a subagent.\nopencode-retro work order: read /x.md and do what it says." }, output: "the reader's report" },
+    { n: 6, k: "tool", tool: "subagent", input: { prompt: "explore the repo" } },
+  ]
+  const { steps } = ownRounds(records)
+  assert.ok(steps.has(4) && steps.has(5), "the plugin's own calls, wherever they land")
+  assert.ok(!steps.has(6), "and only those")
+})
+
+test("a reader that read everything but a trailing round has read it all", async () => {
+  // The order's steps run to the end of the log, a trailing round included; a reader that
+  // leaves the round out as it is told to, and reports the last step before it, read it all.
+  const dir = sandbox()
+  const fake = fakeOpenCode({ directory: dir, agent: false })
+  const cleanup = await plugin.setup(fake.ctx)
+  const t = Date.now()
+  const lines = [
+    { v: 1, n: 1, t, k: "prompt", text: "fix the build" },
+    { v: 1, n: 2, t, k: "tool", id: "c1", tool: "shell", input: { command: "npm run build" }, status: "completed", exit: 1 },
+    { v: 1, n: 3, t, k: "handover", about: "work", text: "the logs come first" },
+    { v: 1, n: 4, t, k: "session", event: "start" },
+    { v: 1, n: 5, t, k: "tool", id: "d1", tool: "subagent", input: { prompt: "opencode-retro work order: read /x.md and do what it says." }, status: "completed" },
+  ]
+  mkdirSync(join(dir, ".retro", "sessions"), { recursive: true })
+  writeFileSync(logOf(dir, "ses_old"), lines.map((l) => JSON.stringify(l)).join("\n") + "\n")
+  await retro(fake, { invoker: "ses_other" })
+  assert.equal(state(dir).orders.ses_old.lastN, 5, "the order runs to the end, the round included")
+  await record(fake, "ses_old", [], { dir, through: 2 })
+  assert.ok(!state(dir).looked.ses_old.open, "not left open as a partial read")
+  await cleanup?.()
+})
+
+test("a hand-over that could not be delivered is followed by a notice saying so", async () => {
+  const dir = sandbox()
+  const fake = fakeOpenCode({ directory: dir, agent: false })
+  fake.ctx.session.synthetic = async () => {
+    throw new Error("session is gone")
+  }
+  const cleanup = await plugin.setup(fake.ctx)
+  await work(fake, "ses_a")
+  await fake.hooks.get("session.prompt")({ sessionID: "ses_review", messageID: "rv", prompt: { text: "go" } })
+  await fake.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
+  const records = readFileSync(logOf(dir, "ses_review"), "utf8").trim().split("\n").map((l) => JSON.parse(l))
+  const handovers = records.filter((r) => r.k === "handover")
+  assert.equal(handovers.at(-2)?.about, "work")
+  assert.equal(handovers.at(-1)?.about, "notice")
+  assert.match(handovers.at(-1).text, /could not be delivered: session is gone/)
+  await cleanup?.()
 })

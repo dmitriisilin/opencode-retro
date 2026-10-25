@@ -23,34 +23,62 @@ export const WORK_MARK = "opencode-retro work order"
 const OWN_TOOLS = new Set(["retro_record", "retro_propose"])
 
 /**
+ * Whether a text carries the line the hand-over prescribes for a reader, at the start of one of
+ * its lines. Not only at the start of the text: OpenCode puts a line of its own ahead of a
+ * subagent's prompt ("You are a subagent spawned by another session."), so a check anchored
+ * there never matched a live reader at all — found in the first bench run without the path
+ * matching that had been catching them instead. A person can type a path, but does not type
+ * this line by accident.
+ */
+export function isWorkLine(text) {
+  return typeof text === "string" && new RegExp(`(^|\\n)\\s*${WORK_MARK}: read `).test(text)
+}
+
+/**
  * The plugin's own rounds in a log, as step ranges (analysis.md, "The plugin's own work").
  *
- * A round starts at a `handover` with `about: "work"` and runs to the next `handover` of
- * another kind or the next `prompt` of the person's (one with no `from`), whichever comes
- * first — neither of which is part of it.
+ * A round is answered by the turn its `handover` with `about: "work"` starts, and runs to the
+ * next `handover` of another kind or the next `prompt` of the person's (one with no `from`),
+ * whichever comes first — neither of which is part of it.
  * A call to one of the plugin's own tools is the plugin's wherever it is. One definition,
  * read two ways: the order lists the rounds for its reader to leave out, and the plugin does
  * not count them as new material.
  */
 export function ownRounds(records) {
+  const sorted = [...records].sort((a, b) => (a.n ?? 0) - (b.n ?? 0))
+  const ends = (r) => (r.k === "prompt" && !r.from) || (r.k === "handover" && r.about !== "work")
   const steps = new Set()
   const ranges = []
-  let open = null
-  for (const r of [...records].sort((a, b) => (a.n ?? 0) - (b.n ?? 0))) {
-    if (r.k === "handover" && r.about === "work") {
-      if (open === null) open = [r.n, r.n]
-    } else if (open && ((r.k === "prompt" && !r.from) || r.k === "handover")) {
-      ranges.push(open)
-      open = null
+  for (let i = 0; i < sorted.length; i++) {
+    if (!(sorted[i].k === "handover" && sorted[i].about === "work")) continue
+    // Where it ends, and whether a turn starts before that: a hand-over delivered into a turn
+    // still running waits for it, and what that turn does is the person's (thirty-second
+    // review). With no turn start to go by, the round starts at the hand-over itself.
+    let end = i + 1
+    while (end < sorted.length && !ends(sorted[end]) && !(sorted[end].k === "handover" && sorted[end].about === "work")) end++
+    let from = i
+    for (let j = i + 1; j < end; j++) {
+      if (sorted[j].k === "session" && sorted[j].event === "start" && !sorted[j].from) {
+        from = j
+        break
+      }
     }
-    if (open) {
-      open[1] = r.n
-      steps.add(r.n)
-    } else if (r.k === "tool" && OWN_TOOLS.has(r.tool)) {
-      steps.add(r.n)
+    const range = [sorted[i].n, sorted[i].n]
+    steps.add(sorted[i].n)
+    for (let j = from; j < end; j++) {
+      steps.add(sorted[j].n)
+      range[1] = sorted[j].n
     }
+    if (from !== i) range[0] = sorted[from].n
+    ranges.push(range)
+    i = end - 1
   }
-  if (open) ranges.push(open)
+  for (const r of sorted) {
+    if (r.k !== "tool") continue
+    // Ours wherever they land: a delegation's after-hook is written when its reader is done,
+    // which an early `retro_propose` puts after the round has closed (thirty-second review).
+    if (OWN_TOOLS.has(r.tool) || (r.tool === "subagent" && isWorkLine(r.input?.prompt))) steps.add(r.n)
+  }
   return { steps, ranges }
 }
 
@@ -62,6 +90,8 @@ export function ownRounds(records) {
  * next one paid a read to skip the round.
  */
 export function nothingNew(all, added) {
+  // The common case, cheaply: nothing added that could be material at all.
+  if (!added.some((r) => r.k === "prompt" || r.k === "tool" || r.k === "text" || (r.k === "step" && r.files?.length > 0))) return true
   const own = ownRounds(all).steps
   const answersPlugin = new Set()
   let answering = null

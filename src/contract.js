@@ -86,12 +86,14 @@ Rules:
   lesson that gets reviewed look more important for having been reviewed. Only
   \`"about": "lesson"\` means that.
 - **The plugin's own work is not the session's — leave it out.** A \`handover\` with
-  \`"about": "work"\` starts a round of this plugin's own: the agent starting readers like
-  you, their records coming back, \`retro_propose\`. The round runs to the next \`handover\`
-  of another kind or the next \`prompt\` without \`from\` — the person speaking again —
-  whichever comes first. A call to \`retro_record\`
-  or \`retro_propose\` is the plugin's own wherever it is. Take no lesson from any of it,
-  count none of its steps as cost, and read nothing in it as a recurrence: a reader in there
+  \`"about": "work"\` asks for a round of this plugin's own: the agent starting readers like
+  you, their records coming back, \`retro_propose\`. The round is the turn that hand-over
+  starts — from the next \`session\` start after it; work before that is the person's turn
+  still finishing — to the next \`handover\` of another kind or the next \`prompt\` without
+  \`from\` (the person speaking again), whichever comes first. A call to \`retro_record\` or
+  \`retro_propose\`, and a \`subagent\` call whose prompt is a work order's line, is the
+  plugin's own wherever it is. Take no lesson from any of it, count none of its steps as cost,
+  and read nothing in it as a recurrence: a reader in there
   may be quoting another session's problems, and they are that session's. The order names the
   rounds it knows of by their steps. A \`handover\` with \`"about": "notice"\` is this plugin
   saying something else — nothing to review, a command that failed — and what follows it is

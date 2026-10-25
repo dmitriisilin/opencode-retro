@@ -193,7 +193,10 @@ caused it — the child's prompt is a delegation, not the user's request. Its st
 events are dropped for the same reason: a delegation is a step, not a session.
 
 The child's own instruction arrives through `session.prompt` too, reading *"You are a
-subagent spawned by another session…"* — and it arrives **before** `session.created` reveals
+subagent spawned by another session…"* and then the delegation's own text — so a check for a
+line the delegation begins with has to look past OpenCode's: the reader check did not, and
+matched no live reader until the first bench run without the path matching that had been
+catching them instead. And it arrives **before** `session.created` reveals
 the parent. So by the time the link is known, that record already sits in a log of the
 child's own. A live run left it there, and the instruction was lost from the task it
 belonged to. Learning the link now absorbs whatever was already written: the records are
