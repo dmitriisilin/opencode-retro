@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto"
-import { appendFileSync, closeSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, rmSync, statSync } from "node:fs"
+import { appendFileSync, closeSync, fstatSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, rmSync, statSync } from "node:fs"
 import { join } from "node:path"
 
 /**
@@ -83,20 +83,39 @@ export function createShadowLog({ dir, onError }) {
      * hand to see which. Reading the tail once per session per process is cheaper than that.
      */
     lastN(sessionID) {
+      // From the tail, widening until a whole record is found: this is read at the start of
+      // every turn, inside the first hook, and a log left open for weeks is large.
+      let fd
       try {
-        const lines = readFileSync(join(dir, `${sessionID}.jsonl`), "utf8").split("\n")
-        for (let i = lines.length - 1; i >= 0; i--) {
-          const line = lines[i].trim()
-          if (!line) continue
-          try {
-            const n = JSON.parse(line)?.n
-            if (Number.isFinite(n)) return n
-          } catch {
-            /* a half-written last line: keep looking back */
+        fd = openSync(join(dir, `${sessionID}.jsonl`), "r")
+        const size = fstatSync(fd).size
+        for (let span = 64 * 1024; ; span *= 4) {
+          const start = Math.max(0, size - span)
+          const buf = Buffer.alloc(size - start)
+          let got = 0
+          while (got < buf.length) {
+            const k = readSync(fd, buf, got, buf.length - got, start + got)
+            if (k === 0) break
+            got += k
           }
+          const lines = buf.subarray(0, got).toString("utf8").split("\n")
+          // The first line of a tail read from the middle may be cut: never trusted.
+          for (let i = lines.length - 1; i >= (start > 0 ? 1 : 0); i--) {
+            const line = lines[i].trim()
+            if (!line) continue
+            try {
+              const n = JSON.parse(line)?.n
+              if (Number.isFinite(n)) return n
+            } catch {
+              /* a half-written last line: keep looking back */
+            }
+          }
+          if (start === 0) break
         }
       } catch {
         /* no log yet, which is the normal case */
+      } finally {
+        if (fd !== undefined) closeSync(fd)
       }
       return 0
     },

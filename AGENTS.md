@@ -157,6 +157,12 @@ Observed tool names: `read`, `glob`, `edit`, `shell`, `skill`. Not `bash` — `s
   and never use arrival order as a step index.
 
 **Prompts.** `session.prompt` → `{ sessionID, messageID, prompt: { text, files }, delivery }`.
+`delivery` is `steer` or `queue`. Measured (`fixtures/sessions/queue-and-steer.jsonl`): a prompt
+posted into a running turn fires the hook when it is posted, either way, and is answered inside
+that turn, before its end — steered into the current reply, queued as a step after it. A
+`session.synthetic` hand-over into a running turn is different: it waits in the inbox and is not
+taken up when the turn ends (cycle 9, and the bench's second `/retro`), until something starts
+the next turn.
 
 **`session.execution.*` is one pair per turn, not per session.** Measured directly: one
 session given two prompts (`opencode run -s <id>` twice) produced two `started`/`succeeded`

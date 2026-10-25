@@ -1655,6 +1655,24 @@ test("a two-turn session is one session with two executions", () => {
   )
 })
 
+test("prompts posted into a running turn, queued or steered, are answered in that turn", async () => {
+  // Measured on 2.0.32 rather than assumed: a `sleep 40` running, then a prompt posted with
+  // `delivery: "queue"` and one with `delivery: "steer"`. Both hooks fire when posted, inside
+  // the turn, and both are answered before its one end — the steered one in the same reply,
+  // the queued one in a step of its own. So a person's prompt between a turn's start and its
+  // end belongs to that turn, whichever way it was delivered (`answerStarts`).
+  const { ownRounds } = await import("../src/extract.js")
+  const records = parseShadowLog(
+    readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "fixtures", "sessions", "queue-and-steer.jsonl"), "utf8"),
+  )
+  const kinds = records.map((r) => (r.k === "session" ? r.event : r.k === "prompt" ? r.delivery : r.k))
+  assert.deepEqual(kinds.slice(0, 5), ["steer", "start", "queue", "steer", "tool"], "both posted mid-turn")
+  assert.equal(records.filter((r) => r.k === "session" && r.event === "start").length, 1, "one execution")
+  assert.equal(records.at(-1).event, "end")
+  assert.match(records.filter((r) => r.k === "text").map((r) => r.text).join(" "), /steered[\s\S]*queued/)
+  assert.equal(ownRounds(records).steps.size, 0)
+})
+
 test("a session that turns out to be a subagent is not analysed on its own", async () => {
   // Its end can be processed before the link is known: `session.created` is missed when the
   // plugin loads lazily, leaving the parent's `subagent` result as the only route. A

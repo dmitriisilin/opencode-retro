@@ -1,0 +1,11 @@
+{"v":1,"n":1,"t":1792942101599,"k":"prompt","message":"msg_173ad500d001lK9IVfW19jL4OV","delivery":"steer","text":"\"Run the shell command `sleep 40` (exactly that, once), then reply with the single word: finished.\"","files":[]}
+{"v":1,"n":2,"t":1792942101799,"k":"session","seq":2,"event":"start"}
+{"v":1,"n":3,"t":1792942114254,"k":"prompt","message":"msg_173ad85c80014dhwpaOP9AQHm9","delivery":"queue","text":"QUEUED: when you get to this, reply with the single word: queued.","files":[]}
+{"v":1,"n":4,"t":1792942116561,"k":"prompt","message":"msg_173ad8ecf0011G6uLLf0HMNBvH","delivery":"steer","text":"STEERED: also mention the word steered in your reply.","files":[]}
+{"v":1,"n":5,"t":1792942143597,"k":"tool","seq":10,"id":"call_00_yBDZnC1tgW4lE6DLRz7d8832","tool":"shell","agent":"build","message":"msg_173ad55070010Mk4juyQ1h5pSe","input":{"command":"sleep 40","timeout":60000},"status":"completed","ms":40031,"exit":0,"output":"(no output)"}
+{"v":1,"n":6,"t":1792942143662,"k":"step","seq":17,"message":"msg_173ad55070010Mk4juyQ1h5pSe","finish":"tool-calls","snapshot":null,"files":[],"tokens":{"input":4690,"output":57,"reasoning":25,"cache":{"read":3712,"write":0}},"cost":0.000763836}
+{"v":1,"n":7,"t":1792942144940,"k":"text","seq":21,"message":"msg_173adf88e001Im136x4P1oOV9J","text":"finished — steered"}
+{"v":1,"n":8,"t":1792942144940,"k":"step","seq":23,"message":"msg_173adf88e001Im136x4P1oOV9J","finish":"stop","snapshot":null,"files":[],"tokens":{"input":192,"output":5,"reasoning":0,"cache":{"read":8320,"write":0}},"cost":0.00005676}
+{"v":1,"n":9,"t":1792942146639,"k":"text","seq":29,"message":"msg_173adfd9f001RJGiwfucr5jfrR","text":"queued"}
+{"v":1,"n":10,"t":1792942146639,"k":"step","seq":31,"message":"msg_173adfd9f001RJGiwfucr5jfrR","finish":"stop","snapshot":null,"files":[],"tokens":{"input":220,"output":3,"reasoning":122,"cache":{"read":8320,"write":0}},"cost":0.00013296}
+{"v":1,"n":11,"t":1792942146648,"k":"session","seq":32,"event":"end","outcome":"succeeded"}

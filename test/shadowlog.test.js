@@ -167,3 +167,13 @@ test("a mark about a different file is void even when the read sees a different 
     "and a missing file is the size check's business, not this one's",
   )
 })
+
+test("the last step number is found from the tail, past a record longer than one read", () => {
+  const s = sandbox()
+  const log = createShadowLog({ dir: s.dir })
+  log.write("ses_a", { n: 1, k: "prompt", text: "first" })
+  log.write("ses_a", { n: 2, k: "text", text: "x".repeat(300_000) })
+  assert.equal(log.lastN("ses_a"), 2)
+  log.write("ses_a", { n: 3, k: "text", text: "y".repeat(10) })
+  assert.equal(log.lastN("ses_a"), 3)
+})
