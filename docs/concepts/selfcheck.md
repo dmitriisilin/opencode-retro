@@ -92,6 +92,7 @@ last analysis of the session whichever path ran it.
   outcome, for a session ended or still working, is evaluated anew and leaves it alone.
   `a recorded outcome is evaluated anew without moving the heartbeat, and a round's own calls move it`
   `an outcome for a session still working leaves the heartbeat, and a reader's own hooks move it`
+  `a report written while a hook runs carries that hook's beat`
   `a reader that reported reading nothing new is not reported as no answer`
   `a session whose log was set aside is not told the next /retro asks again`
 - A call the turn ended in the middle of accounts for its event: an interrupted turn with a

@@ -796,7 +796,7 @@ Decision 20. This is the whole file, not an excerpt — the prose is part of the
 opencode 2.0.32 · opencode-retro 0.1.0 · github.com/dmitriisilin/opencode-retro
 
 loaded     2026-10-19 20:29   (plugin start)
-heartbeat  2026-10-19 20:31   (moved by every hook that fires, ours included; written at most once a minute)
+heartbeat  2026-10-19 20:31   (moved by every hook that fires, the plugin's own readers' too; written at most once a minute)
 verified   2026-10-19 20:31   (when the checks below were last evaluated)
 
 **If you are working right now and `heartbeat` is more than a few minutes old, this plugin

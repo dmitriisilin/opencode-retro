@@ -1646,3 +1646,23 @@ test("an outcome for a session still working leaves the heartbeat, and a reader'
     Date.now = real
   }
 })
+
+test("a report written while a hook runs carries that hook's beat", async () => {
+  // Twenty-fifth pre-release review, reproduced: the beat came after the handler, so the
+  // handler's own write carried the previous one — "heartbeat never" beside a prompt hook just
+  // reported ok — and the write after it was skipped as too soon.
+  const real = Date.now
+  let now = Date.parse("2026-10-25T10:00:00Z")
+  Date.now = () => now
+  try {
+    const dir = sandbox()
+    const fake = fakeOpenCode({ directory: dir, agent: false })
+    const cleanup = await plugin.setup(fake.ctx)
+    now += 5 * 60_000
+    await fake.hooks.get("session.prompt")({ sessionID: "ses_x", messageID: "m1", prompt: { text: "hello" } })
+    assert.match(readFileSync(join(dir, ".retro", "selfcheck.md"), "utf8"), /heartbeat\s+2026-10-25 10:05/)
+    await cleanup?.()
+  } finally {
+    Date.now = real
+  }
+})

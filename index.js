@@ -120,9 +120,8 @@ export default {
     const turnSeen = new Set()
     /** Evidence from each finished session, kept so a later extraction can complete its report. */
     const lastVerified = new Map()
-    // When a session was last observed (`observe`'s throttle), and when the report was last
-    // written, by anyone (`pulse` writes only when nothing has for a minute).
-    let lastObserved = 0
+    // When the report was last written, by anyone: the one clock that throttles writing it
+    // (`observe`, `pulse`; twenty-fourth and twenty-fifth reviews).
     let lastWrite = 0
     /**
      * Sessions that are the plugin's own work — the subagents reading work orders. Nothing of
@@ -221,7 +220,6 @@ export default {
     }
 
     const writeSelfCheck = () => {
-      lastWrite = Date.now()
       try {
         const lessons = store.list()
         check.stock({
@@ -240,6 +238,8 @@ export default {
         })
         mkdirSync(config.dir, { recursive: true })
         writeFileSync(config.selfcheck, check.render())
+        // Only a write that happened counts: a failed one must not hold the next back.
+        lastWrite = Date.now()
       } catch (err) {
         onError("selfcheck.write", err)
       }
@@ -271,11 +271,10 @@ export default {
       if (ended.has(sessionID)) return
       const now = Date.now()
       const first = !observedSessions.has(sessionID)
-      if (!first && !force && now - lastObserved < config.heartbeatMs) return
+      if (!first && !force && now - lastWrite < config.heartbeatMs) return
       // Re-inserted, so the set is in order of the latest observation (`handBack`).
       observedSessions.delete(sessionID)
       observedSessions.add(sessionID)
-      lastObserved = now
       check.verify(
         {
           id: sessionID,
@@ -314,13 +313,15 @@ export default {
     const hook = async (domain, name, handler) => {
       try {
         await ctx[domain].hook(name, (payload) => {
+          // The beat before the handler, so whatever the handler writes carries it; the write
+          // after, so it carries what the handler changed, and only if nothing has written the
+          // report for a minute (twenty-fourth and twenty-fifth reviews).
+          check.beat()
           try {
             handler(payload)
           } catch (err) {
             onError(`${domain}.${name}`, err)
           }
-          // After the handler, so the file is written with what the hook changed, and only if
-          // nothing wrote it for a minute — one write for one hook (twenty-fourth review).
           try {
             pulse()
           } catch (err) {
@@ -1106,9 +1107,7 @@ export default {
      * written for it only when nothing else has written it for a minute.
      */
     function pulse() {
-      const now = Date.now()
-      check.beat(now)
-      if (now - lastWrite >= config.heartbeatMs) writeSelfCheck()
+      if (Date.now() - lastWrite >= config.heartbeatMs) writeSelfCheck()
     }
 
     /** A turn seen to start, kept in order of the latest start (`handBack`). */
