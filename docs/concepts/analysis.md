@@ -210,21 +210,25 @@ rare, since the hand-over asks it to start readers and nothing else — is left 
   anybody came. The count starts again only when the log grew by something to read — not by
   the plugin's own hand-overs and rounds, which lengthen the session `/retro` runs in every
   time — or is another file: a log pruned and written again under the same id was never asked
-  about, whatever its size.
+  about, whatever its size. And only askings nobody answered add up: one a record came back
+  for — whole, partial or covering nothing — starts the count again.
   `an order nobody answered is reported and asked again, not held against the log`
   `a log asked about many times is never given up on for it, and says how many`
   `the askings add up in the session /retro runs in, which its own rounds lengthen`
   `the askings start again for a log replaced under the same id`
+  `an asking that was answered is not counted among those nobody answered`
   `/retro all reports a log it could not read, as well as the plan`
 - A read the plugin could not complete is an attempt, and three on one input retire the log.
   A reader that reported reading nothing new is one of these — an answer that covered nothing —
   and is never also reported as no answer. A retired log is called the same thing everywhere,
-  and nothing says it will be tried again.
+  and nothing says it will be tried again. One input is the log until it grows by something to
+  read: the plugin's own hand-overs and rounds are no new input, here as for the askings.
   `a failed read is owed, and tried again on the next command`
   `a session is given up on after three attempts, not billed forever`
   `a reader that reported reading nothing new is not reported as no answer`
   `a log set aside is described in the same words everywhere it is reported`
   `the third read that covered nothing new says the log is set aside, not that it will be asked again`
+  `reads that covered nothing add up in the session /retro runs in, and set it aside`
   `nothing to review does not promise another try for a log set aside`
 - A reader's session is not logged; a session a person types into is never taken for one by
   anything short of the prescribed line, and what a reader starts is ours with it.

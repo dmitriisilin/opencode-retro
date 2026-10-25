@@ -1323,7 +1323,15 @@ export default {
       const previous = state.askedFor(sessionID)
       // An order voided was never put to anybody — its log replaced, or its hand-over never
       // delivered — so it was not an asking (thirty-fourth review).
-      const before = previous.done === "void" ? Math.max(0, previous.asked - 1) : previous.asked
+      // And only askings nobody answered add up: one a record came back for — whole, partial or
+      // empty — was answered, and "no record came back" must not count it (checks after the ten
+      // rounds).
+      const before =
+        previous.done === "void"
+          ? Math.max(0, previous.asked - 1)
+          : previous.done === "answered" || previous.done === "empty"
+            ? 0
+            : previous.asked
       // Grown by something to read, that is: the session `/retro` runs in grows by its own
       // hand-over and round every time, and counted as new material its askings never added up
       // — the one session an unanswered order is likeliest in (round 10 of 10).
@@ -1349,7 +1357,11 @@ export default {
      */
     function fail(sessionID, { size, id }, detail) {
       const mark = state.looked(sessionID)
-      const attempts = (size > mark.size ? 0 : (mark.attempts ?? 0)) + 1
+      // Spent on new input only when the log grew by something to read: the session `/retro`
+      // runs in grows by the plugin's own hand-over and round every time, and counting that as
+      // new input kept its attempts at one for ever — as it did the askings (round 10 of 10).
+      const grew = size > mark.size && !grewByNothing(sessionID, mark.size, size)
+      const attempts = (grew ? 0 : (mark.attempts ?? 0)) + 1
       onError(`extract.${sessionID}`, detail)
       let result = { ok: false, detail }
       if (attempts >= 3) {

@@ -91,9 +91,10 @@ Rules:
   you, their records coming back, \`retro_propose\`. The round is the turn that hand-over
   starts: at the hand-over itself when it came between turns, and from the next \`session\`
   start when it landed in a turn still running — work before that is the person's turn still
-  finishing. It runs to the person's next \`prompt\`, or to where another hand-over of the
-  plugin's is answered, whichever comes first. A prompt of the person's directly followed by
-  the turn start — the turn it opened — makes that turn theirs, and a hand-over named by a
+  finishing. It runs to the person's next \`prompt\`, or to where a hand-over of another kind
+  is answered, whichever comes first: a second \`work\` hand-over is the same round going on.
+  A prompt of the person's with no \`session\` record between it and the round's turn start —
+  the person opening that turn — makes the turn theirs, and a hand-over named by a
   notice with \`"undelivered": true\` (\`of\` is its step) never arrived and does nothing. The
   order lists the steps; where this description and that list differ, go by the list. Only
   steps without \`from\` start or end a round: a hand-over or prompt with \`from\` is a

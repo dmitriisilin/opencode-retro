@@ -2132,7 +2132,7 @@ test("a /retro waiting behind a round keeps its own round when the first one end
 test("the contract describes a round as the code reads it, and defers to the order's list", async () => {
   const { OUTPUT_CONTRACT } = await import("../src/contract.js")
   assert.match(OUTPUT_CONTRACT, /at the hand-over itself when it came between turns/)
-  assert.match(OUTPUT_CONTRACT, /A prompt of the person's directly followed by\s+the turn start — the turn it opened — makes that turn theirs/)
+  assert.match(OUTPUT_CONTRACT, /A prompt of the person's with no `session` record between it and the round's turn start —\s+the person opening that turn — makes the turn theirs/)
   assert.match(OUTPUT_CONTRACT, /go by the list/)
 })
 
@@ -2278,5 +2278,32 @@ test("the askings start again for a log replaced under the same id", async () =>
   await retro(fake)
   await retro(fake)
   assert.match(state(dir).extracted.ses_a.detail, /asked 1 time and/, "the new log has been asked about once")
+  await cleanup?.()
+})
+
+test("reads that covered nothing add up in the session /retro runs in, and set it aside", async () => {
+  const dir = sandbox()
+  const fake = fakeOpenCode({ directory: dir, agent: false })
+  const cleanup = await plugin.setup(fake.ctx)
+  await work(fake, "ses_a")
+  for (let i = 0; i < 3; i++) {
+    await retro(fake, { invoker: "ses_a" })
+    await record(fake, "ses_a", [], { through: 0, dir })
+  }
+  assert.equal(state(dir).extracted.ses_a?.setAside, true, JSON.stringify(state(dir).looked.ses_a))
+  await cleanup?.()
+})
+
+test("an asking that was answered is not counted among those nobody answered", async () => {
+  const dir = sandbox()
+  const fake = fakeOpenCode({ directory: dir, agent: false })
+  const cleanup = await plugin.setup(fake.ctx)
+  await work(fake, "ses_a")
+  await retro(fake, { invoker: "ses_a" })
+  await record(fake, "ses_a", [], { through: 2, dir })
+  assert.equal(state(dir).looked.ses_a?.open, true, "a partial read leaves the rest owed")
+  await retro(fake, { invoker: "ses_a" })
+  await retro(fake, { invoker: "ses_a" })
+  assert.match(state(dir).extracted.ses_a.detail, /asked 1 time and no record came back/)
   await cleanup?.()
 })
