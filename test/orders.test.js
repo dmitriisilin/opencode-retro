@@ -1812,5 +1812,66 @@ test("a subagent's text, delegated in answer to a plugin notice, is part of that
     { n: 3, k: "prompt", from: "ses_x", text: "You are a subagent.\nexplore" },
     { n: 4, k: "text", from: "ses_x", text: "there is nothing here" },
   ]
-  assert.equal(nothingNew(all, [all[3]]), true)
+  // Its instruction and its text arrive together, as they do live (forty-fourth review).
+  assert.equal(nothingNew(all, all.slice(2)), true)
+})
+
+test("a subagent of the person's already running when a hand-over arrives stays theirs", async () => {
+  const { nothingNew } = await import("../src/extract.js")
+  const all = [
+    { n: 1, k: "prompt", text: "explore the repo for me" },
+    { n: 2, k: "prompt", from: "ses_x", text: "You are a subagent.\nexplore the repo" },
+    { n: 3, k: "handover", about: "notice", text: "nothing to review" },
+    { n: 4, k: "text", from: "ses_x", text: "found three config files that disagree" },
+  ]
+  assert.equal(nothingNew(all, [all[3]]), false, "its findings are something to read")
+})
+
+test("a turn resumed by a hand-over that arrived in the previous turn is not a dead prompt hook", async () => {
+  // Forty-fourth pre-release review: the turn's end reset the hand-over count, and the resumed
+  // turn — no prompt of its own — read as a dead prompt hook.
+  const dir = sandbox()
+  const fake = fakeOpenCode({ directory: dir, agent: false })
+  const cleanup = await plugin.setup(fake.ctx)
+  await work(fake, "ses_a")
+  await fake.hooks.get("session.prompt")({ sessionID: "ses_p", messageID: "p1", prompt: { text: "fix the build" } })
+  fake.emit({ type: "session.execution.started", durable: { seq: 1 }, data: { sessionID: "ses_p" } })
+  await new Promise((r) => setImmediate(r))
+  await fake.commands.get("retro").execute({ sessionID: "ses_p", prompt: { text: "" } })
+  fake.emit({ type: "session.execution.succeeded", durable: { seq: 5 }, data: { sessionID: "ses_p" } })
+  fake.emit({ type: "session.execution.started", durable: { seq: 6 }, data: { sessionID: "ses_p" } })
+  await new Promise((r) => setImmediate(r))
+  const d = { sessionID: "ses_p", id: "d1", tool: "read", input: { path: "x" } }
+  await fake.hooks.get("tool.execute.before")(d)
+  await fake.hooks.get("tool.execute.after")({ ...d, status: "completed", result: { output: "y" } })
+  assert.doesNotMatch(readFileSync(join(dir, ".retro", "selfcheck.md"), "utf8"), /BROKEN\s+prompt hook/)
+  await cleanup?.()
+})
+
+test("a log pruned between turns starts its numbering again", async () => {
+  // Forty-fourth pre-release review: a session kept across turns kept its step counter, and a
+  // log written again after a prune went on from the old numbers.
+  const real = Date.now
+  let now = Date.parse("2026-10-25T10:00:00Z")
+  Date.now = () => now
+  try {
+    const dir = sandbox()
+    const fake = fakeOpenCode({ directory: dir, agent: false })
+    const cleanup = await plugin.setup(fake.ctx)
+    await work(fake, "ses_x")
+    await retro(fake, { invoker: "ses_other" })
+    await record(fake, "ses_x", [], { dir })
+    // A week of silence; the next command prunes what is read, quiet and cited by nothing.
+    now += 8 * 24 * 60 * 60 * 1000
+    const { utimesSync } = await import("node:fs")
+    utimesSync(logOf(dir, "ses_x"), (now - 8 * 24 * 60 * 60 * 1000) / 1000, (now - 8 * 24 * 60 * 60 * 1000) / 1000)
+    await retro(fake, { invoker: "ses_other" })
+    assert.equal(existsSync(logOf(dir, "ses_x")), false, "pruned")
+    await fake.hooks.get("session.prompt")({ sessionID: "ses_x", messageID: "m9", prompt: { text: "back again" } })
+    const first = JSON.parse(readFileSync(logOf(dir, "ses_x"), "utf8").trim().split("\n")[0])
+    assert.equal(first.n, 1, "the new log is read from its own start")
+    await cleanup?.()
+  } finally {
+    Date.now = real
+  }
 })

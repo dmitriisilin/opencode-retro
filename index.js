@@ -1,4 +1,4 @@
-import { appendFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { appendFileSync, closeSync, fstatSync, mkdirSync, openSync, readFileSync, readSync, rmSync, writeFileSync } from "node:fs"
 import { join, relative as relativePath, resolve as resolvePath, sep } from "node:path"
 import { createIngest, isTurnEnd } from "./src/ingest.js"
 import { createPrompts } from "./src/prompts.js"
@@ -244,9 +244,9 @@ export default {
       // report about it said BROKEN about a healthy plugin (seventh and eighth reviews).
       if (!sessionID || !standsAlone(sessionID)) return
       // A hook that arrives after the session's end belongs to that session, and its record is
-      // written — but it is not news about liveness. Re-measuring here would recreate the
-      // forgotten ingest counts and report `BROKEN prompt hook` about a session that was fine
-      // and is over.
+      // written — but it is not news about liveness. Re-measuring here would read the counts
+      // the turn's end reset and report `BROKEN prompt hook` about a session that was fine and
+      // is over.
       if (ended.has(sessionID)) return
       const now = Date.now()
       const first = !observedSessions.has(sessionID)
@@ -284,6 +284,7 @@ export default {
       emit: (sessionID, record) => log.write(sessionID, record),
       parentOf: (sessionID) => parents.get(sessionID) ?? null,
       startAt: (sessionID) => log.lastN(sessionID),
+      logExists: (sessionID) => log.stat(sessionID).size > 0,
     })
 
     // Hooks. Registration proving nothing is the whole reason the self-check exists:
@@ -679,11 +680,27 @@ export default {
       if (known && known.from === from && known.size === size && known.file === file) return known.nothing
       let nothing = false
       try {
-        // One read, so the tail and the whole log are the same file; the whole is parsed only if
-        // the tail cannot decide (forty-second and forty-third reviews).
-        const bytes = readFileSync(log.path(id))
-        const added = parseShadowLog(bytes.subarray(from).toString("utf8"))
-        nothing = added.length > 0 && nothingNew(() => parseShadowLog(bytes.toString("utf8")), added)
+        // One open file, so the tail and the whole are the same log; the tail read first, the
+        // whole only if the tail cannot decide, and every read checked for what it got
+        // (forty-second to forty-fourth reviews).
+        const fd = openSync(log.path(id), "r")
+        try {
+          const total = fstatSync(fd).size
+          const readAt = (start) => {
+            const buf = Buffer.alloc(Math.max(0, total - start))
+            let got = 0
+            while (got < buf.length) {
+              const n = readSync(fd, buf, got, buf.length - got, start + got)
+              if (n === 0) break
+              got += n
+            }
+            return buf.subarray(0, got).toString("utf8")
+          }
+          const added = parseShadowLog(readAt(Math.min(from, total)))
+          nothing = added.length > 0 && nothingNew(() => parseShadowLog(readAt(0)), added)
+        } finally {
+          closeSync(fd)
+        }
       } catch {
         nothing = false
       }
@@ -791,6 +808,7 @@ export default {
         if (log.remove(id)) {
           state.forget(id)
           grown.delete(id)
+          ingest.forget(id) // its numbering starts again with its next log (forty-fourth review)
         }
       }
     }

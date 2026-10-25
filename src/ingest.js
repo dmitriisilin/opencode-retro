@@ -36,6 +36,9 @@ export function createIngest({
   // process appending to an existing log starts again at 1 and a lesson's step range stops
   // resolving to one record. Measured on real logs: three and four such blocks in one file.
   startAt = () => 0,
+  // Whether the log a session writes to is on disk: when it is not — pruned, or deleted by
+  // hand — numbering starts again from what is there (forty-fourth review).
+  logExists = () => true,
 }) {
   /**
    * sessionID -> { n, pending: Map<callID, started>, completed: Set<callID>,
@@ -49,6 +52,8 @@ export function createIngest({
    */
   const sessions = new Map()
 
+  const freshCounts = () => ({ prompts: 0, handovers: 0, toolHook: 0, toolEvents: 0, unfinished: 0, steps: 0, texts: 0, records: 0 })
+
   function session(id) {
     let s = sessions.get(id)
     if (!s) {
@@ -58,7 +63,10 @@ export function createIngest({
         pending: new Map(),
         completed: new Set(),
         seq: new Map(),
-        counts: { prompts: 0, handovers: 0, toolHook: 0, toolEvents: 0, unfinished: 0, steps: 0, texts: 0, records: 0 },
+        counts: freshCounts(),
+        // A hand-over noted since the turn's last prompt: it starts the next turn, if this one
+        // ends first, and that turn has no prompt of its own (forty-fourth review).
+        awaiting: false,
       }
       sessions.set(id, s)
     }
@@ -87,6 +95,7 @@ export function createIngest({
   function append(sessionID, record) {
     const target = owner(sessionID)
     const s = session(target)
+    if (s.n > 0 && !logExists(target)) s.n = startAt(target) ?? 0
     s.counts.records++
     // A record of a delegation's own session says so: its prompt is the delegation's
     // instruction, not the person's, and the log alone could not tell the two apart.
@@ -161,7 +170,10 @@ export function createIngest({
       s.pending.clear()
       s.completed.clear()
       s.seq.clear()
-      s.counts = { prompts: 0, handovers: 0, toolHook: 0, toolEvents: 0, unfinished: 0, steps: 0, texts: 0, records: 0 }
+      s.counts = freshCounts()
+      // A hand-over still waiting is the next turn's input: counted there, or that turn — with
+      // no prompt — read as a dead prompt hook.
+      if (s.awaiting) s.counts.handovers = 1
     },
 
     /** Unpaired calls, flushed when a session ends so an interrupt leaves no silent gap. */
@@ -171,6 +183,7 @@ export function createIngest({
       const s = session(owner(p.sessionID))
       s.owned = true
       s.counts.prompts++
+      if (owner(p.sessionID) === p.sessionID) s.awaiting = false
       append(p.sessionID, {
         k: "prompt",
         message: p.messageID ?? null,
@@ -240,6 +253,7 @@ export function createIngest({
       // reads `prompts` to decide whether the prompt hook worked, and a `/retro` review
       // session has none — see `assess`, which must not call that a dead hook.
       s.counts.handovers++
+      s.awaiting = true
       // `about` separates the two hand-overs the plugin writes: a lesson put to the human,
       // and a request for the analyses that have to run first. They read identically in a
       // log and mean different things — the extraction contract discounts work that reviews

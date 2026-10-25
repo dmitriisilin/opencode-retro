@@ -246,6 +246,9 @@ rare, since the hand-over asks it to start readers and nothing else — is left 
   `a /retro posted into a running turn has its round begin at the turn it resumes`
   `a session stays the plugin's across turns, so a turn resumed by a hand-over is logged from its start`
   `a subagent's text, delegated in answer to a plugin notice, is part of that reply`
+  `a subagent of the person's already running when a hand-over arrives stays theirs`
+  `a turn resumed by a hand-over that arrived in the previous turn is not a dead prompt hook`
+  `a log pruned between turns starts its numbering again`
   `a reworded reader's delegation is ours wherever it lands`
   `a subagent's prompt does not end a reply to the plugin's hand-over`
   `a reader's call to retro_propose writes nothing into any log`

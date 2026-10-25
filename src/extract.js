@@ -66,7 +66,8 @@ export function ownRounds(records) {
     if (!isWorkHandover(sorted[i])) continue
     // Where it ends, and whether a turn starts before that: a hand-over delivered into a turn
     // still running waits for it, and what that turn does is the person's (thirty-second
-    // review). With no turn start to go by, the round starts at the hand-over itself.
+    // review). With no turn start to go by, the round starts at the hand-over itself if it came
+    // between turns, and is empty if it landed in a running one.
     let end = i + 1
     // A second `work` hand-over inside the round — a `/retro` run again while it reads — is
     // the same round going on (thirty-fifth review).
@@ -140,11 +141,19 @@ export function lastReadable(records, own = ownRounds(records).steps) {
 export function repliesToPlugin(records) {
   const out = new Set()
   let answering = null
+  // Subagents delegated while a reply to a hand-over was going on: theirs is part of it — their
+  // instruction and their text, as the agent's own text is. One already running before the
+  // hand-over is the person's, and stays so (forty-second to forty-fourth reviews).
+  const answeringBy = new Set()
   for (const r of [...records].sort((a, b) => (a.n ?? 0) - (b.n ?? 0))) {
-    // A subagent's prompt or hand-over neither starts nor ends a reply to the plugin (forty-
-    // second review); its text, delegated in answer to one, is still part of that reply
-    // (forty-third).
-    if (!r.from && (r.k === "prompt" || (r.k === "handover" && !isWorkHandover(r)))) answering = r.k
+    if (r.from) {
+      if (r.k === "prompt" && answering === "handover" && !answeringBy.has(r.from)) {
+        answeringBy.add(r.from)
+        out.add(r.n)
+      } else if (r.k === "text" && answeringBy.has(r.from)) out.add(r.n)
+      continue
+    }
+    if (r.k === "prompt" || (r.k === "handover" && !isWorkHandover(r))) answering = r.k
     else if (r.k === "text" && answering === "handover") out.add(r.n)
   }
   return out
@@ -152,7 +161,12 @@ export function repliesToPlugin(records) {
 
 /** A step that could hold evidence: what someone said or did (log.md, "Owed"). */
 function readable(r, plugin) {
-  return r.k === "prompt" || r.k === "tool" || (r.k === "text" && !plugin.has(r.n)) || (r.k === "step" && r.files?.length > 0)
+  return (
+    (r.k === "prompt" && !plugin.has(r.n)) ||
+    r.k === "tool" ||
+    (r.k === "text" && !plugin.has(r.n)) ||
+    (r.k === "step" && r.files?.length > 0)
+  )
 }
 
 /**
