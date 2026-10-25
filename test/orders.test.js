@@ -1693,3 +1693,31 @@ test("while a session works, its checks are evaluated again once a minute, not o
     Date.now = real
   }
 })
+
+test("a /retro round's readers keep the session that started them measured", async () => {
+  // Twenty-seventh pre-release review: a reader's hook wrote the heartbeat alone and reset the
+  // clock, so the session the report described stayed at its last measurement for the whole
+  // round while the heartbeat moved.
+  const real = Date.now
+  let now = Date.parse("2026-10-25T10:00:00Z")
+  Date.now = () => now
+  try {
+    const dir = sandbox()
+    const fake = fakeOpenCode({ directory: dir, agent: false })
+    const cleanup = await plugin.setup(fake.ctx)
+    await fake.hooks.get("session.prompt")({ sessionID: "ses_p", messageID: "m1", prompt: { text: "go" } })
+    await fake.hooks.get("session.prompt")({ sessionID: "ses_reader", messageID: "r1", prompt: { text: "opencode-retro work order: read /x/.retro/work/ses_q.md and do what it says." } })
+    for (let i = 0; i < 4; i++) {
+      now += 61_000
+      const call = { sessionID: "ses_reader", id: `r${i}`, tool: "read", input: { path: "x" } }
+      await fake.hooks.get("tool.execute.before")(call)
+      await fake.hooks.get("tool.execute.after")({ ...call, status: "completed", result: { output: "y" } })
+    }
+    const report = readFileSync(join(dir, ".retro", "selfcheck.md"), "utf8")
+    assert.match(report, /measured on session\s+`ses_p`/)
+    assert.match(report, /verified\s+2026-10-25 10:04/, "measured again, not only the heartbeat")
+    await cleanup?.()
+  } finally {
+    Date.now = real
+  }
+})

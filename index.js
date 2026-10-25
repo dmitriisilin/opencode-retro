@@ -231,7 +231,10 @@ export default {
           top: lessons[0]?.id ?? null,
           topScore: lessons.length ? store.score(lessons[0]) : null,
           ...stockFacts(),
-          cited: log.list().filter((id) => citedSessions().has(id)).length,
+          cited: (() => {
+            const cited = citedSessions() // once, not once per log (twenty-seventh review)
+            return log.list().filter((id) => cited.has(id)).length
+          })(),
           decided: store.listArchive().length,
           unreadable: store.unreadable(),
           // Logs that failed three analyses: still on disk until they are quiet, and nothing
@@ -353,7 +356,7 @@ export default {
         sawTurn(p.sessionID)
       }
       ingest.prompt(p)
-      observe(rootOf(p.sessionID))
+      // Measured by `pulse`, after this handler: the one place a hook measures.
     })
 
     /**
@@ -416,10 +419,9 @@ export default {
       if (child && !internal.has(child)) (ours ? claimReader : adopt)(child, p.sessionID)
       if (ours) return
       ingest.toolAfter(p)
-      // Measured on the parent, never on the child: the child's records are written into
-      // the parent's log, so the self-check would otherwise look for sessions/<child>.jsonl,
-      // not find it, and report BROKEN about a healthy session.
-      observe(rootOf(p.sessionID))
+      // Measured by `pulse`, after this handler, on the parent and never on the child: the
+      // child's records are written into the parent's log, so the self-check would otherwise
+      // look for sessions/<child>.jsonl, not find it, and report BROKEN about a healthy session.
     })
 
     // Commands. A command's execute is a context where generate.text returns (Gotcha 9),
@@ -1109,14 +1111,28 @@ export default {
      * minute at most, the hook's session is measured again and the report written.
      */
     function pulse(sessionID) {
-      if (Date.now() - lastWrite < config.heartbeatMs) return
-      // A write a hook causes is a measured one: the hook's session is evaluated again, so the
-      // report never shows a fresh heartbeat over checks a minute stale (twenty-sixth review,
-      // which found a plain write here starving `observe` on the same clock). A hook of one of
-      // ours measures nothing, and only the heartbeat is written for it.
-      const root = sessionID ? rootOf(sessionID) : null
-      if (root && observe(root, { force: true })) return
-      writeSelfCheck()
+      // The one place a hook measures (twenty-seventh review, after three rounds of writers on
+      // one clock starving each other). What it measures is the person's session behind the
+      // hook — through a delegation, or one still deferred — or, for a hook of one of ours, the
+      // session the report describes: a /retro round's readers keep the session that started
+      // them measured. A session seen for the first time is measured at once; after that, once
+      // a minute, and never a fresh heartbeat written over checks a minute stale.
+      const target = personBehind(sessionID) ?? check.describing()
+      const due = Date.now() - lastWrite >= config.heartbeatMs
+      if (target && (due || !observedSessions.has(target)) && observe(target, { force: true })) return
+      if (due) writeSelfCheck()
+    }
+
+    /** The person's session a hook belongs to, or null for one of ours. */
+    function personBehind(sessionID) {
+      let current = sessionID
+      for (let i = 0; current && i < 64; i++) {
+        if (internal.has(current)) return null
+        const up = parents.get(current) ?? deferred.get(current)
+        if (!up || up === current) return current
+        current = up
+      }
+      return current ?? null
     }
 
     /** A turn seen to start, kept in order of the latest start (`handBack`). */

@@ -88,16 +88,20 @@ last analysis of the session whichever path ran it.
   `a reader recognised by its parent takes the report back to the person's session`
   `a report with no session of the person's to describe does not say no hook has fired`
   `a report with no session to describe keeps when its checks were last evaluated`
+  `a reader that reported reading nothing new is not reported as no answer`
+  `a session whose log was set aside is not told the next /retro asks again`
 - Only a hook moves the heartbeat — any hook, a reader's of ours included — and a recorded
   outcome, for a session ended or still working, is evaluated anew and leaves it alone.
   `a recorded outcome is evaluated anew without moving the heartbeat, and a round's own calls move it`
   `an outcome for a session still working leaves the heartbeat, and a reader's own hooks move it`
   `a report written while a hook runs carries that hook's beat`
-- A write a hook causes is a measured one: while a session works, its checks are evaluated
-  again at most once a minute, with the heartbeat, never the heartbeat alone over stale checks.
+- A hook measures in one place, after its handler: the person's session behind it — through a
+  delegation, or one still deferred — or, for a hook of the plugin's own, the session the
+  report describes. A session seen for the first time is measured at once, then at most once
+  a minute; while a session of the person's works, the heartbeat is never written alone over
+  checks a minute stale, whoever's hooks are firing.
   `while a session works, its checks are evaluated again once a minute, not only the heartbeat`
-  `a reader that reported reading nothing new is not reported as no answer`
-  `a session whose log was set aside is not told the next /retro asks again`
+  `a /retro round's readers keep the session that started them measured`
 - A call the turn ended in the middle of accounts for its event: an interrupted turn with a
   subagent still running is not a dead tool hook.
   `an interrupted turn with a subagent still running is not a dead tool hook`
