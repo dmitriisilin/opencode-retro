@@ -1652,21 +1652,24 @@ test("a turn that added only a round does not report its log as waiting", async 
   await cleanup?.()
 })
 
-test("a reworded reader calling retro_propose writes nothing that ends the round", async () => {
-  // Thirty-eighth pre-release review: a hand-over noted for a delegated session went into the
-  // person's log and closed the round there, leaving the rest of it as the person's.
-  const { ownRounds } = await import("../src/extract.js")
-  const records = [
-    { n: 1, k: "handover", about: "work", text: "the logs come first" },
-    { n: 2, k: "session", event: "start" },
-    { n: 3, k: "prompt", from: "ses_kid", text: "You are a subagent.\nHave a look at /x.md" },
-    { n: 4, k: "handover", about: "lesson", from: "ses_kid", text: "a lesson" },
-    { n: 5, k: "tool", tool: "subagent", input: { prompt: "another reader, worded its own way" } },
-    { n: 6, k: "handover", about: "lesson", text: "the lesson, to the person" },
-  ]
-  const { steps } = ownRounds(records)
-  assert.ok(steps.has(5), "the round goes on past the reader's hand-over")
-  assert.ok(!steps.has(6), "and ends at the person's")
+test("a reworded reader calling retro_propose is told so too", async () => {
+  // Thirty-sixth and thirty-ninth pre-release reviews: a reader worded its own way is an
+  // ordinary child, not known by its line; called through, it got the proposal and its
+  // instruction to record a decision, and its call closed every open order.
+  const dir = sandbox()
+  const fake = fakeOpenCode({ directory: dir, agent: false })
+  const cleanup = await plugin.setup(fake.ctx)
+  await work(fake, "ses_a")
+  await retro(fake)
+  await fake.hooks.get("session.prompt")({ sessionID: "ses_kid", messageID: "k1", prompt: { text: "have a look" } })
+  fake.emit({ type: "session.created", durable: { seq: 90 }, data: { sessionID: "ses_kid", parentID: "ses_review", location: { directory: dir } } })
+  await new Promise((r) => setImmediate(r))
+  const result = await fake.tools.get("retro_propose").execute({}, { sessionID: "ses_kid" })
+  assert.match(result.content, /Not yours to call/)
+  assert.equal(result.output.ok, false, "with an output the declared schema accepts")
+  assert.ok(!state(dir).orders.ses_a.done, "nothing closed")
+  assert.ok(existsSync(join(dir, ".retro", "work", "ses_a.md")), "and no order removed")
+  await cleanup?.()
 })
 
 test("a reader's call to retro_propose writes nothing into any log", async () => {

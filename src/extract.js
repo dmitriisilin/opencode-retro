@@ -55,9 +55,7 @@ const WORK_LINE = new RegExp(`^\\s*(?:[^\\n]*\\n\\s*)?${WORK_MARK}: read `)
  */
 export function ownRounds(records) {
   const sorted = [...records].sort((a, b) => (a.n ?? 0) - (b.n ?? 0))
-  // Only the person's session ends a round: a hand-over noted for a delegated one — a reader
-  // worded its own way calling `retro_propose` — is inside it (thirty-eighth review).
-  const ends = (r) => !r.from && (r.k === "prompt" || (r.k === "handover" && !isWorkHandover(r)))
+  const ends = (r) => (r.k === "prompt" && !r.from) || (r.k === "handover" && !isWorkHandover(r))
   const steps = new Set()
   for (let i = 0; i < sorted.length; i++) {
     if (!isWorkHandover(sorted[i])) continue

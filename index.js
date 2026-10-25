@@ -433,13 +433,14 @@ export default {
           input: PROPOSE_INPUT,
           output: DECIDE_OUTPUT,
           execute: async (input, context) => {
-            // Not a reader's to call. Three review rounds tried to say whose it is — any delegated
-            // session, then only the session the round was handed to — and each had holes: an
-            // ownership kept in memory goes stale and races the event stream. What a stray call
-            // costs is small and heals: orders it closes as unanswered still take their readers'
-            // late records. The one real harm, a hand-over written into a reader's log, is
-            // prevented where it happens (`noteHandover`) (thirty-fifth to thirty-eighth reviews).
-            if (internal.has(context?.sessionID)) {
+            // Not a delegated session's to call: a reader — known by its line or worded its own way —
+            // would get the proposal, with its instruction to record a decision it cannot put to
+            // the human, and its call would close every open order and delete the work orders of
+            // readers not yet started. Whose call it *is* was tried too, as the session the round
+            // was handed to: an ownership kept in memory went stale after an abandoned round and
+            // forgot itself on a reload (thirty-fifth to thirty-ninth reviews; AGENTS.md "Known").
+            const caller = context?.sessionID
+            if (caller && !standsAlone(caller)) {
               const detail =
                 "Not yours to call: `retro_propose` is for the agent that started you, once every " +
                 "reader has recorded. Your work is done once `retro_record` has been called."
@@ -639,8 +640,6 @@ export default {
      * checking.
      */
     function noteHandover(sessionID, text, about = "lesson") {
-      // Never into a reader's session: it is not logged at all (analysis.md).
-      if (internal.has(sessionID)) return
       try {
         // Our own text is not material, so it does not make the log owed — `isOwed` says so
         // through `nothingNew`, in one place, for every kind of growth that holds nothing to read.
