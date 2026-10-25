@@ -2096,3 +2096,31 @@ test("the contract says the agent's text answering a notice is not the session's
   const { OUTPUT_CONTRACT } = await import("../src/contract.js")
   assert.match(OUTPUT_CONTRACT, /ordinary work, but for the agent's text in answer to it/)
 })
+
+/* Round 8 of 10. */
+
+test("a /retro waiting behind a round keeps its own round when the first one ends first", async () => {
+  const { ownRounds, repliesToPlugin } = await import("../src/extract.js")
+  const records = [
+    { n: 1, k: "prompt", text: "fix bug" },
+    { n: 2, k: "session", event: "start" },
+    { n: 3, k: "tool", tool: "read", input: { path: "a.js" } },
+    { n: 4, k: "session", event: "end" },
+    { n: 5, k: "handover", about: "work", sent: true, text: "the logs come first" },
+    { n: 6, k: "session", event: "start" },
+    { n: 7, k: "tool", tool: "subagent", input: { prompt: "opencode-retro work order: read /x.md and do what it says." } },
+    { n: 8, k: "handover", about: "work", sent: true, text: "the logs come first" },
+    { n: 9, k: "tool", tool: "retro_propose", input: {} },
+    { n: 10, k: "handover", about: "lesson", text: "a lesson" },
+    { n: 11, k: "text", text: "here is the lesson" },
+    { n: 12, k: "session", event: "end" },
+    { n: 13, k: "session", event: "start" },
+    { n: 14, k: "text", text: "starting readers" },
+    { n: 15, k: "tool", tool: "read", input: { path: ".retro/work/y.md" } },
+    { n: 16, k: "session", event: "end" },
+  ]
+  const { steps } = ownRounds(records)
+  for (const n of [13, 14, 15]) assert.ok(steps.has(n), `step ${n} is the second round's`)
+  assert.ok(!steps.has(11), "the review of the lesson is not a round")
+  assert.ok(repliesToPlugin(records).has(11))
+})

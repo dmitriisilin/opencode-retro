@@ -125,42 +125,35 @@ function answerStarts(sorted) {
 export function ownRounds(records) {
   const sorted = [...records].sort((a, b) => (a.n ?? 0) - (b.n ?? 0))
   const at = answerStarts(sorted)
+  // Where the answer to each of the plugin's other hand-overs begins: each ends a round.
+  const begins = new Set()
+  for (const [h, j] of at) if (j !== null && !isWorkHandover(sorted[h])) begins.add(j)
   const steps = new Set()
   for (let i = 0; i < sorted.length; i++) {
     if (!isWorkHandover(sorted[i])) continue
-    // One never delivered opens nothing, and must not swallow a `/retro` run again after it,
-    // whose round is the real one (round 7 of 10). Named, as every `work` hand-over is.
-    if (!at.has(i)) {
-      steps.add(sorted[i].n)
-      continue
-    }
-    // Where it ends: the next prompt of the person's session, or the place the answer to another
-    // of the plugin's hand-overs begins — not where that hand-over was written, when it waits in
-    // the inbox for this turn to end: until then the turn is still the round's (round 6 of 10).
-    // Only the person's session ends a round. A delegated session's hand-over should never be
-    // written — `retro_propose` refuses them — but a reader that slips past the gate, before its
-    // creation is known or after a reload, must not close the round for the rest (fortieth review).
-    // A second `work` hand-over inside the round — a `/retro` run again while it reads — is the
-    // same round going on (thirty-fifth review).
-    let end = i + 1
-    const pending = new Set()
-    for (; end < sorted.length; end++) {
-      const r = sorted[end]
-      if (!r.from && r.k === "prompt") break
-      if (!r.from && r.k === "handover" && !isWorkHandover(r) && at.has(end)) pending.add(end)
-      let begun = false
-      for (const h of pending) if (at.get(h) === end) begun = true
-      if (begun) break
-    }
+    // A `work` hand-over is the plugin's own text, whether it opens a round, goes on with one —
+    // a `/retro` run again while it reads (thirty-fifth review) — or was never delivered: named,
+    // so the order's ranges stay whole and no hand-over goes unnamed (thirty-sixth and
+    // thirty-seventh reviews). It holds nothing to read either way.
+    steps.add(sorted[i].n)
     // Starts where its answer begins: at the hand-over between turns, at the next turn start
     // when it landed in a running one — whose work is the person's (thirty-second and
-    // thirty-third reviews) — and nowhere when there is none yet, or it was never delivered.
-    const from = at.get(i) ?? end
-    // A `work` hand-over is the plugin's own text, the opening one and any second one alike:
-    // named with its round, so the order's ranges stay whole and no hand-over goes unnamed
-    // (thirty-sixth and thirty-seventh reviews). It holds nothing to read either way.
-    for (let j = i; j < end; j++) if (j >= from || isWorkHandover(sorted[j])) steps.add(sorted[j].n)
-    i = end - 1
+    // thirty-third reviews) — and nowhere when there is none yet, when the person spoke first,
+    // or when it was never delivered (rounds 6 and 7 of 10).
+    const from = at.get(i)
+    if (from === null || from === undefined) continue
+    // Runs to the next prompt of the person's session, or to where the answer to another of the
+    // plugin's hand-overs begins — not where that hand-over was written: one waiting in the inbox
+    // leaves the turn the round's (round 6 of 10). Each round from its own beginning, so one
+    // waiting behind another is not jumped when the other ends first (round 8 of 10). Only the
+    // person's session ends one: a delegated session's hand-over should never be written —
+    // `retro_propose` refuses them — but a reader that slips past the gate must not close the
+    // round for the rest (fortieth review).
+    for (let j = from; j < sorted.length; j++) {
+      const r = sorted[j]
+      if (j > from && ((!r.from && r.k === "prompt") || begins.has(j))) break
+      steps.add(r.n)
+    }
   }
   // A delegated session that began inside a round — a reader worded its own way — is ours in
   // full, including what it writes after the round has closed: an early `retro_propose` ends
