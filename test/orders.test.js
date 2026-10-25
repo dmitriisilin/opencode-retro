@@ -1579,3 +1579,71 @@ test("orders whose hand-over could not be delivered are voided, not reported as 
   assert.equal(state(dir).orders.ses_a.asked, 1, "asked once — the first time was not an asking")
   await cleanup?.()
 })
+
+/* Whole-series review over 4112915..f47d919. */
+
+test("the rounds an order names include a reworded reader's records after the round closed", async () => {
+  const { ownRounds } = await import("../src/extract.js")
+  const records = [
+    { n: 5, k: "handover", about: "work", text: "the logs come first" },
+    { n: 6, k: "session", event: "start" },
+    { n: 7, k: "text", text: "starting a reader" },
+    { n: 8, k: "prompt", from: "c1", text: "You are a subagent.\nHave a look at /x/.retro/work/ses_a.md" },
+    { n: 9, k: "tool", tool: "retro_propose", input: {} },
+    { n: 10, k: "handover", about: "lesson", text: "a lesson" },
+    { n: 11, k: "tool", from: "c1", tool: "read", input: { path: "/x/.retro/sessions/ses_b.jsonl" } },
+    { n: 12, k: "text", from: "c1", text: "session B had eslint problems" },
+  ]
+  assert.deepEqual(ownRounds(records).ranges, [[6, 9], [11, 12]])
+})
+
+test("a second /retro inside a running round continues it", async () => {
+  const { ownRounds } = await import("../src/extract.js")
+  const records = [
+    { n: 5, k: "handover", about: "work", text: "the logs come first" },
+    { n: 6, k: "session", event: "start" },
+    { n: 7, k: "text", text: "starting readers" },
+    { n: 8, k: "handover", about: "work", text: "the logs come first, again" },
+    { n: 9, k: "text", text: "waiting on the first reader" },
+    { n: 10, k: "tool", tool: "subagent", input: { prompt: "explore" } },
+    { n: 11, k: "handover", about: "lesson", text: "a lesson" },
+  ]
+  const { steps } = ownRounds(records)
+  assert.ok(steps.has(9) && steps.has(10), "the round goes on")
+})
+
+test("a reader calling retro_propose is told it is not its call, and nothing happens", async () => {
+  const dir = sandbox()
+  const fake = fakeOpenCode({ directory: dir, agent: false })
+  const cleanup = await plugin.setup(fake.ctx)
+  await work(fake, "ses_a")
+  const { paths } = await retro(fake)
+  await fake.hooks.get("session.prompt")({ sessionID: "ses_reader", messageID: "r1", prompt: { text: `opencode-retro work order: read ${paths[0]} and do what it says.` } })
+  const result = await fake.tools.get("retro_propose").execute({}, { sessionID: "ses_reader" })
+  assert.match(result.content, /Not yours to call/)
+  assert.equal(existsSync(logOf(dir, "ses_reader")), false, "no log of its own")
+  assert.ok(!state(dir).orders.ses_a.done, "the order is still open for its reader")
+  await cleanup?.()
+})
+
+test("a turn that added only a round does not report its log as waiting", async () => {
+  // Whole-series review, reproduced: the end of the round's turn set the line to "waiting"
+  // while the stock — rightly — counted nothing waiting.
+  const dir = sandbox()
+  const fake = fakeOpenCode({ directory: dir, agent: false })
+  const cleanup = await plugin.setup(fake.ctx)
+  await work(fake, "ses_p")
+  fake.emit({ type: "session.execution.succeeded", durable: { seq: 50 }, data: { sessionID: "ses_p" } })
+  await new Promise((r) => setImmediate(r))
+  await retro(fake, { invoker: "ses_p" })
+  fake.emit({ type: "session.execution.started", durable: { seq: 51 }, data: { sessionID: "ses_p" } })
+  await new Promise((r) => setImmediate(r))
+  await record(fake, "ses_p", [], { dir })
+  await propose(fake, false, "ses_p")
+  fake.emit({ type: "session.execution.succeeded", durable: { seq: 52 }, data: { sessionID: "ses_p" } })
+  await new Promise((r) => setImmediate(r))
+  const report = readFileSync(join(dir, ".retro", "selfcheck.md"), "utf8")
+  assert.doesNotMatch(report, /this session's log is waiting/, report)
+  assert.doesNotMatch(report, /not analysed yet/, "and the stock agrees")
+  await cleanup?.()
+})

@@ -224,6 +224,10 @@ rare, since the hand-over asks it to start readers and nothing else — is left 
   `a reader that read up to a trailing turn's end has read it all`
   `a reworded reader still reading after an early retro_propose is ours to its last record`
   `orders whose hand-over could not be delivered are voided, not reported as unanswered`
+  `the rounds an order names include a reworded reader's records after the round closed`
+  `a second /retro inside a running round continues it`
+  `a reader calling retro_propose is told it is not its call, and nothing happens`
+  `a turn that added only a round does not report its log as waiting`
 - One command issues at most `extractLimit` orders; the rest stay owed and are named. A
   skipped log takes no order.
   `extractLimit caps what one command analyses and leaves the rest owed`

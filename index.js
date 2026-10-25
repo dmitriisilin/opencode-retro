@@ -165,8 +165,18 @@ export default {
       // instead of a verdict: the plugin does not know whether anybody came (analysis.md).
       let asked = 0
       let unanswered = 0
+      // Logs that failed three analyses: still on disk until they are quiet, and nothing will
+      // read them — but only while nothing owes them. A log that grows is owed afresh, and
+      // announcing it as beyond reading next to the line saying it will be tried again is two
+      // contradictory claims in one report. Counted here, in the one pass that asks whether
+      // each log is owed (thirty-fifth review).
+      let setAside = 0
       for (const id of ids) {
-        if (!standsAlone(id) || !isOwed(id)) continue
+        if (!standsAlone(id)) continue
+        if (!isOwed(id)) {
+          if (state.extractionOf(id)?.setAside) setAside++
+          continue
+        }
         const mark = state.looked(id)
         // How many askings have actually gone unanswered — not counting one issued a moment ago
         // that nobody has had the chance to answer yet. Counting it made this line say "up to 2
@@ -187,7 +197,7 @@ export default {
         else if (mark.open) partial++
         else queued++
       }
-      return { queued, failing, partial, unanswered, asked }
+      return { queued, failing, partial, unanswered, asked, setAside }
     }
 
     const writeSelfCheck = () => {
@@ -206,11 +216,6 @@ export default {
           cited: ids.filter((id) => cited.has(id)).length,
           decided: store.listArchive().length,
           unreadable: store.unreadable(),
-          // Logs that failed three analyses: still on disk until they are quiet, and nothing
-          // will read them — but only while nothing owes them. A log that grows is owed afresh;
-          // announcing it as beyond reading next to the line saying it will be tried again is
-          // two contradictory claims in one report.
-          setAside: ids.filter((id) => !isOwed(id) && state.extractionOf(id)?.setAside).length,
         })
         mkdirSync(config.dir, { recursive: true })
         writeFileSync(config.selfcheck, check.render())
@@ -428,6 +433,15 @@ export default {
           input: PROPOSE_INPUT,
           output: DECIDE_OUTPUT,
           execute: async (input, context) => {
+            // A reader calling it would write a hand-over into a log of its own and close every
+            // other open order mid-round; it is the delegating agent's to call (thirty-fifth).
+            if (internal.has(context?.sessionID)) {
+              return {
+                content:
+                  "Not yours to call: `retro_propose` is for the agent that started you, once every " +
+                  "reader has recorded. Your work is done once `retro_record` has been called.",
+              }
+            }
             /**
              * Calling this is how the agent says the analyses are done, so an order still
              * open now is one nobody answered — the plugin cannot tell a subagent that died
@@ -554,7 +568,9 @@ export default {
       state.countSession(sessionID)
       lastVerified.delete(sessionID) // re-inserted: the map is in order of the latest end
       lastVerified.set(sessionID, verified)
-      check.verify({ ...verified, extraction: { owed: true } })
+      // As the stock has it: a turn that added nothing to read — a round of the plugin's own —
+      // leaves the log not owed, and the line says what is known instead (thirty-fifth review).
+      check.verify({ ...verified, extraction: extractionFor(sessionID, { owedIfUnknown: true }) })
       writeSelfCheck()
     }
 
@@ -598,6 +614,7 @@ export default {
             removeWork(s)
           }
           rounds.delete(sessionID)
+          writeSelfCheck()
         }
       }
     }

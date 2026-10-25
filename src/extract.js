@@ -51,14 +51,15 @@ export function ownRounds(records) {
   const sorted = [...records].sort((a, b) => (a.n ?? 0) - (b.n ?? 0))
   const ends = (r) => (r.k === "prompt" && !r.from) || (r.k === "handover" && r.about !== "work")
   const steps = new Set()
-  const ranges = []
   for (let i = 0; i < sorted.length; i++) {
     if (!(sorted[i].k === "handover" && sorted[i].about === "work")) continue
     // Where it ends, and whether a turn starts before that: a hand-over delivered into a turn
     // still running waits for it, and what that turn does is the person's (thirty-second
     // review). With no turn start to go by, the round starts at the hand-over itself.
     let end = i + 1
-    while (end < sorted.length && !ends(sorted[end]) && !(sorted[end].k === "handover" && sorted[end].about === "work")) end++
+    // A second `work` hand-over inside the round — a `/retro` run again while it reads — is
+    // the same round going on (thirty-fifth review).
+    while (end < sorted.length && !ends(sorted[end])) end++
     // Was a turn running when the hand-over landed? Then it waits for that turn, and with no
     // turn starting after it the round is empty: the rest is the person's (thirty-third review).
     let inTurn = false
@@ -75,14 +76,8 @@ export function ownRounds(records) {
         break
       }
     }
-    const range = [sorted[i].n, sorted[i].n]
-    steps.add(sorted[i].n)
-    for (let j = from; j < end; j++) {
-      steps.add(sorted[j].n)
-      range[1] = sorted[j].n
-    }
-    if (from !== i && from < end) range[0] = sorted[from].n
-    ranges.push(range)
+    // The hand-over is a marker and holds nothing to read; the round is what answers it.
+    for (let j = from; j < end; j++) steps.add(sorted[j].n)
     i = end - 1
   }
   // A delegated session that began inside a round — a reader worded its own way — is ours in
@@ -97,7 +92,18 @@ export function ownRounds(records) {
     // which an early `retro_propose` puts after the round has closed (thirty-second review).
     if (OWN_TOOLS.has(r.tool) || (r.tool === "subagent" && isWorkLine(r.input?.prompt))) steps.add(r.n)
   }
-  return { steps, ranges }
+  // The ranges the order names are the steps themselves, run by run, so a reader is told about
+  // everything that is ours — a reworded reader's records after its round included, and a
+  // stray call to the plugin's own tools — and not only the rounds (thirty-fifth review).
+  const listed = []
+  let run = null
+  for (const r of sorted) {
+    if (steps.has(r.n)) {
+      if (run) run[1] = r.n
+      else listed.push((run = [r.n, r.n]))
+    } else run = null
+  }
+  return { steps, ranges: listed }
 }
 
 /**
