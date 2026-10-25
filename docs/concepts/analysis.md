@@ -269,6 +269,7 @@ rare, since the hand-over asks it to start readers and nothing else — is left 
   `a prompt that opens the next turn, after a turn whose end was lost, is the person's turn`
   `an undelivered notice cancels the hand-over it names, not the latest one`
   `a notice of a failed send names the hand-over by its step`
+  `the contract explains the field a round's start is read from`
 - `retro_propose` is not a delegated session's to call: a reader — known by its line or worded
   its own way — or any other subagent calling it is told so, with nothing recorded, nothing
   closed and no order removed; and `/retro` itself issues nothing in a delegated session, whose

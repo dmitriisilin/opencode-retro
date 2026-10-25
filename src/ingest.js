@@ -92,6 +92,9 @@ export function createIngest({
     s.counts.records++
     // A record of a delegation's own session says so: its prompt is the delegation's
     // instruction, not the person's, and the log alone could not tell the two apart.
+    // Read from the file again after a turn ended: another process may have written the turns
+    // in between, and numbering on from memory wrote its step numbers a second time.
+    if (s.n === null) s.n = startAt(target) ?? 0
     emit(target, { v: 1, n: ++s.n, t: now(), ...(target !== sessionID ? { from: sessionID } : {}), ...record })
     return s.n
   }
@@ -175,6 +178,8 @@ export function createIngest({
       s.completed.clear()
       s.seq.clear()
       s.counts = freshCounts()
+      // The numbering too, as forgetting did: the next turn starts from what the file says.
+      s.n = null
     },
 
     /** Unpaired calls, flushed when a session ends so an interrupt leaves no silent gap. */

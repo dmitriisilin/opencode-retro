@@ -371,3 +371,16 @@ test("a paired call with no input of its own takes the one the before hook recor
   assert.equal(out[0].message, "m1")
   assert.equal(out[0].ms, 0)
 })
+
+test("a turn after another process wrote the session numbers on from the file", () => {
+  // The file is the shared truth: what another process appended between two turns of this one.
+  let onDisk = 0
+  const { out, ingest } = collector({ startAt: () => onDisk })
+  const write = ingest.prompt.bind(ingest)
+  write({ sessionID: "s", messageID: "m1", prompt: { text: "first" } })
+  onDisk = out.at(-1).n
+  ingest.endTurn("s")
+  onDisk = 40 // turns 2 and 3, in the other process
+  write({ sessionID: "s", messageID: "m2", prompt: { text: "again" } })
+  assert.equal(out.at(-1).n, 41)
+})

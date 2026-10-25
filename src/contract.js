@@ -88,10 +88,12 @@ Rules:
   \`"about": "lesson"\` means that.
 - **The plugin's own work is not the session's — leave it out.** A \`handover\` with
   \`"about": "work"\` asks for a round of this plugin's own: the agent starting readers like
-  you, their records coming back, \`retro_propose\`. The round is the turn that hand-over
-  starts: at the hand-over itself when it came between turns, and from the next \`session\`
-  start when it landed in a turn still running — work before that is the person's turn still
-  finishing. It runs to the person's next \`prompt\`, or to where a hand-over of another kind
+  you, their records coming back, \`retro_propose\`. A hand-over with \`"sent": true\` was sent
+  to the session to start a turn; one without it — \`retro_propose\`'s — was handed back as a
+  tool result inside the running turn, and is answered there and then. The round is the turn
+  the \`work\` hand-over starts: at the hand-over itself when it came between turns, and from
+  the next \`session\` start when it landed in a turn still running — work before that is the
+  person's turn still finishing. It runs to the person's next \`prompt\`, or to where a hand-over of another kind
   is answered, whichever comes first: a second \`work\` hand-over is the same round going on.
   A prompt of the person's with no \`session\` record between it and the round's turn start —
   the person opening that turn — makes the turn theirs, and a hand-over named by a

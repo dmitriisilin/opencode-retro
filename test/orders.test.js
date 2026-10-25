@@ -2334,3 +2334,8 @@ test("the report's own writes do not keep the session it describes from being me
     Date.now = real
   }
 })
+
+test("the contract explains the field a round's start is read from", async () => {
+  const { OUTPUT_CONTRACT } = await import("../src/contract.js")
+  assert.match(OUTPUT_CONTRACT, /A hand-over with `"sent": true` was sent\s+to the session to start a turn/)
+})

@@ -696,7 +696,9 @@ export default {
         // (forty-second to forty-fourth reviews).
         const fd = openSync(log.path(id), "r")
         try {
-          const total = fstatSync(fd).size
+          // Up to `size`, the growth asked about and what the answer is kept under: written
+          // since, it is the next question's (checks after the ten rounds).
+          const total = Math.min(size, fstatSync(fd).size)
           const readAt = (start) => {
             const buf = Buffer.alloc(Math.max(0, total - start))
             let got = 0
@@ -1147,10 +1149,13 @@ export default {
     function measure(sessionID) {
       const stat = log.stat(sessionID)
       const records = stat.exists ? log.read(sessionID) : []
+      // A file with bytes in it that read as nothing was not read: `log.read` says so with an
+      // empty list, and the per-turn counts stand rather than a report of none.
+      const read = stat.exists && (records.length > 0 || stat.size === 0)
       return {
-        input: stat.exists ? { handovers: turnHandovers(records) } : {},
-        log: { ...stat, entries: records.length },
-        records: stat.exists ? records : undefined,
+        input: read ? { handovers: turnHandovers(records) } : {},
+        log: { ...stat, entries: read ? records.length : undefined },
+        records: read ? records : undefined,
       }
     }
 

@@ -98,8 +98,10 @@ keeps everything.
 - The event stream may annotate a log, never open one.
   `a session no hook ever fired for is not ours, and gets no log at all`
   `once a hook has fired, the event stream annotates that same session`
-- Step numbers are unique within a file and continue across processes.
+- Step numbers are unique within a file and continue across processes — read from the file at
+  the start of each turn, since another process may have written the turns in between.
   `numbering continues from the log, so a step range resolves to one record`
+  `a turn after another process wrote the session numbers on from the file`
   `a half-written last line does not reset the numbering`
 - A call id names one call, even when a wrapper reports the same call twice.
   `a tool run through execute is one call, not two records with the same id`
