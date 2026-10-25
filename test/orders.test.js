@@ -1,6 +1,6 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { existsSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs"
 import { parseFrontmatter } from "../src/frontmatter.js"
 import { tmpdir } from "node:os"
 import { isAbsolute, join } from "node:path"
@@ -576,38 +576,78 @@ test("every report of how many times a log was asked names the same number", asy
   await cleanup?.()
 })
 
-test("evidence is dated by the steps it cites, not by whatever came last in the log", async () => {
-  // Pre-release review: when a cited step was not in the log, the date fell back to the newest
-  // record. In a session left open across a decision that is after the decision, so pre-fix
-  // evidence reopened the accepted lesson as "the fix did not hold".
+/**
+ * An accepted lesson, then a second session's log written by hand with real timestamps, and a
+ * reader citing `steps` from it. Returns what `retro_record` said and whether the lesson came
+ * back. Each record is `[n, minutes from the decision]`: negative is before the fix, positive
+ * after it.
+ */
+async function citeAgainstDecision(records, steps) {
   const dir = sandbox()
   const fake = fakeOpenCode({ directory: dir, agent: false })
   const cleanup = await plugin.setup(fake.ctx)
-
   await work(fake, "ses_first")
   await retro(fake)
   await record(fake, "ses_first", [LESSON], { dir })
   await fake.tools.get("retro_decide").execute({ id: LESSON.id, status: "accepted", note: "fixed" }, { sessionID: "ses_review" })
   const decided = Date.now()
-
-  // A session whose friction happened before the decision and whose log goes on after it.
   writeFileSync(
-    logOf(dir, "ses_spanning"),
-    [
-      { v: 1, n: 1, t: decided - 3_600_000, k: "prompt", text: "do a thing" },
-      { v: 1, n: 2, t: decided - 3_500_000, k: "tool", id: "c1", tool: "shell", input: { command: "npx eslint ." }, status: "completed", exit: 2 },
-      { v: 1, n: 3, t: decided + 3_600_000, k: "text", text: "carried on long after" },
-    ]
-      .map((r) => JSON.stringify(r))
+    logOf(dir, "ses_later"),
+    records
+      .map(([n, minutes], i) =>
+        JSON.stringify(
+          i === 0
+            ? { v: 1, n, t: decided + minutes * 60_000, k: "prompt", text: "do a thing" }
+            : { v: 1, n, t: decided + minutes * 60_000, k: "tool", id: `c${n}`, tool: "shell", input: { command: "npx eslint ." }, status: "completed", exit: 2 },
+        ),
+      )
       .join("\n") + "\n",
   )
   await retro(fake)
-  // The reader cites the friction, with an upper bound the log does not have.
-  const result = await record(fake, "ses_spanning", [{ ...LESSON, steps: [2, 99] }], { dir })
-
-  assert.match(result.output.detail, /already fixed before this session ran/)
-  assert.equal(existsSync(join(dir, ".retro", "lessons", `${LESSON.id}.md`)), false, "the accepted lesson stays closed")
+  const result = await record(fake, "ses_later", [{ ...LESSON, steps }], { dir })
+  const reopened = existsSync(join(dir, ".retro", "lessons", `${LESSON.id}.md`))
   await cleanup?.()
+  return { detail: result.output.detail, reopened }
+}
+
+/*
+ * How evidence is dated against a decision (lesson.md, "Stale evidence"): by the latest record
+ * inside the range it cites, `[first, last]`, or inside the whole log when it cites nothing.
+ * Nothing inside the range means no date, and undated evidence reopens — putting a lesson to a
+ * human twice costs less than dropping one, so when the evidence is ambiguous the plugin errs
+ * towards reopening. The first pre-release review pulled the other way and was half right; the
+ * second review caught both halves.
+ */
+
+test("evidence is dated by the range it cites, not by whatever came after it in the log", async () => {
+  // The part of the first review that was right: a citation whose last step is missing used to
+  // be dated by the newest record, which reaches past the cited stretch into work done after
+  // the fix — and reopened an accepted lesson on evidence from before it.
+  const { detail, reopened } = await citeAgainstDecision([[1, -60], [2, -50], [5, 60]], [2, 3])
+  assert.match(detail, /already fixed before this session ran/)
+  assert.equal(reopened, false, "the accepted lesson stays closed")
+})
+
+test("a recurrence after the fix inside the cited range reopens the lesson", async () => {
+  // The second review: steps are a range, and the first fix read only its two ends. With the
+  // upper end missing it took the lower one, and a genuine recurrence after the fix — inside
+  // the range the reader cited — was thrown away as "already fixed".
+  const { reopened } = await citeAgainstDecision([[1, -60], [2, -50], [3, 30], [4, 40]], [2, 9])
+  assert.equal(reopened, true, "the fix did not hold, and that is news")
+})
+
+test("evidence that cites no steps is dated by the whole log", async () => {
+  // The second review: `steps` is optional, and a lesson with none came back undated — so a
+  // backlog session wholly from before the fix reopened the accepted lesson, the very bug the
+  // stale-evidence rule exists to stop.
+  const { detail, reopened } = await citeAgainstDecision([[1, -60], [2, -50]], [])
+  assert.match(detail, /already fixed before this session ran/)
+  assert.equal(reopened, false)
+})
+
+test("evidence citing only steps the log does not have is undated, and reopens", async () => {
+  const { reopened } = await citeAgainstDecision([[1, -60], [2, -50]], [50, 60])
+  assert.equal(reopened, true, "nothing says it is old")
 })
 
 test("nothing to review still says how many logs were analysed to find that out", async () => {
@@ -627,5 +667,89 @@ test("nothing to review still says how many logs were analysed to find that out"
 
   assert.match(handed.content, /Nothing to review/)
   assert.match(handed.content, /Analysed 2 session logs just now, with nothing to learn from them/)
+  await cleanup?.()
+})
+
+test("a person who names an open order's path in a new session is still logged", async () => {
+  // Second pre-release review: the first fix still let a *fresh* session be taken for the
+  // plugin's own reader if its first prompt named an open order's exact path — and that stops a
+  // session being logged for good. A session a person types into is recognised only by the
+  // exact line the hand-over prescribes, which nobody types by accident.
+  const dir = sandbox()
+  const fake = fakeOpenCode({ directory: dir, agent: false })
+  const cleanup = await plugin.setup(fake.ctx)
+
+  await work(fake, "ses_a")
+  const { paths } = await retro(fake)
+  await fake.hooks.get("session.prompt")({ sessionID: "ses_curious", messageID: "q1", prompt: { text: `what is in ${paths[0]}?` } })
+  await fake.hooks.get("tool.execute.before")({ sessionID: "ses_curious", id: "q2", tool: "read", input: { path: paths[0] } })
+  await fake.hooks.get("tool.execute.after")({ sessionID: "ses_curious", id: "q2", tool: "read", input: { path: paths[0] }, status: "completed", result: { output: "x" } })
+
+  assert.equal(existsSync(logOf(dir, "ses_curious")), true, "the person's session has a log")
+  await cleanup?.()
+})
+
+test("a reworded delegation of a work order stays out of the person's log", async () => {
+  // Second pre-release review: the hand-over asks for an exact prompt, but an agent may word the
+  // delegation its own way. That was recognised by the order's path only while the order was
+  // open — and by the time the `subagent` call returns, the reader has recorded and the order is
+  // closed. So the plugin's own subagent call was written into the person's log, unpaired, for
+  // the next analysis to read as their work. Which call is ours is decided once, when it starts.
+  const dir = sandbox()
+  const fake = fakeOpenCode({ directory: dir, agent: false })
+  const cleanup = await plugin.setup(fake.ctx)
+
+  await work(fake, "ses_a")
+  const { paths } = await retro(fake)
+  const delegation = { sessionID: "ses_review", id: "d1", tool: "subagent", input: { agent: "general", prompt: `Please read ${paths[0]} and follow it.` } }
+  await fake.hooks.get("tool.execute.before")(delegation)
+  await fake.hooks.get("session.prompt")({ sessionID: "ses_reader", messageID: "r1", prompt: { text: delegation.input.prompt } })
+  await record(fake, "ses_a", [LESSON], { dir }) // the reader answers; the order closes
+  await fake.hooks.get("tool.execute.after")({ ...delegation, status: "completed", result: { output: "done", metadata: { sessionID: "ses_reader" } } })
+
+  const records = readFileSync(logOf(dir, "ses_review"), "utf8").trim().split("\n").map((l) => JSON.parse(l))
+  assert.deepEqual(records.filter((r) => r.k === "tool").map((r) => r.tool), [], "no tool call of ours in the person's log")
+  assert.equal(existsSync(logOf(dir, "ses_reader")), false, "and the reader has no log of its own")
+  await cleanup?.()
+})
+
+test("a reader that reported reading nothing new is not reported as no answer", async () => {
+  // Second pre-release review: that read was closed as "unanswered", so the self-check said no
+  // record came back — about a log whose reader had answered — and at the same time counted it
+  // as a failed read. One answer, two contradictory facts.
+  const dir = sandbox()
+  const fake = fakeOpenCode({ directory: dir, agent: false })
+  const cleanup = await plugin.setup(fake.ctx)
+
+  await work(fake, "ses_a")
+  await retro(fake)
+  await record(fake, "ses_a", [], { dir })
+  const mark = state(dir).looked.ses_a.n
+  await work(fake, "ses_a") // it grows, so it is asked about again
+  await retro(fake)
+  await record(fake, "ses_a", [], { dir, through: mark }) // and the reader got no further
+
+  const report = readFileSync(join(dir, ".retro", "selfcheck.md"), "utf8")
+  assert.doesNotMatch(report, /asked about with no answer/, "an answer came back")
+  assert.match(report, /a reader that reported reading nothing new/, "and the cause it does name is the real one")
+  await cleanup?.()
+})
+
+test("a log set aside is described in the same words everywhere it is reported", async () => {
+  // Second pre-release review: the self-check said "the plugin could not read three times"
+  // while the hand-over and state.json said "given up after three failed analyses", about the
+  // same state. One phrase, in one place.
+  const { SET_ASIDE } = await import("../src/selfcheck.js")
+  const dir = sandbox()
+  const fake = fakeOpenCode({ directory: dir, agent: false })
+  const cleanup = await plugin.setup(fake.ctx)
+  mkdirSync(join(dir, ".retro", "sessions"), { recursive: true })
+  writeFileSync(logOf(dir, "ses_broken"), "not a record\nnor this\n")
+
+  for (let i = 0; i < 3; i++) await retro(fake)
+  const handed = fake.synthetic.at(-1)?.text ?? ""
+  assert.ok(state(dir).extracted.ses_broken.detail.startsWith(SET_ASIDE), state(dir).extracted.ses_broken.detail)
+  assert.ok(handed.includes(SET_ASIDE), "the hand-over")
+  assert.ok(readFileSync(join(dir, ".retro", "selfcheck.md"), "utf8").includes(SET_ASIDE), "the self-check")
   await cleanup?.()
 })

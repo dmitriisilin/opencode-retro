@@ -359,9 +359,8 @@ function renderStock({
     // transcripts nothing will ever read, and the file whose job is to report the stock
     // does not mention them.
     lines.push(
-      `- ${setAside} log${setAside === 1 ? "" : "s"} the plugin could not read three times — still in ` +
-        "`sessions/`, and nothing will read them unless they grow. `plugin.log` says why each one " +
-        "failed: a file that could not be opened or parsed, or a work order that could not be written.",
+      `- ${setAside} log${setAside === 1 ? "" : "s"} ${SET_ASIDE} — still in \`sessions/\`, and nothing ` +
+        `will read them unless they grow. \`plugin.log\` says why each one failed: ${READ_FAILURES}.`,
     )
   }
   if (failing) {
@@ -369,9 +368,9 @@ function renderStock({
     // yet", which sends the reader to run `/retro` again without telling them it already ran
     // and why it did not work.
     lines.push(
-      `- ${failing} log${failing === 1 ? "" : "s"} the plugin could not read — tried again on the next ` +
-        "`/retro`, and set aside after three. `plugin.log` says why: a file that could not be " +
-        "opened or parsed, or a work order that could not be written.",
+      `- ${failing} log${failing === 1 ? "" : "s"} whose last read failed — tried again on the next ` +
+        `\`/retro\`, and ${SET_ASIDE.replace(" after three failed reads", "")} after three. \`plugin.log\` ` +
+        `says why: ${READ_FAILURES}.`,
     )
   }
   if (unanswered) {
@@ -434,6 +433,19 @@ export const STATUS = { OK, DEGRADED, BROKEN, SKIPPED }
  * so a renamed `session.generate` would have passed the check and broken all of it.
  * `test/consistency.test.js` holds the list to what `index.js` actually does.
  */
+/**
+ * What a log set aside after three failed reads is called, wherever it is reported — state.json,
+ * the hand-over and this file. One phrase in one place, because three of them drifted apart:
+ * "given up after three failed analyses" in two, "could not read three times" in the third, for
+ * the same state (second pre-release review).
+ */
+export const SET_ASIDE = "set aside after three failed reads"
+
+/** What can make a read fail, said the same way wherever a failed read is explained. */
+export const READ_FAILURES =
+  "a file that could not be opened or parsed, a work order that could not be written, or a " +
+  "reader that reported reading nothing new"
+
 export const REQUIRED_SURFACE = [
   ["tool", "hook"],
   ["tool", "transform"],

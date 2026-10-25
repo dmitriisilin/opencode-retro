@@ -42,8 +42,9 @@ not hold.
 Discarded, and named in the outcome. A backlog is the normal case — `/retro`, accept,
 integrate, and the next command analyses the logs that were waiting behind it, written before
 the fix and into the same trap — so without this, one fix is reported as having failed once
-per waiting log. When the friction happened is read from the log itself (`seenAt`, the
-timestamp of the last cited step); evidence with no date reopens, because nothing says it is
+per waiting log. When the friction happened is read from the log itself (`seenAt`): the
+latest record inside the cited range `[first, last]`, or inside the whole log when nothing is
+cited. Nothing inside the range is no date, and evidence with no date reopens, because nothing says it is
 old and putting a lesson to a human twice costs less than dropping one.
 
 **Restore.** An evicted lesson whose problem returns comes back as the open question it
@@ -83,6 +84,10 @@ told to the extractor and filters its answer, and the store refuses to reopen an
   `a lesson that was accepted and comes back is reopened, because the fix did not hold`
   `evidence from before a fix does not reopen it, and evidence from after does`
   `undated evidence reopens a decision, because nothing says it is old`
+  `evidence is dated by the range it cites, not by whatever came after it in the log`
+  `a recurrence after the fix inside the cited range reopens the lesson`
+  `evidence that cites no steps is dated by the whole log`
+  `evidence citing only steps the log does not have is undated, and reopens`
 - What a human has already fixed is named in the order, with the date, so the reading is not
   spent re-deriving an answered problem.
   `problems already fixed are named in the order, with the date they were fixed`

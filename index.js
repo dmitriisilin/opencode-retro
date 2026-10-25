@@ -2,7 +2,7 @@ import { appendFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "
 import { join, relative as relativePath, resolve as resolvePath, sep } from "node:path"
 import { createIngest } from "./src/ingest.js"
 import { createPrompts } from "./src/prompts.js"
-import { createSelfCheck } from "./src/selfcheck.js"
+import { SET_ASIDE, createSelfCheck } from "./src/selfcheck.js"
 import { createShadowLog, identityOf, isReplacedLog, parseShadowLog } from "./src/shadowlog.js"
 import { createState } from "./src/state.js"
 import { concludedIn, createStore, score } from "./src/lessons.js"
@@ -141,6 +141,13 @@ export default {
      * it is fine for it to live in this process.
      */
     const rounds = new Map()
+    /**
+     * Ids of tool calls that are the plugin's own, decided when the call starts. Which call is
+     * ours used to be re-decided when it finished — by then the reader has recorded and its
+     * order is closed, so a delegation recognised by the order's path no longer matched, and the
+     * plugin's own `subagent` call was written into the person's log (second pre-release review).
+     */
+    const ownCalls = new Set()
 
     /**
      * What is waiting, as the marks say it is. A log whose last read failed is named as a
@@ -281,7 +288,7 @@ export default {
       // A subagent reading one of our work orders is the plugin's own work, not the user's. Only
       // ever a fresh session: one that already has a log is somebody's work, and is never
       // reclassified by what they happen to type.
-      if (p?.sessionID && !log.probe(p.sessionID) && isWorkText(p?.prompt?.text)) {
+      if (p?.sessionID && !log.probe(p.sessionID) && isWorkLine(p?.prompt?.text)) {
         if (p?.sessionID) internal.add(p.sessionID)
         return
       }
@@ -308,6 +315,7 @@ export default {
 
     await hook("tool", "execute.before", (p) => {
       if (ownWork(p)) {
+        if (p?.id != null) ownCalls.add(p.id)
         // Not logged, but counted: the event stream sees this call like any other, and the
         // self-check compares the two sides. See `ingest.ownCall`. Not for a call made *inside*
         // one of our own sessions, though: `handleEvent` drops those sessions' events, so
@@ -320,7 +328,8 @@ export default {
     })
     await hook("tool", "execute.after", (p) => {
       const child = p.tool === "subagent" ? p.result?.metadata?.sessionID : null
-      if (child && (isWorkText(p.input?.prompt) || internal.has(child))) {
+      const ours = (p?.id != null && ownCalls.delete(p.id)) || ownWork(p)
+      if (child && (ours || internal.has(child))) {
         // One of ours. If its own prompt did not carry the mark (the agent may have worded the
         // delegation its own way), whatever it wrote before the link was known goes now.
         internal.add(child)
@@ -329,7 +338,7 @@ export default {
       } else if (child) {
         adopt(child, p.sessionID)
       }
-      if (ownWork(p)) return
+      if (ours) return
       ingest.toolAfter(p)
       // Measured on the parent, never on the child: the child's records are written into
       // the parent's log, so the self-check would otherwise look for sessions/<child>.jsonl,
@@ -749,13 +758,19 @@ export default {
     }
 
     /**
-     * When the steps a lesson cites actually happened, from the log itself.
+     * When the stretch a lesson cites actually happened, from the log itself.
      *
      * A record is folded in long after the work it is about: a backlog is analysed after the
      * fixes taken from the logs ahead of it. So "is this problem back?" and "was this written
      * before the fix?" are different questions, and only the log can answer the second.
-     * Falls back to the newest record, and to nothing at all if the log cannot be read — in
-     * which case the store treats the evidence as undated and reopens as it always did.
+     *
+     * The date is the latest record **inside the cited range** `[first, last]`, or inside the
+     * whole log when the lesson cites no steps. Both halves were found by review, from opposite
+     * sides: dating by the newest record reached past the cited stretch into work done after a
+     * fix and reopened accepted lessons on pre-fix evidence; reading `steps` as two separate
+     * numbers then missed a recurrence inside the range, and left step-less evidence undated.
+     * Nothing inside the range — or a log that cannot be read — is no date at all, and the
+     * store reopens undated evidence, because that is the cheaper way to be wrong.
      */
     function datesIn(sessionID) {
       let records = null
@@ -767,15 +782,11 @@ export default {
             records = []
           }
         }
-        if (!records.length || !Array.isArray(steps) || !steps.length) return null
-        // The latest of the cited steps that is actually in the log. Not the newest record:
-        // a citation that names a step the log does not have (a wrong upper bound, numbering
-        // moved by a delegation folded in) then took the time of whatever came last, which in
-        // a session left open across a decision is after it — and reopened an accepted lesson
-        // on evidence from before the fix (pre-release review). Nothing cited is in the log:
-        // no date, which reopens as undated evidence always has.
-        const wanted = new Set(steps)
-        const at = records.filter((r) => wanted.has(r.n) && Number.isFinite(r.t)).map((r) => r.t)
+        if (!records.length) return null
+        const cited = Array.isArray(steps) ? steps.map(Number).filter(Number.isFinite) : []
+        const first = cited.length ? Math.min(...cited) : -Infinity
+        const last = cited.length ? Math.max(...cited) : Infinity
+        const at = records.filter((r) => r.n >= first && r.n <= last && Number.isFinite(r.t)).map((r) => r.t)
         return at.length ? Math.max(...at) : null
       }
     }
@@ -827,9 +838,9 @@ export default {
       return say(sessionID, handed.text, handed.about)
     }
 
-    /** What to put to the human: one lesson, every lesson as a plan, or that there is none. */
     /**
-     * What to put to the human, and whether it is a lesson. `about` is what the hand-over is
+     * What to put to the human — one lesson, every lesson as a plan, or that there is none — and
+     * whether it is a lesson. `about` is what the hand-over is
      * logged as (handover.md): only a lesson makes the work after it a review, and "nothing to
      * review" logged as one had the next analysis discount real friction as the review of a
      * lesson nobody was handed.
@@ -909,7 +920,7 @@ export default {
       for (const id of log.list()) {
         const mark = state.looked(id)
         if (!mark.failed || (mark.attempts ?? 0) < 3) continue
-        const detail = "given up after three failed analyses"
+        const detail = SET_ASIDE
         state.markExtracted(id, { ok: false, detail })
         state.look(id, { open: false, failed: false, attempts: 0 })
         failures.push({ session: id, detail })
@@ -968,7 +979,16 @@ export default {
       return `${retroDir}/work/${session}.md`
     }
 
-    /** Whether a prompt is one of the plugin's own work orders being handed to a subagent. */
+    /**
+     * Whether a prompt is the exact line the hand-over prescribes for a reader. The only thing
+     * that makes a *session* ours: a session is never reclassified by anything less, because a
+     * session taken for ours is not logged again, and a person can type a path but does not type
+     * this line by accident.
+     */
+    function isWorkLine(text) {
+      return typeof text === "string" && text.trimStart().startsWith(`${WORK_MARK}: read `)
+    }
+
     /**
      * Whether a prompt is the plugin asking a subagent to read one of its work orders.
      *
@@ -978,13 +998,17 @@ export default {
      * `.retro/work/`?" silently stopped being logged from that moment, which in this repository,
      * where the plugin runs on itself, is not a far-fetched thing to type (pre-release review).
      *
-     * Two ways in, both about an order we actually issued: the exact line the hand-over
-     * prescribes, or — for an agent that reworded it — the exact path of an order that is still
-     * open. Talking *about* work orders matches neither.
+     * For a *delegation* — the `subagent` call an agent makes in answer to our hand-over —
+     * two ways in, both about an order we actually issued: the exact line, or the exact path of
+     * an order that is still open, for an agent that worded it its own way. Decided once, when
+     * the call starts (`ownCalls`). What is left: a person's own agent delegating a subagent
+     * with a prompt that names an open order's exact path is taken for ours, and that
+     * subagent's work is not logged. A session a person types into is never taken for ours by
+     * a path — see `isWorkLine`.
      */
     function isWorkText(text) {
       if (typeof text !== "string") return false
-      if (text.trimStart().startsWith(`${WORK_MARK}: read `)) return true
+      if (isWorkLine(text)) return true
       return state.openOrders().some((o) => text.includes(workPath(o.session)) || text.includes(workName(o.session)))
     }
 
@@ -1096,7 +1120,7 @@ export default {
       if (attempts >= 3) {
         // The outcome first: a crash between the two writes then leaves a mark still owed
         // (one more attempt) rather than a log nobody owes and nothing reports.
-        result = { ok: false, detail: `given up after three failed analyses: ${detail}` }
+        result = { ok: false, detail: `${SET_ASIDE}: ${detail}` }
         state.markExtracted(sessionID, result)
         state.look(sessionID, { size, open: false, failed: false, attempts: 0, id })
       } else {
@@ -1201,8 +1225,15 @@ export default {
           `\`${session}\` was read only as far as step ${claimed}, which is no further than the ` +
           `${order.n} already analysed. Nothing was recorded; the log will be asked about again.`
         fail(session, order, "the analysis reported reading nothing new")
-        state.close(session, "unanswered")
+        // Closed as `empty`, not `unanswered`: an answer came back, it just covered nothing new.
+        // As "unanswered" the self-check reported no record about a log whose reader had
+        // answered, while counting the same read as failed (second pre-release review).
+        state.close(session, "empty")
         removeWork(session)
+        // The report is rewritten here too. Returning before it, as this branch did, left
+        // selfcheck.md describing the state from before the read — found by the test for the
+        // read itself.
+        writeSelfCheck()
         return { ok: false, detail }
       }
       const partial = claimed < order.lastN

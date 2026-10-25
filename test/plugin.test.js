@@ -429,7 +429,7 @@ test("a session is given up on after three attempts, not billed forever", async 
   for (let i = 0; i < 3; i++) await retroWith(directory)
   assert.ok(!owed(directory).includes("ses_bad"), "not owed any more")
   assert.equal(savedState(directory).extracted.ses_bad.ok, false, "and the outcome says it failed")
-  assert.match(savedState(directory).extracted.ses_bad.detail, /given up after three failed analyses/)
+  assert.match(savedState(directory).extracted.ses_bad.detail, /set aside after three failed reads/)
   assert.ok(existsSync(join(directory, ".retro", "sessions", "ses_bad.jsonl")), "the log stays until it is quiet")
 
   const fourth = await retroWith(directory)
@@ -1864,10 +1864,10 @@ test("an entry that used its three attempts is retired and reported, not skipped
   const state = savedState(directory)
   assert.ok(!owed(directory).includes("ses_crashed"), "not owed")
   assert.equal(state.extracted.ses_crashed?.ok, false, "with its failure recorded")
-  assert.match(fake.synthetic[0].text, /ses_crashed.*given up after three failed analyses/, "and said out loud")
+  assert.match(fake.synthetic[0].text, /ses_crashed.*set aside after three failed reads/, "and said out loud")
   assert.equal(fake.generated.length, 0, "without spending anything on it")
   const report = readFileSync(join(directory, ".retro", "selfcheck.md"), "utf8")
-  assert.match(report, /1 log the plugin could not read three times/, "and the stock section names it")
+  assert.match(report, /1 log set aside after three failed reads/, "and the stock section names it")
 
   await cleanup?.()
 })
@@ -2188,7 +2188,7 @@ test("a successful read clears the failed-read flag the mark was carrying", asyn
   await fake.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
 
   assert.equal(savedState(directory).looked[session].failed, true, "the failure is on the mark, not only in the counter")
-  assert.match(readFileSync(join(directory, ".retro", "selfcheck.md"), "utf8"), /the plugin could not read/)
+  assert.match(readFileSync(join(directory, ".retro", "selfcheck.md"), "utf8"), /whose last read failed/)
 
   // The session is picked up again; the next read succeeds while it works.
   fake.emit({ type: "session.execution.started", durable: { seq: 40 }, data: { sessionID: session } })
@@ -2210,7 +2210,7 @@ test("a successful read clears the failed-read flag the mark was carrying", asyn
   const mark = savedState(directory).looked[session]
   assert.equal(mark.failed, undefined, "a successful read is not still a failure")
   const report = readFileSync(join(directory, ".retro", "selfcheck.md"), "utf8")
-  assert.doesNotMatch(report, /the plugin could not read/, "the report describes the last read, not the first")
+  assert.doesNotMatch(report, /whose last read failed/, "the report describes the last read, not the first")
 
   await cleanup?.()
 })
@@ -2246,7 +2246,7 @@ test("a log given up on after three attempts is not retried in the same command"
   assert.ok(!owed(directory).includes(session), "it is not owed")
   assert.equal(state.extracted[session]?.ok, false, "with the failure recorded")
   assert.equal(state.looked[session]?.failed, undefined, "and no outstanding failure left to re-queue it")
-  assert.match(fake.synthetic[0].text, /given up after three failed analyses/)
+  assert.match(fake.synthetic[0].text, /set aside after three failed reads/)
 
   await cleanup?.()
 })
@@ -2398,7 +2398,7 @@ test("a log given up on and then grown is not reported as beyond reading", async
   await fake.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
 
   const report = readFileSync(join(directory, ".retro", "selfcheck.md"), "utf8")
-  assert.doesNotMatch(report, /could not read three times/, "it is owed, not given up on")
+  assert.doesNotMatch(report, /set aside after three failed reads/, "it is owed, not given up on")
   assert.match(report, /not analysed yet/, "what is true is that the new material is still owed")
   await cleanup?.()
 })

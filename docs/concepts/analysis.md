@@ -165,8 +165,18 @@ the plugin's bookkeeping never turns into a lesson about the plugin.
   `a log asked about many times is never given up on for it, and says how many`
   `/retro all reports a log it could not read, as well as the plan`
 - A read the plugin could not complete is an attempt, and three on one input retire the log.
+  A reader that reported reading nothing new is one of these — an answer that covered nothing —
+  and is never also reported as no answer. A retired log is called the same thing everywhere.
   `a failed read is owed, and tried again on the next command`
   `a session is given up on after three attempts, not billed forever`
+  `a reader that reported reading nothing new is not reported as no answer`
+  `a log set aside is described in the same words everywhere it is reported`
+- What decides that a call or a session is the plugin's own is decided when it starts, and a
+  session a person types into is never taken for ours by anything short of the prescribed line.
+  `talking about work orders does not stop a session being logged`
+  `a person who names an open order's path in a new session is still logged`
+  `a reworded delegation of a work order stays out of the person's log`
+  `a fresh session given the prescribed line is recognised as the plugin's own reader`
 - One command issues at most `extractLimit` orders; the rest stay owed and are named. A
   skipped log takes no order.
   `extractLimit caps what one command analyses and leaves the rest owed`

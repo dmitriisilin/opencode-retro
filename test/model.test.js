@@ -664,7 +664,7 @@ function check(world) {
   for (const [id, x] of Object.entries(state.extracted ?? {})) if (x?.ok === false) world.givenUp.add(id)
   for (const inst of world.instances) {
     for (const d of inst.fake.synthetic) {
-      for (const m of d.text.matchAll(/`(ses_\w+)`: given up after three failed analyses/g)) world.givenUp.add(m[1])
+      for (const m of d.text.matchAll(/`(ses_\w+)`: set aside after three failed reads/g)) world.givenUp.add(m[1])
     }
   }
 

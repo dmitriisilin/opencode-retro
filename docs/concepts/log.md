@@ -60,10 +60,12 @@ with whatever follows.
 **Read to its end.** A log whose mark covers its whole size with neither flag set. Not
 permanent: a session prompted again grows past its mark and is owed again.
 
-**Retired.** A log the plugin could not read three times at the same size — could not open,
-could not parse, could not write an order for. Not owed; its failure is recorded and named in
-the self-check. It is owed again if it grows. An order nobody answered is not one of these
-(analysis.md): it says nothing about the log, so it is reported and asked again instead.
+**Retired.** A log with three failed reads at the same size — a file that could not be opened
+or parsed, a work order that could not be written, or a reader that reported reading nothing
+new. Not owed; its failure is recorded and named, in every report, as "set aside after three
+failed reads" (`SET_ASIDE` in `src/selfcheck.js`, so the words cannot drift apart again). It is
+owed again if it grows. An order nobody answered is not one of these (analysis.md): it says
+nothing about the log, so it is reported and asked again instead.
 
 **Why the cause is not distinguished.** Only one of those three is about the log; the others
 are about the machine or about prompt files the user deleted, and they fail every owed log at
