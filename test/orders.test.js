@@ -2013,3 +2013,39 @@ test("a reader whose delegation copied the indented line is still recognised", a
   assert.equal(isWorkLine("You are a subagent spawned by another session.\n    opencode-retro work order: read /x.md and do what it says."), true)
   assert.equal(isWorkLine("what does this do?\n    opencode-retro work order: read /x.md"), false, "a person's quote is not")
 })
+
+/* Round 6 of 10. */
+
+test("a hand-over that was never delivered leaves the rest of the turn the person's", async () => {
+  const { nothingNew, lastReadable } = await import("../src/extract.js")
+  const records = [
+    { n: 1, k: "prompt", text: "fix bug" },
+    { n: 2, k: "session", event: "start" },
+    { n: 3, k: "handover", about: "lesson", sent: true, text: "a lesson" },
+    { n: 4, k: "handover", about: "notice", undelivered: true, text: "could not be delivered" },
+    { n: 5, k: "text", text: "found the bug in foo" },
+    { n: 6, k: "session", event: "end" },
+  ]
+  assert.equal(nothingNew(records, records.slice(3)), false, "the person's text is something to read")
+  assert.equal(lastReadable(records), 5)
+})
+
+test("a hand-over waiting for the round's turn to end leaves that turn the round's", async () => {
+  const { ownRounds, nothingNew } = await import("../src/extract.js")
+  const records = [
+    { n: 1, k: "prompt", text: "fix bug" },
+    { n: 2, k: "session", event: "start" },
+    { n: 3, k: "session", event: "end" },
+    { n: 4, k: "handover", about: "work", sent: true, text: "the logs come first" },
+    { n: 5, k: "session", event: "start" },
+    { n: 6, k: "tool", tool: "subagent", input: { prompt: "opencode-retro work order: read /x.md and do what it says." } },
+    { n: 7, k: "handover", about: "lesson", sent: true, text: "a lesson" },
+    { n: 8, k: "text", text: "reader 1 done" },
+    { n: 9, k: "tool", tool: "glob", input: { pattern: ".retro/work/*" } },
+    { n: 10, k: "session", event: "end" },
+  ]
+  const { steps, ranges } = ownRounds(records)
+  assert.ok(steps.has(8) && steps.has(9), "the round's turn goes on past the waiting hand-over")
+  assert.deepEqual(ranges, [[4, 10]])
+  assert.equal(nothingNew(records, records.slice(3)), true, "nothing of the person's was added")
+})

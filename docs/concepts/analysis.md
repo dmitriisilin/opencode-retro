@@ -130,9 +130,14 @@ work, not the person's, and an analysis must never be analysed. Two kinds, handl
 2. **Everything else is logged, and marked.** A **round** is the turn a `handover` with
    `about: "work"` starts — from the next turn start after it, since a hand-over delivered
    into a turn still running waits for that turn, and what the turn does is the person's —
-   to the next `handover` of another kind or the next `prompt` of the person's (one without
-   `from`, log.md), whichever comes first: the agent starting readers, the records coming
-   back, `retro_propose`. Every turn start is logged, since a session stays the plugin's across
+   to the next `prompt` of the person's (one without `from`, log.md) or the place the answer
+   to a `handover` of another kind begins, whichever comes first: the agent starting readers,
+   the records coming back, `retro_propose`. One read of a hand-over's turn serves rounds and
+   replies alike: answered at once when handed back as a tool result or sent between turns,
+   from the next turn start when sent into a running one — so a hand-over waiting for the
+   round's own turn leaves the turn the round's — and never when the plugin failed to send it,
+   whose notice is written to the log and to nobody else, so it ends nothing and starts no
+   reply. Every turn start is logged, since a session stays the plugin's across
    turns. With none to go by, a hand-over that came between turns starts its round itself, and
    one that landed in a running turn opens an empty one. The
    `work` hand-overs themselves are named with it — the plugin's own text, holding nothing to
@@ -238,6 +243,8 @@ rare, since the hand-over asks it to start readers and nothing else — is left 
   `the rounds an order names include a reworded reader's records after the round closed`
   `a second /retro inside a running round continues it`
   `a turn that added only a round does not report its log as waiting`
+  `a hand-over that was never delivered leaves the rest of the turn the person's`
+  `a hand-over waiting for the round's turn to end leaves that turn the round's`
 - `retro_propose` is not a delegated session's to call: a reader — known by its line or worded
   its own way — or any other subagent calling it is told so, with nothing recorded, nothing
   closed and no order removed; and `/retro` itself issues nothing in a delegated session, whose

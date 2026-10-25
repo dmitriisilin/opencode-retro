@@ -63,6 +63,47 @@ function isIndentedWorkLine(text) {
 }
 
 /**
+ * Where the answer to each of the person's session's hand-overs begins, as an index into
+ * `sorted` (ordered by `n`), keyed by the hand-over's own index. One sent into a turn still
+ * running waits in the inbox for that turn to end, and is answered from the next turn start —
+ * `null` while there is none. One handed back as a tool result, or sent between turns, is
+ * answered at once. One the plugin failed to send is answered nowhere, and the notice saying so
+ * is no hand-over of its own: it is written to the log, never to anybody (round 6 of 10).
+ * The single reading of a hand-over's turn that `ownRounds` and `repliesToPlugin` share: two
+ * copies of it drifted apart in rounds 5 and 6.
+ */
+function answerStarts(sorted) {
+  const at = new Map()
+  let inTurn = false
+  let waiting = []
+  let last = -1
+  for (let i = 0; i < sorted.length; i++) {
+    const r = sorted[i]
+    if (r.from) continue
+    if (r.k === "session") {
+      inTurn = r.event === "start"
+      if (inTurn) for (const h of waiting) at.set(h, i)
+      if (inTurn) waiting = []
+      continue
+    }
+    if (r.k !== "handover") continue
+    if (r.undelivered) {
+      // Written right after the hand-over it is about, which is the latest one.
+      if (last >= 0) at.delete(last)
+      waiting = waiting.filter((h) => h !== last)
+      continue
+    }
+    last = i
+    // A `work` hand-over is only ever sent — `/retro` is its one writer, never a tool result.
+    if ((r.sent || isWorkHandover(r)) && inTurn) {
+      at.set(i, null)
+      waiting.push(i)
+    } else at.set(i, i)
+  }
+  return at
+}
+
+/**
  * The plugin's own rounds in a log, as step ranges (analysis.md, "The plugin's own work").
  *
  * A round is answered by the turn its `handover` with `about: "work"` starts, and runs to the
@@ -75,41 +116,32 @@ function isIndentedWorkLine(text) {
  */
 export function ownRounds(records) {
   const sorted = [...records].sort((a, b) => (a.n ?? 0) - (b.n ?? 0))
-  // Only the person's session ends a round. A delegated session's hand-over should never be
-  // written — `retro_propose` refuses them — but a reader that slips past the gate, before its
-  // creation is known or after a reload, must not close the round for the rest (fortieth review).
-  const ends = (r) => !r.from && (r.k === "prompt" || (r.k === "handover" && !isWorkHandover(r)))
+  const at = answerStarts(sorted)
   const steps = new Set()
   for (let i = 0; i < sorted.length; i++) {
     if (!isWorkHandover(sorted[i])) continue
-    // Where it ends, and whether a turn starts before that: a hand-over delivered into a turn
-    // still running waits for it, and what that turn does is the person's (thirty-second
-    // review). With no turn start to go by, the round starts at the hand-over itself if it came
-    // between turns, and is empty if it landed in a running one.
+    // Where it ends: the next prompt of the person's session, or the place the answer to another
+    // of the plugin's hand-overs begins — not where that hand-over was written, when it waits in
+    // the inbox for this turn to end: until then the turn is still the round's (round 6 of 10).
+    // Only the person's session ends a round. A delegated session's hand-over should never be
+    // written — `retro_propose` refuses them — but a reader that slips past the gate, before its
+    // creation is known or after a reload, must not close the round for the rest (fortieth review).
+    // A second `work` hand-over inside the round — a `/retro` run again while it reads — is the
+    // same round going on (thirty-fifth review).
     let end = i + 1
-    // A second `work` hand-over inside the round — a `/retro` run again while it reads — is
-    // the same round going on (thirty-fifth review).
-    while (end < sorted.length && !ends(sorted[end])) end++
-    // Was a turn running when the hand-over landed? Then it waits for that turn, and with no
-    // turn starting after it the round is empty: the rest is the person's (thirty-third review).
-    let inTurn = false
-    for (let j = i - 1; j >= 0; j--) {
-      const r = sorted[j]
-      if (r.k !== "session" || r.from) continue
-      inTurn = r.event === "start"
-      break
+    const pending = new Set()
+    for (; end < sorted.length; end++) {
+      const r = sorted[end]
+      if (!r.from && r.k === "prompt") break
+      if (!r.from && r.k === "handover" && !isWorkHandover(r) && at.has(end)) pending.add(end)
+      let begun = false
+      for (const h of pending) if (at.get(h) === end) begun = true
+      if (begun) break
     }
-    // Starts at the next turn start; landing in a running turn with none after it, it is
-    // empty. Every turn start is logged — a session stays the plugin's across turns — so there
-    // is no end record to start from instead (forty-second and forty-third reviews).
-    let from = inTurn ? end : i
-    for (let j = i + 1; j < end; j++) {
-      const r = sorted[j]
-      if (!r.from && r.k === "session" && r.event === "start") {
-        from = j
-        break
-      }
-    }
+    // Starts where its answer begins: at the hand-over between turns, at the next turn start
+    // when it landed in a running one — whose work is the person's (thirty-second and
+    // thirty-third reviews) — and nowhere when there is none yet, or it was never delivered.
+    const from = at.get(i) ?? end
     // A `work` hand-over is the plugin's own text, the opening one and any second one alike:
     // named with its round, so the order's ranges stay whole and no hand-over goes unnamed
     // (thirty-sixth and thirty-seventh reviews). It holds nothing to read either way.
@@ -158,26 +190,22 @@ export function lastReadable(records, own = ownRounds(records).steps) {
 
 /** Texts that answer one of the plugin's own hand-overs (not `work`: that one has a round). */
 export function repliesToPlugin(records) {
+  const sorted = [...records].sort((a, b) => (a.n ?? 0) - (b.n ?? 0))
+  const at = answerStarts(sorted)
+  const begins = new Set()
+  for (const [h, j] of at) if (j !== null && !isWorkHandover(sorted[h])) begins.add(j)
   const out = new Set()
   let answering = null
   // Subagents delegated while a reply to a hand-over was going on: theirs is part of it — their
   // instruction and their text, as the agent's own text is. One already running before the
   // hand-over is the person's, and stays so (forty-second to forty-fourth reviews).
   const answeringBy = new Set()
-  // A hand-over sent into a turn still running waits for that turn to end: what the turn says
-  // meanwhile is the person's, and the reply starts with the next turn (round 5 of 10) — as a
-  // round does in `ownRounds`. One handed back as a tool result is answered at once.
-  let inTurn = false
-  let waiting = false
-  for (const r of [...records].sort((a, b) => (a.n ?? 0) - (b.n ?? 0))) {
-    if (r.k === "session" && !r.from) {
-      inTurn = r.event === "start"
-      if (inTurn && waiting) {
-        answering = "handover"
-        waiting = false
-      }
-      continue
-    }
+  // A reply starts where `answerStarts` says the hand-over is answered — a turn later for one
+  // sent into a running turn (round 5 of 10), and never for one that was not delivered, whose
+  // notice leaves the turn the person's (round 6 of 10).
+  for (let i = 0; i < sorted.length; i++) {
+    const r = sorted[i]
+    if (begins.has(i)) answering = "handover"
     if (r.from) {
       if (r.k === "prompt" && answering === "handover" && !answeringBy.has(r.from)) {
         answeringBy.add(r.from)
@@ -185,11 +213,8 @@ export function repliesToPlugin(records) {
       } else if (r.k === "text" && answeringBy.has(r.from)) out.add(r.n)
       continue
     }
-    if (r.k === "handover" && !isWorkHandover(r) && r.sent && inTurn) waiting = true
-    else if (r.k === "prompt" || (r.k === "handover" && !isWorkHandover(r))) {
-      answering = r.k
-      waiting = false
-    } else if (r.k === "text" && answering === "handover") out.add(r.n)
+    if (r.k === "prompt") answering = "prompt"
+    else if (r.k === "text" && answering === "handover") out.add(r.n)
   }
   return out
 }

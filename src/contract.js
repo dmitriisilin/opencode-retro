@@ -90,8 +90,10 @@ Rules:
   \`"about": "work"\` asks for a round of this plugin's own: the agent starting readers like
   you, their records coming back, \`retro_propose\`. The round is the turn that hand-over
   starts — from the next \`session\` start after it; work before that is the person's turn
-  still finishing — to the next \`handover\` of another kind or the next \`prompt\`, whichever
-  comes first. Only steps without \`from\` start or end a round: a hand-over or prompt with
+  still finishing — to the next \`prompt\` or the next \`handover\` of another kind, whichever
+  comes first; one with \`"sent": true\` that landed while the round's turn was running waits
+  for it, and ends the round at the next \`session\` start instead. A hand-over followed by a
+  notice with \`"undelivered": true\` never arrived, and neither ends anything. Only steps without \`from\` start or end a round: a hand-over or prompt with
   \`from\` is a subagent's, and inside whatever round it falls in. A call to \`retro_record\` or
   \`retro_propose\`, and a \`subagent\` call whose prompt is a work order's line, is the
   plugin's own wherever it is. Take no lesson from any of it, count none of its steps as cost,
