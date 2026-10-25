@@ -85,7 +85,13 @@ export function ownRounds(records) {
     ranges.push(range)
     i = end - 1
   }
+  // A delegated session that began inside a round — a reader worded its own way — is ours in
+  // full, including what it writes after the round has closed: an early `retro_propose` ends
+  // the round while the reader is still reading (thirty-fourth review).
+  const readers = new Set()
+  for (const r of sorted) if (r.k === "prompt" && r.from && steps.has(r.n)) readers.add(r.from)
   for (const r of sorted) {
+    if (r.from && readers.has(r.from)) steps.add(r.n)
     if (r.k !== "tool") continue
     // Ours wherever they land: a delegation's after-hook is written when its reader is done,
     // which an early `retro_propose` puts after the round has closed (thirty-second review).
@@ -95,18 +101,10 @@ export function ownRounds(records) {
 }
 
 /**
- * Whether the records a log gained since its mark (`added`, out of `all`) hold nothing to read:
- * each is a step that cannot hold evidence — a hand-over, a turn's start or end, a reply to the
- * plugin's own hand-over — or part of the plugin's own work. A log grown by nothing else is not
- * owed for it (log.md, "Owed"): otherwise every `/retro` left its own session waiting, and the
- * next one paid a read to skip the round.
- */
-/**
  * The last step an analysis could read something in: not the plugin's own, not a step that holds
  * nothing. Reading up to it is reading all of it, whatever trails after (thirty-third review).
  */
-export function lastReadable(records) {
-  const own = ownRounds(records).steps
+export function lastReadable(records, own = ownRounds(records).steps) {
   const plugin = repliesToPlugin(records)
   let last = 0
   for (const r of records) if (readable(r, plugin) && !own.has(r.n) && (r.n ?? 0) > last) last = r.n
@@ -129,11 +127,22 @@ function readable(r, plugin) {
   return r.k === "prompt" || r.k === "tool" || (r.k === "text" && !plugin.has(r.n)) || (r.k === "step" && r.files?.length > 0)
 }
 
+/**
+ * Whether the records a log gained since its mark (`added`, out of `all` — the whole log, or a
+ * function that reads it, called only when it is needed) hold nothing to read:
+ * each is a step that cannot hold evidence — a hand-over, a turn's start or end, a reply to the
+ * plugin's own hand-over — or part of the plugin's own work. A log grown by nothing else is not
+ * owed for it (log.md, "Owed"): otherwise every `/retro` left its own session waiting, and the
+ * next one paid a read to skip the round.
+ */
 export function nothingNew(all, added) {
-  // The common case, cheaply: nothing added that could be material at all.
+  // The common cases, cheaply, before the whole log is needed: nothing added that could be
+  // material at all, or the person speaking — which is always something, and never a round's.
   if (!added.some((r) => readable(r, new Set()))) return true
-  const own = ownRounds(all).steps
-  const plugin = repliesToPlugin(all)
+  if (added.some((r) => r.k === "prompt" && !r.from)) return false
+  const records = typeof all === "function" ? all() : all
+  const own = ownRounds(records).steps
+  const plugin = repliesToPlugin(records)
   return added.every((r) => !readable(r, plugin) || own.has(r.n))
 }
 
@@ -195,13 +204,10 @@ export function composeOrder({
   const reread = analysedUpTo > 0
   const asked = records.filter((r) => r.k === "prompt" && (!reread || r.n > analysedUpTo)).length
   const toolCalls = records.filter((r) => r.k === "tool").length
-  let answering = null
-  let newReply = false
-  for (const r of [...records].sort((a, b) => (a.n ?? 0) - (b.n ?? 0))) {
-    // As in `nothingNew`: the `work` hand-over's replies are its round's, already left out.
-    if (r.k === "prompt" || (r.k === "handover" && r.about !== "work")) answering = r.k
-    else if (r.k === "text" && answering !== "handover") newReply = true
-  }
+  // One rule with `nothingNew`: the `work` hand-over's replies are its round's, already left
+  // out; the other hand-overs' replies are the plugin talking to itself.
+  const plugin = repliesToPlugin(records)
+  const newReply = records.some((r) => r.k === "text" && !plugin.has(r.n))
   if (reread ? asked === 0 && toolCalls === 0 && !newReply : asked <= 1 && toolCalls === 0) {
     return { ok: true, skipped: true, detail: "nothing to extract (one exchange, nothing done)" }
   }

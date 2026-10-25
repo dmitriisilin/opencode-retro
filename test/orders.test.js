@@ -1544,3 +1544,38 @@ test("a reader that read up to a trailing turn's end has read it all", async () 
   assert.ok(!state(dir).looked.ses_old.open, "a turn's end holds nothing to read")
   await cleanup?.()
 })
+
+/* Whole-series review over 4112915..9f75752. */
+
+test("a reworded reader still reading after an early retro_propose is ours to its last record", async () => {
+  const { ownRounds } = await import("../src/extract.js")
+  const records = [
+    { n: 1, k: "handover", about: "work", text: "the logs come first" },
+    { n: 2, k: "session", event: "start" },
+    { n: 3, k: "prompt", from: "ses_reader", text: "You are a subagent.\nHave a look at /x/.retro/work/ses_a.md" },
+    { n: 4, k: "tool", from: "ses_reader", tool: "read", input: { path: "/x/.retro/sessions/ses_a.jsonl" } },
+    { n: 5, k: "handover", about: "lesson", text: "a lesson" },
+    { n: 6, k: "tool", tool: "retro_propose", input: {} },
+    { n: 7, k: "tool", from: "ses_reader", tool: "read", input: { path: "/x/.retro/sessions/ses_a.jsonl" } },
+    { n: 8, k: "tool", from: "ses_helper", tool: "read", input: { path: "src/a.js" } },
+  ]
+  const { steps } = ownRounds(records)
+  assert.ok(steps.has(7), "its reading after the round closed is still ours")
+  assert.ok(!steps.has(8), "and only its")
+})
+
+test("orders whose hand-over could not be delivered are voided, not reported as unanswered", async () => {
+  const dir = sandbox()
+  const fake = fakeOpenCode({ directory: dir, agent: false })
+  fake.ctx.session.synthetic = async () => {
+    throw new Error("session is gone")
+  }
+  const cleanup = await plugin.setup(fake.ctx)
+  await work(fake, "ses_a")
+  await fake.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
+  assert.equal(state(dir).orders.ses_a.done, "void", "never put to anybody")
+  assert.equal(existsSync(join(dir, ".retro", "work", "ses_a.md")), false)
+  await fake.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
+  assert.equal(state(dir).orders.ses_a.asked, 1, "asked once — the first time was not an asking")
+  await cleanup?.()
+})

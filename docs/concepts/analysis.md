@@ -119,9 +119,11 @@ nothing done, or an end marker, still proves nothing.
 **The plugin's own work.** The subagents it asks for and the calls to its own tools are its
 work, not the person's, and an analysis must never be analysed. Two kinds, handled two ways:
 
-1. **A reader's session is not logged.** A fresh session whose first prompt carries the
-   prescribed line, at the start of one of its lines — OpenCode puts a line of its own ahead
-   of a subagent's prompt — is one of ours, and so is anything such a session starts. Its whole job is reading
+1. **A reader's session is not logged.** A fresh session whose first prompt starts with the
+   prescribed line, or has it right after one line before it — OpenCode puts a line of its own
+   ahead of a subagent's prompt — is one of ours, and so is anything such a session starts. No
+   deeper than that: a person pasting the hand-over, where the line sits indented inside it,
+   is not a reader. Its whole job is reading
    other sessions' logs, so its own log would be copies of them. Recognised by the line alone,
    because a session is never taken for ours by anything less.
 2. **Everything else is logged, and marked.** A **round** is the turn a `handover` with
@@ -134,7 +136,9 @@ work, not the person's, and an analysis must never be analysed. Two kinds, handl
    line, are ours wherever they are — a delegation is written when its reader is done, which
    an early `retro_propose` puts after the round has closed. A reader whose delegation was
    worded its own way is an ordinary child, folded into the person's log like any subagent —
-   inside the round, its reading of other logs with it. The order tells the reader to leave a
+   inside the round, its reading of other logs with it, and ours in full: a delegated session
+   whose first prompt lies inside a round is ours to its last record, which may come after an
+   early `retro_propose` has closed the round. The order tells the reader to leave a
    round out (no lesson, no cost, no recurrence), and the plugin does not count a round as new
    material, so a log that grew by nothing but a round takes no order.
 
@@ -218,6 +222,8 @@ rare, since the hand-over asks it to start readers and nothing else — is left 
   `a hand-over that landed in a running turn with no turn after it opens an empty round`
   `a person who pastes the hand-over into a new session is still logged`
   `a reader that read up to a trailing turn's end has read it all`
+  `a reworded reader still reading after an early retro_propose is ours to its last record`
+  `orders whose hand-over could not be delivered are voided, not reported as unanswered`
 - One command issues at most `extractLimit` orders; the rest stay owed and are named. A
   skipped log takes no order.
   `extractLimit caps what one command analyses and leaves the rest owed`

@@ -589,6 +589,16 @@ export default {
         // Logged first, so the log says it was never delivered — and a notice ends the round
         // the hand-over would have opened (thirty-second review).
         noteHandover(sessionID, `_opencode-retro: the hand-over above could not be delivered: ${err?.message ?? err}_`, "notice")
+        // Its orders were never put to anybody: voided, not counted as asked and unanswered,
+        // which would blame an inbox for what the plugin knows was a failed send (thirty-fourth).
+        if (about === "work") {
+          for (const s of rounds.get(sessionID) ?? []) {
+            if (!state.orderOf(s)) continue
+            state.close(s, "void")
+            removeWork(s)
+          }
+          rounds.delete(sessionID)
+        }
       }
     }
 
@@ -638,17 +648,20 @@ export default {
      * asks about every log each time it is written.
      */
     function grewByNothing(id, from, size) {
+      // Keyed by the file's identity too: a log pruned and written again under the same id can
+      // reach the same size as the one that was cached (thirty-fourth review).
+      const file = log.probe(id)?.id ?? null
       const known = grown.get(id)
-      if (known && known.from === from && known.size === size) return known.nothing
+      if (known && known.from === from && known.size === size && known.file === file) return known.nothing
       let nothing = false
       try {
         const bytes = readFileSync(log.path(id))
         const added = parseShadowLog(bytes.subarray(from).toString("utf8"))
-        nothing = added.length > 0 && nothingNew(parseShadowLog(bytes.toString("utf8")), added)
+        nothing = added.length > 0 && nothingNew(() => parseShadowLog(bytes.toString("utf8")), added)
       } catch {
         nothing = false
       }
-      grown.set(id, { from, size, nothing })
+      grown.set(id, { from, size, file, nothing })
       return nothing
     }
 
@@ -1221,11 +1234,14 @@ export default {
       // Against the previous order's size, not the mark: an unanswered order leaves the mark
       // where it was on purpose, so the mark cannot say whether this is new material.
       const previous = state.askedFor(sessionID)
-      const asked = (readSize > previous.size ? 0 : previous.asked) + 1
+      // An order voided was never put to anybody — its log replaced, or its hand-over never
+      // delivered — so it was not an asking (thirty-fourth review).
+      const before = previous.done === "void" ? Math.max(0, previous.asked - 1) : previous.asked
+      const asked = (readSize > previous.size ? 0 : before) + 1
       // `lastReal`: the last step anything could be read in — not the plugin's own, not a turn's
       // end. A reader leaves a trailing round out as it is told to, and reading up to here is
       // reading all of it (thirty-second and thirty-third reviews).
-      const lastReal = Math.max(mark.n, lastReadable(records))
+      const lastReal = Math.max(mark.n, lastReadable(records, own.steps))
       const order = { id: identity, size: readSize, lastN, lastReal, n: mark.n, asked }
       state.issue(sessionID, order)
       return { ok: true, order: { session: sessionID, ...order } }

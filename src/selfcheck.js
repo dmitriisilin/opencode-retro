@@ -328,8 +328,9 @@ export function render(state) {
     // measured turned out not to be a session of the person's.
     lines.push(
       `No session of yours to describe right now. Hooks have fired (last at ${stamp(state.heartbeat)}),`,
-      "but the session they were measured on turned out to be the plugin's own work. These",
-      "lines are written again at the next prompt or tool call of a session of yours.",
+      "but none for a session of yours has been measured since the plugin loaded, or the one",
+      "that was turned out to be the plugin's own work. These lines are written again at the",
+      "next prompt or tool call of a session of yours.",
       "",
     )
   } else {
