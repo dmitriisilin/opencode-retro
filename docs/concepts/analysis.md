@@ -123,7 +123,8 @@ the plugin's bookkeeping never turns into a lesson about the plugin. Three rules
 1. A tool call is ours or the person's as decided when it starts — by the session it runs in,
    the tool, and for a delegation the prescribed line or an open order's path — and that holds
    for both halves of a Code Mode pair until the call ends or its turn does.
-2. A child created while its parent runs a delegation of ours is **deferred**: neither adopted
+2. A child created while its parent has a delegation of ours that has not yet named its child
+   — running, or ended naming none: **unaccounted for** — is **deferred**: neither adopted
    nor claimed, its records waiting in its own log, its start and end dropped as a step's. The
    delegation naming it when it ends decides it. One nobody named by the parent's turn end is
    ours if a delegation of ours never named a child — still running then, or ended naming

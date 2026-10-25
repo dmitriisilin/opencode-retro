@@ -561,7 +561,7 @@ export default {
           claimReader(sessionID, event.data.parentID)
           return
         }
-        if (event.data?.parentID && !parents.has(sessionID) && oursInFlight(event.data.parentID)) {
+        if (event.data?.parentID && !parents.has(sessionID) && unaccountedUnder(event.data.parentID)) {
           deferred.set(sessionID, event.data.parentID)
           handBack(sessionID)
           return
@@ -574,8 +574,8 @@ export default {
         // session was named by nobody: ours if one of ours never named a child, theirs if every
         // one of ours named its own (rule 2) — never a session of its own, which a delegation
         // must not become.
-        // A session of ours starts nothing of the person's (rule 3).
-        const ours = internal.has(sessionID) || oursInFlight(sessionID)
+        // A session of ours has no deferred children left by now: claiming it claimed them.
+        const ours = unaccountedUnder(sessionID)
         for (const [child, parent] of deferred) {
           if (parent !== sessionID) continue
           deferred.delete(child)
@@ -1152,7 +1152,7 @@ export default {
     }
 
     /** Whether `parent` has a delegation of ours unaccounted for (rule 2). */
-    function oursInFlight(parent) {
+    function unaccountedUnder(parent) {
       for (const call of calls.values()) if (call.session === parent && unaccounted(call)) return true
       return false
     }
@@ -1347,8 +1347,9 @@ export default {
         if (!ended.has(sessionID)) {
           if (observe(sessionID, { force: true })) return
         } else {
+          // Shown as measured when it ended: nothing is measured now, so the heartbeat stays.
           const verified = lastVerified.get(sessionID)
-          if (verified) check.verify({ ...verified, extraction: result })
+          if (verified) check.replay({ ...verified, extraction: result })
         }
       }
       // Once per record: observing writes the report itself (nineteenth review).
@@ -1390,6 +1391,7 @@ export default {
       if (!file || (order.id && file.id && order.id !== file.id)) {
         state.close(session, "void")
         removeWork(session)
+        writeSelfCheck()
         return { ok: false, detail: `the log of \`${session}\` was replaced since its order was written; it will be asked for again.` }
       }
       /**
