@@ -56,7 +56,9 @@ export function createIngest({
     if (!s) {
       s = {
         id,
-        n: startAt(id) ?? 0,
+        // Read at the first append, not here: a session created by a read — `counts`, `pending` —
+        // would otherwise hold a number another process may have moved on from by then.
+        n: null,
         pending: new Map(),
         completed: new Set(),
         seq: new Map(),
@@ -162,7 +164,8 @@ export function createIngest({
      */
     restartNumbering(sessionID) {
       const s = sessions.get(owner(sessionID))
-      if (s) s.n = 0
+      // Read from the file again at the next append, as after a turn: none there means 0.
+      if (s) s.n = null
     },
 
     /**

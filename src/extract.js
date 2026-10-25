@@ -111,8 +111,7 @@ function answerStarts(sorted) {
       continue
     }
     last = i
-    // A `work` hand-over is only ever sent — `/retro` is its one writer, never a tool result.
-    const sent = r.sent || isWorkHandover(r)
+    const sent = isSent(r)
     // Sent after the person has spoken and before the turn they opened is logged as started —
     // the moment between a prompt and its turn's start: that turn answers them (checks after
     // the ten rounds).
@@ -124,6 +123,9 @@ function answerStarts(sorted) {
   }
   return at
 }
+
+/** Sent to start a turn. A `work` hand-over always is: `/retro` is its one writer, never a tool result. */
+const isSent = (r) => Boolean(r.sent) || isWorkHandover(r)
 
 /**
  * How many of the plugin's hand-overs the latest turn of the person's session began with: sent
@@ -159,7 +161,7 @@ export function turnHandovers(records) {
   const unlogged = !starts.length || lastEnd > latest
   let count = 0
   for (const [h, j] of at) {
-    if (!sorted[h].sent) continue
+    if (!isSent(sorted[h])) continue
     if (unlogged ? h > lastEnd || j === null : j !== null && turnOf(j) === latest) count++
   }
   return count
