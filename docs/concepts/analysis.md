@@ -38,8 +38,14 @@ can I afford to show? — that only exists when the reader cannot turn the page 
 each waiting for the one before it to record. They are not independent: a problem that
 appears in several of those sessions has to be reported as one recurring problem rather than
 as several new ones, and the only way an analysis can tell is by reading what the ones before
-it recorded. The orders also name the lessons directory, because the list each one carries is
-a snapshot taken when it was written.
+it recorded. So every order still waiting is rewritten after each record, its list of
+recorded lessons brought up to date, and it also names the lessons directory, with how to open
+it: by path, with a read tool — a file search does not look inside `.retro/`.
+
+*Measured on the bench after the ten rounds: readers in sequence, and the third filed both of
+its session's problems under new ids a minute after the first had recorded them. It had looked
+with `glob ".retro/lessons/*"`, which came back "No files found" over four lesson files —
+reproduced on 2.0.32 — and its order's list was the one written before anybody recorded.*
 
 *Measured on the friction bench, which is what it is for: with the analyses run in parallel,
 three sessions that hit the same two traps produced five lessons under five ids with a
@@ -178,6 +184,7 @@ rare, since the hand-over asks it to start readers and nothing else — is left 
 - A round with several orders asks for them in sequence, and every order says where the
   current lessons are, so a problem seen in more than one session is reported as recurring.
   `a round with several orders asks for them one at a time, and says why`
+  `an order still waiting lists the lessons a reader before it recorded`
   `already-recorded lessons are shown so the reader matches instead of re-stating`
   `an order with nothing recorded yet still says where the lessons will be`
 - The plugin makes no model call: `/retro` issues work orders and hands them to the agent in

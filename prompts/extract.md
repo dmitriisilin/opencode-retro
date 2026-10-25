@@ -1,6 +1,6 @@
 ---
 prompt: extract
-base: 5
+base: 6
 ---
 
 You are reviewing one coding session that has just finished. You were not in it. The agent
@@ -64,9 +64,23 @@ perfectly fine, and the real lesson may be somewhere none of them point.
 - The agent's reasoning, tone, or style. Only what the harness made it do.
 - Anything you cannot point at a specific stretch of this log for.
 - A fix to the code it was asked to write. That was the task, not a lesson.
-- Restating a lesson that is already listed below. Match it instead.
+- Restating a lesson that is already recorded. Match it instead — see the next section.
 - Advice that would be true of any project anywhere. If it does not name something in
   *this* project, it is not a lesson.
+
+## Is it already recorded
+
+Before you call anything new, open the recorded lessons — the order says where, and how — and
+compare them by **what would be fixed**, not by how they are worded. The same skill, the same
+claim in the same file, the same command that does not exist: that is the same problem, even
+when this session hit it at other steps, ran into one more symptom of it, or you would put it
+differently. Report it with `matches` set to that lesson's id and with this session's own
+steps. That is the whole of how a problem that keeps happening is told from one that happened
+once: filed under a new id each time, a problem every session hits looks like a string of
+one-offs, and nobody fixes it first.
+
+A new lesson is for a different thing to fix. If one recorded lesson covers part of what you
+found, match it for that part and record only the rest as new.
 
 One session usually contains zero or one lessons. Two is unusual. If the session went
 straight, say so with an empty list — that is the common case and the right answer.

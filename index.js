@@ -1,4 +1,4 @@
-import { appendFileSync, closeSync, fstatSync, mkdirSync, openSync, readFileSync, readSync, rmSync, writeFileSync } from "node:fs"
+import { appendFileSync, closeSync, fstatSync, mkdirSync, openSync, readFileSync, readSync, renameSync, rmSync, writeFileSync } from "node:fs"
 import { join, relative as relativePath, resolve as resolvePath, sep } from "node:path"
 import { createIngest, isTurnEnd } from "./src/ingest.js"
 import { createPrompts } from "./src/prompts.js"
@@ -7,7 +7,7 @@ import { createShadowLog, identityOf, isReplacedLog, parseShadowLog } from "./sr
 import { createState } from "./src/state.js"
 import { concludedIn, createStore, score } from "./src/lessons.js"
 import { assessCurrency, fingerprintOf } from "./src/currency.js"
-import { composeOrder, isWorkLine, lastReadable, nothingNew, ownRounds, recordAnswer, repliesToPlugin, turnHandovers } from "./src/extract.js"
+import { composeOrder, isWorkLine, lastReadable, nothingNew, ownRounds, recordAnswer, refreshLessons, repliesToPlugin, turnHandovers } from "./src/extract.js"
 import { RECORD_INPUT } from "./src/contract.js"
 import {
   PROPOSE_INPUT,
@@ -1369,6 +1369,26 @@ export default {
     }
 
     /**
+     * Every order still waiting for its reader, rewritten with the lessons recorded so far, so
+     * the next reader is told of what the last one found (`refreshLessons`). Written to a new
+     * file and moved into place, so a reader opening it at that moment reads one whole order.
+     */
+    function refreshOpenOrders() {
+      for (const order of state.openOrders()) {
+        const path = workPath(order.session)
+        try {
+          const text = readFileSync(path, "utf8")
+          const fresh = refreshLessons(text, { store, lessonsDir: config.lessons })
+          if (fresh === text) continue
+          writeFileSync(`${path}.tmp`, fresh)
+          renameSync(`${path}.tmp`, path)
+        } catch (err) {
+          if (err?.code !== "ENOENT") onError("extract.refresh", err)
+        }
+      }
+    }
+
+    /**
      * A failed attempt (analysis.md, "Attempt"). The step mark does not move — a failure must
      * not skip the material it failed on — and the bytes are recorded as read. Attempts
      * belong to the input they were spent on, and three on one input retire the log.
@@ -1568,6 +1588,7 @@ export default {
       state.markExtracted(session, { ok: true, detail: answered.detail })
       state.close(session, "answered")
       removeWork(session)
+      refreshOpenOrders()
       lastExtraction.set(session, result)
       reportOutcome(session, result)
       return result

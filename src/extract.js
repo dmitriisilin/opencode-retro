@@ -385,7 +385,7 @@ export function composeOrder({
   if (!prompt) return { ok: false, detail: "no extract prompt could be resolved" }
   if (!logPath) return { ok: false, detail: "the log has no path to point an analysis at" }
 
-  const existing = store.list().filter((l) => l.status !== "rejected")
+  const existing = currentLessons(store)
 
   /**
    * A session that is left open and returned to is never "finished", so its log is read more
@@ -430,6 +430,28 @@ export function composeOrder({
     .join("\n\n")
 
   return { ok: true, text, lastN }
+}
+
+/** The lessons an order lists as already recorded: the open set, the rejected aside. */
+const currentLessons = (store) => store.list().filter((l) => l.status !== "rejected")
+
+const LESSONS_HEADING = "## Lessons already recorded\n\n"
+
+/**
+ * A work order still waiting for its reader, with its list of recorded lessons brought up to
+ * date. Measured on the bench: readers go one at a time, and the third reader filed both of a
+ * session's problems under new ids although the first had recorded them a minute before —
+ * it had looked with a file search, which does not look inside `.retro/`, and was told
+ * nothing was there. An order rewritten after every record lists them whatever the reader
+ * does (checks after the ten rounds). Returns the text unchanged when it has no such section.
+ */
+export function refreshLessons(text, { store, lessonsDir }) {
+  const start = text.indexOf(LESSONS_HEADING)
+  if (start < 0) return text
+  const body = start + LESSONS_HEADING.length
+  const next = [text.indexOf("\n\n## ", body), text.indexOf("\n\n---", body)].filter((i) => i >= 0)
+  const end = next.length ? Math.min(...next) : text.length
+  return text.slice(0, body) + renderExisting(currentLessons(store), lessonsDir).trim() + text.slice(end)
 }
 
 /**
@@ -493,9 +515,11 @@ function renderExisting(lessons, dir) {
     // go looking once it has been told there is nothing there.
     lines.push(
       `**Read \`${dir}\` before you decide that anything is new.** One file per lesson, with`,
-      "its `id` in the frontmatter. That directory is the current set; anything below is only",
-      "what was there when this order was written, and an analysis of another session in this",
-      "same round may have recorded something since.",
+      "its `id` in the frontmatter. Open the directory itself with your read tool, by that path: a",
+      "file search such as `glob` does not look inside `.retro/` and comes back empty when lessons",
+      "are there (measured). That directory is the current set; the list below is what was",
+      "there when this order was last brought up to date, and an analysis of another session in",
+      "this same round may have recorded something since.",
       "",
     )
   }
@@ -509,8 +533,8 @@ function renderExisting(lessons, dir) {
     lessons.length
       ? lessons.map((l) => `- \`${l.id}\` (seen in ${l.recurrence ?? 1}): ${l.statement}`).join("\n")
       : dir
-        ? "_Nothing was recorded when this order was written. That is not the same as nothing_\n" +
-          "_being there now — see above._"
+        ? "_Nothing was recorded when this order was last brought up to date. That is not the_\n" +
+          "_same as nothing being there now — see above._"
         : "None yet.",
   )
   return lines.join("\n")

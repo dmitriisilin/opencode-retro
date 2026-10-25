@@ -85,7 +85,7 @@ test("the work order points at the log instead of carrying it", () => {
   // tools; deciding for it what it may see was work that bought nothing.
   assert.doesNotMatch(order.text, /\[9\] skill: lint/, "no rendering of the log")
   assert.doesNotMatch(order.text, /elided to fit the budget/)
-  assert.ok(order.text.length < 12_000, `an order is small now: ${order.text.length} characters`)
+  assert.ok(order.text.length < 14_000, `an order is small now: ${order.text.length} characters`)
 
   // Retired, with the measurement in fixtures/ab-anchors/: no detector decides what the
   // reader is allowed to notice. What they knew is prose in the prompt now.
@@ -207,8 +207,8 @@ test("an order with nothing recorded yet still says where the lessons will be", 
   assert.match(order.text, new RegExp(`Read \`${r.lessonsDir}\``))
   // Not "None yet": that is a claim about now, and it is only true of when this was written.
   assert.doesNotMatch(order.text, /None yet/)
-  assert.match(order.text, /Nothing was recorded when this order was written/)
-  assert.match(order.text, /not the same as nothing_/)
+  assert.match(order.text, /Nothing was recorded when this order was last brought up to date/)
+  assert.match(order.text, /same as nothing being there now/)
 })
 
 test("a record with no lessons is a clean result with nothing written", () => {
