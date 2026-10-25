@@ -118,12 +118,14 @@ nothing done, or an end marker, still proves nothing.
 
 **The plugin's own work.** The subagents it asks for and the calls to its own tools are its
 work, not the user's: they are not written to any log, so an analysis is never analysed and
-the plugin's bookkeeping never turns into a lesson about the plugin. A reader is recognised by
-the exact line, by the prompt of a delegation of ours still in flight, or by its parent — one
-with a delegation of ours in flight and nothing of the person's beside it, or one of our own
-readers. (A limit: an agent that rewords the delegation *and* runs work of the person's beside
-it defeats all three until the delegation ends, and what the reader wrote by then has been
-folded into the person's log, which cannot give it back. AGENTS.md, "Known".)
+the plugin's bookkeeping never turns into a lesson about the plugin. A reader is recognised at
+its first prompt by the exact line or by the prompt of a delegation of ours still in flight;
+anything a reader of ours starts is ours by its parent; and any other child of a session with
+a delegation of ours in flight is **deferred** — neither adopted nor claimed, its records
+waiting in its own log — until a delegation ends and its result names the child it started.
+Then ours is claimed and the person's adopted, whatever either was told. (A limit: a
+delegation that never ends — its turn interrupted — leaves its child deferred, and its log is
+then a session of its own. AGENTS.md, "Known".)
 
 ## Invariants
 
@@ -183,8 +185,8 @@ folded into the person's log, which cannot give it back. AGENTS.md, "Known".)
   never again when it ends — per session and call id, and for a Code Mode wrapper the same as
   for what it wraps. A session a person types into is never taken for ours by anything short
   of the prescribed line — or, for a fresh session, the very prompt one of our own delegations
-  is handing its reader at that moment, or a parent with a delegation of ours in flight and
-  nothing of the person's in flight beside it.
+  is handing its reader at that moment. A child of a session with a delegation of ours in
+  flight is decided when a delegation ends and names it.
   A call is remembered while it is in flight; one its turn ended in the middle of recognises
   nothing afterwards, but its own after-hook still finds it. An after-hook whose start was
   never seen is decided by what it says.
@@ -198,6 +200,8 @@ folded into the person's log, which cannot give it back. AGENTS.md, "Known".)
   `an own delegation whose after-hook outlives its turn is still ours`
   `an own call run through Code Mode's execute is ours in both of its hook pairs`
   `a reader whose prompt reads nothing like the delegation is still recognised by its parent`
+  `a reworded reader is not folded into the person's log while its delegation runs`
+  `a report about a session that turns out to be ours describes no session rather than stay`
   `a person's call is not taken for ours because one of ours elsewhere has the same id`
   `an own delegation interrupted with its turn recognises nothing afterwards`
   `an interrupted call of the person's does not stop a later reader being recognised by its parent`

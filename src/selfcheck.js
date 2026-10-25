@@ -60,6 +60,12 @@ export function createSelfCheck({ versions, repo, loadedAt = Date.now() }) {
     },
     /** The session the report currently describes. */
     describing: () => state.session ?? null,
+    /** Describe no session: the one described turned out to be none of the person's. */
+    clear: () => {
+      state.session = null
+      state.sessionEnded = null
+      state.checks = []
+    },
     render: () => render(state),
   }
 }

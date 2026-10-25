@@ -1041,7 +1041,15 @@ test("a child is not taken for a reader while anything of the person's runs besi
   await fake.hooks.get("session.prompt")({ sessionID: "ses_helper", messageID: "h1", prompt: { text: "You are a subagent spawned by another session.\nexplore the repo" } })
   fake.emit({ type: "session.created", durable: { seq: 90 }, data: { sessionID: "ses_helper", parentID: "ses_review", location: { directory: dir } } })
   await new Promise((r) => setImmediate(r))
-  assert.ok(kindsIn(dir, "ses_review").some((r) => r.k === "prompt" && /explore the repo/.test(r.text)), "the person's helper is adopted into their log")
+  await fake.hooks.get("tool.execute.before")({ sessionID: "ses_helper", id: "hx", tool: "read", input: { path: "src" } })
+  await fake.hooks.get("tool.execute.after")({ sessionID: "ses_helper", id: "hx", tool: "read", input: { path: "src" }, status: "completed", result: { output: "a.js" } })
+  // Its own delegation ends and names it: the person's, so it is adopted, with what it did.
+  await fake.hooks.get("tool.execute.after")({ sessionID: "ses_review", id: "p1", tool: "subagent", input: { agent: "explore", prompt: "explore the repo" }, status: "completed", result: { output: "done", metadata: { sessionID: "ses_helper" } } })
+  await fake.hooks.get("tool.execute.after")({ sessionID: "ses_review", id: "p1", tool: "execute", input: { code: "await tools.subagent('explore')" }, status: "completed", result: { output: "done" } })
+  const theirs = kindsIn(dir, "ses_review")
+  assert.ok(theirs.some((r) => r.k === "prompt" && /explore the repo/.test(r.text)), "the person's helper is adopted into their log")
+  assert.ok(theirs.some((r) => r.k === "tool" && r.id === "hx"), "with its work")
+  assert.equal(existsSync(logOf(dir, "ses_helper")), false, "and no log of its own left behind")
   await cleanup?.()
 })
 
@@ -1139,7 +1147,8 @@ test("a reader's helper is ours however it was told what to do", async () => {
 })
 
 test("a reader already recognised is not claimed again when its delegation ends", async () => {
-  // Eighth pre-release review: the after-hook re-claimed it — a state write per reader.
+  // Pins the guard the seventh review added: the after-hook re-claimed a reader already
+  // recognised — a state write and a forced report per reader.
   const dir = sandbox()
   const fake = fakeOpenCode({ directory: dir, agent: false })
   const cleanup = await plugin.setup(fake.ctx)
@@ -1152,5 +1161,70 @@ test("a reader already recognised is not claimed again when its delegation ends"
   await record(fake, "ses_a", [LESSON], { dir })
   await fake.hooks.get("tool.execute.after")({ ...delegation, status: "completed", result: { output: "done", metadata: { sessionID: "ses_reader" } } })
   assert.ok(!(state(dir).uncounted ?? []).includes("ses_reader"), "a reader never counted is not uncounted")
+  await cleanup?.()
+})
+
+/* Ninth pre-release review: a child is decided when the delegation that started it ends. */
+
+test("a reworded reader is not folded into the person's log while its delegation runs", async () => {
+  // The order the events really arrive in for a reworded reader: its prompt, its creation
+  // under the person's session, its own work — and a helper of its own — then the delegation's
+  // end. Nothing of it may reach the person's log, at any point.
+  const dir = sandbox()
+  const fake = fakeOpenCode({ directory: dir, agent: false })
+  const cleanup = await plugin.setup(fake.ctx)
+  await work(fake, "ses_a")
+  const { paths } = await retro(fake)
+  await fake.hooks.get("session.prompt")({ sessionID: "ses_review", messageID: "rv", prompt: { text: "go on" } })
+  const delegation = { sessionID: "ses_review", id: "d1", tool: "subagent", input: { agent: "general", prompt: `Have a look at ${paths[0]}` } }
+  await fake.hooks.get("tool.execute.before")(delegation)
+  // The person's agent runs something of its own beside it.
+  await fake.hooks.get("tool.execute.before")({ sessionID: "ses_review", id: "own1", tool: "read", input: { path: "README.md" } })
+  await fake.hooks.get("session.prompt")({ sessionID: "ses_reader", messageID: "r1", prompt: { text: "You are a subagent spawned by another session.\nSee the file." } })
+  fake.emit({ type: "session.created", durable: { seq: 90 }, data: { sessionID: "ses_reader", parentID: "ses_review", location: { directory: dir } } })
+  await new Promise((r) => setImmediate(r))
+  await fake.hooks.get("tool.execute.before")({ sessionID: "ses_reader", id: "rr1", tool: "read", input: { path: paths[0] } })
+  const help = { sessionID: "ses_reader", id: "rh", tool: "subagent", input: { agent: "explore", prompt: "skim it" } }
+  await fake.hooks.get("tool.execute.before")(help)
+  await fake.hooks.get("session.prompt")({ sessionID: "ses_helper", messageID: "h1", prompt: { text: "You are a subagent spawned by another session.\nskim it" } })
+  fake.emit({ type: "session.created", durable: { seq: 91 }, data: { sessionID: "ses_helper", parentID: "ses_reader", location: { directory: dir } } })
+  await new Promise((r) => setImmediate(r))
+  await fake.hooks.get("tool.execute.after")({ ...help, status: "completed", result: { output: "skimmed", metadata: { sessionID: "ses_helper" } } })
+  assert.ok(!kindsIn(dir, "ses_review").some((r) => r.k === "prompt" && /See the file|skim it/.test(r.text)), "nothing of the reader's yet")
+  let report = readFileSync(join(dir, ".retro", "selfcheck.md"), "utf8")
+  assert.doesNotMatch(report, /ses_reader|ses_helper/, "and the report is not about it")
+  await record(fake, "ses_a", [LESSON], { dir })
+  // A call it started before it was known to be ours ends after.
+  await fake.hooks.get("tool.execute.after")({ ...delegation, status: "completed", result: { output: "done", metadata: { sessionID: "ses_reader" } } })
+  await fake.hooks.get("tool.execute.after")({ sessionID: "ses_reader", id: "rr1", tool: "read", input: { path: paths[0] }, status: "completed", result: { output: "the order" } })
+  await fake.hooks.get("tool.execute.after")({ sessionID: "ses_review", id: "own1", tool: "read", input: { path: "README.md" }, status: "completed", result: { output: "# hi" } })
+
+  const theirs = kindsIn(dir, "ses_review")
+  assert.ok(theirs.some((r) => r.k === "tool" && r.id === "own1"), "the person's own call is there")
+  assert.ok(!theirs.some((r) => ["rr1", "rh", "d1"].includes(r.id) || /See the file|skim it/.test(r.text ?? "")), "nothing of ours is")
+  assert.equal(existsSync(logOf(dir, "ses_reader")), false)
+  assert.equal(existsSync(logOf(dir, "ses_helper")), false)
+  report = readFileSync(join(dir, ".retro", "selfcheck.md"), "utf8")
+  assert.doesNotMatch(report, /ses_reader|ses_helper/)
+  await cleanup?.()
+})
+
+test("a report about a session that turns out to be ours describes no session rather than stay", async () => {
+  // Ninth pre-release review: with no session of the person's live to hand it back to, the
+  // report stayed about the helper its first prompt made it about.
+  const dir = sandbox()
+  const fake = fakeOpenCode({ directory: dir, agent: false })
+  const cleanup = await plugin.setup(fake.ctx)
+  await work(fake, "ses_a")
+  fake.emit({ type: "session.execution.succeeded", durable: { seq: 50 }, data: { sessionID: "ses_a" } })
+  await new Promise((r) => setImmediate(r))
+  const { paths } = await retro(fake)
+  await fake.hooks.get("session.prompt")({ sessionID: "ses_reader", messageID: "r1", prompt: { text: `opencode-retro work order: read ${paths[0]} and do what it says.` } })
+  await fake.hooks.get("tool.execute.before")({ sessionID: "ses_reader", id: "rh", tool: "subagent", input: { agent: "explore", prompt: "skim it" } })
+  await fake.hooks.get("session.prompt")({ sessionID: "ses_helper", messageID: "h1", prompt: { text: "skim it" } })
+  assert.match(readFileSync(join(dir, ".retro", "selfcheck.md"), "utf8"), /ses_helper/, "its first prompt made the report about it")
+  fake.emit({ type: "session.created", durable: { seq: 91 }, data: { sessionID: "ses_helper", parentID: "ses_reader", location: { directory: dir } } })
+  await new Promise((r) => setImmediate(r))
+  assert.doesNotMatch(readFileSync(join(dir, ".retro", "selfcheck.md"), "utf8"), /ses_helper/)
   await cleanup?.()
 })

@@ -161,12 +161,22 @@ export default {
      *
      * A call its turn ended in the middle of is marked `stale` when the end arrives, not
      * dropped: its after-hook can still follow, and must find it. Stale entries recognise no
-     * session (`delegatedByUs`, `startedByUs`) and are the first to go past `MAX_CALLS`.
+     * session (`delegatedByUs`, `oursInFlight`) and are the first to go past `MAX_CALLS`.
      *
      * `prompt` is what an own delegation hands its reader, whose session starts before the call
      * ends and is recognised by it (`delegatedByUs`).
      */
     const calls = new Map()
+    /**
+     * Children that appeared while their parent had a delegation of ours in flight. Which of
+     * them are ours is decided when a delegation ends, because its result names the child it
+     * started — the one moment that is known exactly, whatever the delegation was told. Until
+     * then a child is neither adopted nor claimed: its records wait in its own log, which
+     * adoption already knows how to absorb, and it is neither reported on nor analysed.
+     * Recognising it any earlier — by its prompt, or by what else its parent had in flight —
+     * took four review rounds of interleavings to get wrong (sixth to ninth).
+     */
+    const deferred = new Set()
     const MAX_CALLS = 1000
     const callKey = (p) => (p?.id != null ? `${p?.sessionID}\u0000${p.id}` : null)
 
@@ -249,7 +259,7 @@ export default {
     function observe(sessionID, { force = false } = {}) {
       // Never about one of ours: a reader, or a reader's helper, has no log to measure, and a
       // report about it said BROKEN about a healthy plugin (seventh and eighth reviews).
-      if (!sessionID || internal.has(sessionID)) return
+      if (!sessionID || internal.has(sessionID) || deferred.has(sessionID)) return
       // A hook that arrives after the session's end belongs to that session, and its record is
       // written — but it is not news about liveness. Re-measuring here would recreate the
       // forgotten ingest counts and report `BROKEN prompt hook` about a session that was fine
@@ -258,6 +268,8 @@ export default {
       const now = Date.now()
       const first = !observedSessions.has(sessionID)
       if (!first && !force && now - lastBeat < config.heartbeatMs) return
+      // Re-inserted, so the set is in order of the latest observation (`handBack`).
+      observedSessions.delete(sessionID)
       observedSessions.add(sessionID)
       lastBeat = now
       check.verify(
@@ -378,9 +390,12 @@ export default {
       const key = callKey(p)
       const known = key ? calls.get(key) : undefined
       if (known && --known.open <= 0) calls.delete(key)
-      const ours = known ? known.ours : ownWork(p)
-      // A child already known to be ours needs nothing more. Otherwise one of ours whose prompt
-      // did not give it away is claimed now, and the person's is adopted.
+      // Everything a session of ours does is ours, including a call that started before the
+      // session was known to be (ninth review).
+      const ours = internal.has(p?.sessionID) || (known ? known.ours : ownWork(p))
+      // The moment a child is known exactly: this call started it. Ours is claimed, the
+      // person's adopted — whatever either was told.
+      if (child) deferred.delete(child)
       if (child && !internal.has(child)) (ours ? claimReader : adopt)(child, p.sessionID)
       if (ours) return
       ingest.toolAfter(p)
@@ -536,10 +551,16 @@ export default {
         // is over.
         if (isForeign(event)) return
         if (internal.has(sessionID)) return
-        // One of our readers whose prompt did not give it away — or anything a reader of ours
-        // starts, since every call of a session of ours is ours (eighth review).
-        if (event.data?.parentID && (internal.has(event.data.parentID) || startedByUs(event.data.parentID))) {
+        // Anything a reader of ours starts is ours, since every call of a session of ours is
+        // (eighth review). A child of a parent with a delegation of ours in flight waits for a
+        // delegation to end and say which it started (`deferred`).
+        if (event.data?.parentID && internal.has(event.data.parentID)) {
           claimReader(sessionID, event.data.parentID)
+          return
+        }
+        if (event.data?.parentID && oursInFlight(event.data.parentID)) {
+          deferred.add(sessionID)
+          handBack(sessionID)
           return
         }
         if (event.data?.parentID) adopt(sessionID, event.data.parentID)
@@ -801,8 +822,10 @@ export default {
       // work that is never a session. `uncountSession` keeps the id, so a writer holding the
       // old count cannot put it back.
       state.uncountSession(child)
-      // The self-check may have been measuring the child's log, which no longer exists.
+      // The self-check may have been measuring the child's log, which no longer exists — and
+      // when the root is not measured (one deferred, or one of ours) the report goes back.
       observe(rootOf(parent), { force: true })
+      handBack(child)
     }
 
     /**
@@ -955,7 +978,7 @@ export default {
     function owedLogs(skip = new Set()) {
       return log
         .list()
-        .filter((id) => !skip.has(id) && !parents.has(id) && !internal.has(id) && isOwed(id))
+        .filter((id) => !skip.has(id) && !parents.has(id) && !internal.has(id) && !deferred.has(id) && isOwed(id))
         .map((id) => ({ id, at: log.probe(id)?.mtimeMs ?? 0 }))
         .sort((a, b) => a.at - b.at)
         .map((x) => x.id)
@@ -1066,12 +1089,25 @@ export default {
       observedSessions.delete(child)
       turnSeen.delete(child)
       ended.delete(child)
+      deferred.delete(child)
+      // What it started before it was known to be ours went its parent's way (ninth review).
+      for (const [grandchild, of] of parents) if (of === child && !internal.has(grandchild)) claimReader(grandchild)
       if (parent) observe(rootOf(parent), { force: true })
-      // A parent of ours is not measured, and the report may still be about the child, which
-      // its first prompt made it about: it goes to the person's session seen most recently.
-      if (check.describing() === child) {
-        const person = [...observedSessions].reverse().find((s) => !internal.has(s) && !ended.has(s))
-        if (person) observe(person, { force: true })
+      handBack(child)
+    }
+
+    /**
+     * A report about a session that turned out to be none of the person's goes back to the
+     * person's session observed most recently — or to no session at all, rather than stay
+     * about one of ours (eighth and ninth reviews).
+     */
+    function handBack(sessionID) {
+      if (check.describing() !== sessionID) return
+      const person = [...observedSessions].reverse().find((s) => s !== sessionID && !internal.has(s) && !deferred.has(s) && !ended.has(s))
+      if (person) observe(person, { force: true })
+      else {
+        check.clear()
+        writeSelfCheck()
       }
     }
 
@@ -1082,7 +1118,8 @@ export default {
      * line, a reworded delegation's reader was folded into the person's log by
      * `session.created`, and nothing could take those records back (third pre-release review).
      * OpenCode may put a line of its own ahead of the prompt, hence `includes`, and compared
-     * with whitespace flattened in case it re-flows the text. `startedByUs` is the other way in.
+     * with whitespace flattened in case it re-flows the text. A reader it misses is decided when
+     * its delegation ends (`deferred`).
      */
     function delegatedByUs(text) {
       if (typeof text !== "string") return false
@@ -1091,21 +1128,10 @@ export default {
       return false
     }
 
-    /**
-     * Whether a session announcing `parent` can only have been started by us: the parent has a
-     * delegation of ours in flight and nothing of the person's in flight at all. Needs no
-     * wording, so it holds however OpenCode presents the reader its prompt. Anything of the
-     * person's running beside ours — a delegation, a wrapper, a tool that might start a session
-     * some other way — leaves it to `delegatedByUs` and the exact line (fifth review).
-     */
-    function startedByUs(parent) {
-      let ours = false
-      for (const call of calls.values()) {
-        if (call.session !== parent || call.stale) continue
-        if (!call.ours) return false
-        if (call.tool === "subagent") ours = true
-      }
-      return ours
+    /** Whether `parent` has a delegation of ours in flight. */
+    function oursInFlight(parent) {
+      for (const call of calls.values()) if (call.session === parent && call.ours && !call.stale && call.tool === "subagent") return true
+      return false
     }
 
     function flat(text) {
