@@ -796,7 +796,7 @@ Decision 20. This is the whole file, not an excerpt — the prose is part of the
 opencode 2.0.32 · opencode-retro 0.1.0 · github.com/dmitriisilin/opencode-retro
 
 loaded     2026-10-19 20:29   (plugin start)
-heartbeat  2026-10-19 20:31   (moved by every hook that fires, the plugin's own readers' too; written at most once a minute)
+heartbeat  2026-10-19 20:31   (moved by every hook that fires, the plugin's own readers' too; a hook writes it at most once a minute)
 verified   2026-10-19 20:31   (when the checks below were last evaluated)
 
 **If you are working right now and `heartbeat` is more than a few minutes old, this plugin
@@ -812,8 +812,12 @@ checkout — then run `/retro`.
 - ok              shadow log      sessions/ses_eabb21.jsonl, 47 entries
 - ok              trigger         session.execution.succeeded
 - DEGRADED        extraction      asked 2 times and no record came back
-                                  → no lessons from this session yet, and nothing is held
-                                    against the log for it; the next /retro asks again.
+                                  → no lessons from this session yet; the next `/retro` asks again,
+                                    and `plugin.log` says why. The usual reason is an order nobody
+                                    answered, which is never held against the log — a hand-over
+                                    waiting in the inbox of a session that is still working, or
+                                    subagents that had not called `retro_record` before
+                                    `retro_propose` was called.
 
 ## Checked
 

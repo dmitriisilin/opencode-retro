@@ -813,10 +813,11 @@ test("a person's own delegation stays logged even if an order naming its path is
   await cleanup?.()
 })
 
-test("own calls that never finish are bounded, so a later session quoting one is logged in the end", async () => {
-  // Third pre-release review: an own call that never reached its after-hook stayed remembered
-  // for the life of the process — and with it the prompt a fresh session is recognised by. Not
-  // swept when its turn ends (the event stream lags the hooks, fifth review); bounded instead.
+test("a fresh session quoting a delegation of ours is the person's, whatever is in flight", async () => {
+  // Third pre-release review: a session was once recognised by the prompt of a delegation in
+  // flight, and an own call that never finished kept recognising sessions for the life of the
+  // process. Only the prescribed line makes a session ours now (rule 3), so a person quoting
+  // a delegation is logged however many calls are in flight.
   const dir = sandbox()
   const fake = fakeOpenCode({ directory: dir, agent: false })
   const cleanup = await plugin.setup(fake.ctx)

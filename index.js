@@ -287,7 +287,7 @@ export default {
           triggered: null,
           ended: false,
           // From disk when this process ran none: a reload must not unsay an analysis.
-          extraction: lastExtraction.get(sessionID) ?? state.extractionOf(sessionID) ?? null,
+          extraction: extractionFor(sessionID),
         },
         now,
       )
@@ -1033,7 +1033,9 @@ export default {
         const mark = state.looked(id)
         if (!mark.failed || (mark.attempts ?? 0) < 3) continue
         const detail = SET_ASIDE
-        state.markExtracted(id, { ok: false, detail, setAside: true })
+        const result = { ok: false, detail, setAside: true }
+        state.markExtracted(id, result)
+        lastExtraction.set(id, result) // what this process shows, too (thirty-first review)
         state.look(id, { open: false, failed: false, attempts: 0 })
         failures.push({ session: id, detail, setAside: true })
       }
@@ -1198,14 +1200,21 @@ export default {
       // A log grown since its last analysis is waiting, as the end of its turn put it; a failed
       // or partial read says so itself (thirteenth review). Owed first: it settles the mark
       // against the file, which may void one describing a log since replaced (fourteenth).
+      check.replay({ ...lastVerified.get(sessionID), extraction: extractionFor(sessionID, { owedIfUnknown: true }) })
+      writeSelfCheck()
+    }
+
+    /**
+     * What the report says of a session's analysis, live or replayed — one rule for both, so one
+     * report cannot call a log set aside and waiting at once (thirty-first review). A log grown
+     * since its last analysis is waiting; a failed or partial read says so itself. Owed first: it
+     * settles the mark against the file, which may void one describing a log since replaced.
+     */
+    function extractionFor(sessionID, { owedIfUnknown = false } = {}) {
       const owed = isOwed(sessionID)
       const mark = state.looked(sessionID)
-      const grown = owed && !mark.failed && !mark.open
-      const extraction = grown
-        ? { owed: true }
-        : (lastExtraction.get(sessionID) ?? state.extractionOf(sessionID) ?? (owed ? { owed: true } : null))
-      check.replay({ ...lastVerified.get(sessionID), extraction })
-      writeSelfCheck()
+      if (owed && !mark.failed && !mark.open && (mark.size > 0 || owedIfUnknown)) return { owed: true }
+      return lastExtraction.get(sessionID) ?? state.extractionOf(sessionID) ?? (owed && owedIfUnknown ? { owed: true } : null)
     }
 
     /**

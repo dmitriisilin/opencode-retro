@@ -200,7 +200,7 @@ interleaving; this rule asks only whether one of ours is unaccounted for.)
   `a fresh session given the prescribed line is recognised as the plugin's own reader`
   `a reworded delegation's reader stays out of the person's log, in the order the events arrive`
   `a person's own delegation stays logged even if an order naming its path is issued while it runs`
-  `own calls that never finish are bounded, so a later session quoting one is logged in the end`
+  `a fresh session quoting a delegation of ours is the person's, whatever is in flight`
   `an own delegation whose after-hook outlives its turn is still ours`
   `an own call run through Code Mode's execute is ours in both of its hook pairs`
   `a reader whose prompt reads nothing like the delegation is still recognised by its parent`

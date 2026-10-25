@@ -13,7 +13,8 @@ rule, what each failing line means and what to do next, and the versions and rep
 it came from.
 
 **The three timestamps.** `loaded` (setup ran), `heartbeat` (hooks are firing; moved by every
-hook that fires, the file written at most once a minute), `verified` (when the assertions were
+hook that fires, and written by a hook at most once a minute — other writes carry it too),
+`verified` (when the assertions were
 last evaluated — from the first prompt of a session onward, not only at its end).
 
 **Only a hook moves the heartbeat.** Its whole meaning is that hooks fire, so it is moved by
