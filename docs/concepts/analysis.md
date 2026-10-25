@@ -136,7 +136,8 @@ work, not the person's, and an analysis must never be analysed. Two kinds, handl
    replies alike: answered at once when handed back as a tool result or sent between turns,
    from the next turn start when sent into a running one — so a hand-over waiting for the
    round's own turn leaves the turn the round's — and never when the plugin failed to send it,
-   whose notice is written to the log and to nobody else, so it ends nothing and starts no
+   whose notice names it by its step (another hand-over can be logged while the send is
+   awaited) and is written to the log and to nobody else, so it ends nothing and starts no
    reply, nor does the `work` hand-over it is about open a round — a `/retro` run again after
    it has the round. One still waiting when the person speaks is not answered either: that
    turn answers them — told by the log, a prompt the next turn start follows having opened that
@@ -208,10 +209,12 @@ rare, since the hand-over asks it to start readers and nothing else — is left 
   asked about, and asked again. It never retires the log: the plugin does not know whether
   anybody came. The count starts again only when the log grew by something to read — not by
   the plugin's own hand-overs and rounds, which lengthen the session `/retro` runs in every
-  time.
+  time — or is another file: a log pruned and written again under the same id was never asked
+  about, whatever its size.
   `an order nobody answered is reported and asked again, not held against the log`
   `a log asked about many times is never given up on for it, and says how many`
   `the askings add up in the session /retro runs in, which its own rounds lengthen`
+  `the askings start again for a log replaced under the same id`
   `/retro all reports a log it could not read, as well as the plan`
 - A read the plugin could not complete is an attempt, and three on one input retire the log.
   A reader that reported reading nothing new is one of these — an answer that covered nothing —
@@ -260,6 +263,8 @@ rare, since the hand-over asks it to start readers and nothing else — is left 
   `the contract describes a round as the code reads it, and defers to the order's list`
   `the person steering into the running turn leaves a waiting /retro its round`
   `a prompt that opens the next turn, after a turn whose end was lost, is the person's turn`
+  `an undelivered notice cancels the hand-over it names, not the latest one`
+  `a notice of a failed send names the hand-over by its step`
 - `retro_propose` is not a delegated session's to call: a reader — known by its line or worded
   its own way — or any other subagent calling it is told so, with nothing recorded, nothing
   closed and no order removed; and `/retro` itself issues nothing in a delegated session, whose

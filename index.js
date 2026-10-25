@@ -600,7 +600,7 @@ export default {
       // and a marker written after the work it opens — an agent answering fast enough, or a
       // fake answering at once — put the round's start behind its end, and the person's next
       // work inside it (analysis.md, "The plugin's own work").
-      noteHandover(sessionID, text, about, { sent: resume })
+      const written = noteHandover(sessionID, text, about, { sent: resume })
       try {
         // The synthetic goes to the session's inbox; without `resume` it sits there until
         // the user happens to type something, and they never see what they asked for.
@@ -611,6 +611,7 @@ export default {
         // the hand-over would have opened (thirty-second review).
         noteHandover(sessionID, `_opencode-retro: the hand-over above could not be delivered: ${err?.message ?? err}_`, "notice", {
           undelivered: true,
+          of: written,
         })
         // Its orders were never put to anybody: voided, not counted as asked and unanswered,
         // which would blame an inbox for what the plugin knows was a failed send (thirty-fourth).
@@ -643,7 +644,7 @@ export default {
      * other end, when the review added a session and 19 steps of cost to the lesson it was
      * checking.
      */
-    function noteHandover(sessionID, text, about = "lesson", { sent = false, undelivered = false } = {}) {
+    function noteHandover(sessionID, text, about = "lesson", { sent = false, undelivered = false, of } = {}) {
       // Never for a delegated session: a reader's is not logged at all, and no hand-over of the
       // plugin's is that session's — a layer under the gates in `retro_propose` and `/retro`,
       // for whatever reaches here another way (fortieth and forty-first reviews).
@@ -651,7 +652,7 @@ export default {
       try {
         // Our own text is not material, so it does not make the log owed — `isOwed` says so
         // through `nothingNew`, in one place, for every kind of growth that holds nothing to read.
-        ingest.handover(sessionID, text, about, { sent, undelivered })
+        return ingest.handover(sessionID, text, about, { sent, undelivered, of })
       } catch (err) {
         onError("handover.log", err)
       }
@@ -1326,7 +1327,11 @@ export default {
       // Grown by something to read, that is: the session `/retro` runs in grows by its own
       // hand-over and round every time, and counted as new material its askings never added up
       // — the one session an unanswered order is likeliest in (round 10 of 10).
-      const grew = readSize > previous.size && !(previous.asked && grewByNothing(sessionID, previous.size, readSize, records))
+      // And the previous order must have been for this file: its size is an offset into the log
+      // it was written for, and a log pruned and written again under the same id is new
+      // material, never asked about (checks after the ten rounds).
+      const sameLog = !previous.id || previous.id === identity
+      const grew = !sameLog || (readSize > previous.size && !(previous.asked && grewByNothing(sessionID, previous.size, readSize, records)))
       const asked = (grew ? 0 : before) + 1
       // `lastReal`: the last step anything could be read in — not the plugin's own, not a turn's
       // end. A reader leaves a trailing round out as it is told to, and reading up to here is

@@ -93,6 +93,7 @@ export function createIngest({
     // A record of a delegation's own session says so: its prompt is the delegation's
     // instruction, not the person's, and the log alone could not tell the two apart.
     emit(target, { v: 1, n: ++s.n, t: now(), ...(target !== sessionID ? { from: sessionID } : {}), ...record })
+    return s.n
   }
 
   return {
@@ -245,7 +246,7 @@ export function createIngest({
      *
      * It also marks the session as ours, which it is: the command ran in it.
      */
-    handover(sessionID, text, about = "lesson", { sent = false, undelivered = false } = {}) {
+    handover(sessionID, text, about = "lesson", { sent = false, undelivered = false, of } = {}) {
       const s = session(owner(sessionID))
       s.owned = true
       // Counted because a hand-over is the only input some sessions ever get. The self-check
@@ -257,14 +258,16 @@ export function createIngest({
       // log and mean different things — the extraction contract discounts work that reviews
       // a lesson it was handed, which would have swallowed real work done after a request
       // for an analysis.
-      // `sent`: sent to start a turn, as a `/retro` hand-over is — not a tool result the agent
-      // already holds, nor a notice; only a sent one can be what started a turn (forty-eighth).
-      append(sessionID, {
+      // `sent`: sent to start a turn, as `/retro`'s hand-overs are, notices included — not a tool
+      // result the agent already holds; only a sent one can be what started a turn (forty-eighth).
+      return append(sessionID, {
         k: "handover",
         about,
         ...(sent ? { sent: true } : {}),
-        // The hand-over above it never arrived: it started nothing (round 2 of 10).
-        ...(undelivered ? { undelivered: true } : {}),
+        // The hand-over it names by its step never arrived: it started nothing (round 2 of 10).
+        // Named, not taken to be the one above: another can be written while the send is
+        // awaited.
+        ...(undelivered ? { undelivered: true, ...(Number.isFinite(of) ? { of } : {}) } : {}),
         text: text ?? "",
       })
     },

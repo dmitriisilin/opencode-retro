@@ -102,9 +102,12 @@ function answerStarts(sorted) {
     }
     if (r.k !== "handover") continue
     if (r.undelivered) {
-      // Written right after the hand-over it is about, which is the latest one.
-      if (last >= 0) at.delete(last)
-      waiting = waiting.filter((h) => h !== last)
+      // The hand-over it names by its step — another can be logged while the send is awaited —
+      // or, with none named, the latest.
+      let h = last
+      if (Number.isFinite(r.of)) for (h = i - 1; h >= 0 && sorted[h].n !== r.of; h--);
+      if (h >= 0) at.delete(h)
+      waiting = waiting.filter((w) => w !== h)
       continue
     }
     last = i

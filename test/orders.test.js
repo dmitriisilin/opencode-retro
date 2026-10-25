@@ -2132,7 +2132,7 @@ test("a /retro waiting behind a round keeps its own round when the first one end
 test("the contract describes a round as the code reads it, and defers to the order's list", async () => {
   const { OUTPUT_CONTRACT } = await import("../src/contract.js")
   assert.match(OUTPUT_CONTRACT, /at the hand-over itself when it came between turns/)
-  assert.match(OUTPUT_CONTRACT, /A prompt of the person's that the round's turn\s+start follows makes that turn theirs/)
+  assert.match(OUTPUT_CONTRACT, /A prompt of the person's directly followed by\s+the turn start — the turn it opened — makes that turn theirs/)
   assert.match(OUTPUT_CONTRACT, /go by the list/)
 })
 
@@ -2222,4 +2222,61 @@ test("a prompt that opens the next turn, after a turn whose end was lost, is the
     { n: 7, k: "tool", tool: "shell", input: { command: "npm test" }, exit: 2 },
   ]
   assert.ok(!ownRounds(records).steps.has(7), "the person's work is not taken for a round")
+})
+
+/* Checks after the ten rounds. */
+
+test("an undelivered notice cancels the hand-over it names, not the latest one", async () => {
+  const { ownRounds, repliesToPlugin } = await import("../src/extract.js")
+  const records = [
+    { n: 1, k: "prompt", text: "fix bug" },
+    { n: 2, k: "session", event: "start" },
+    { n: 3, k: "handover", about: "work", sent: true, text: "the logs come first" },
+    // Logged while the send above was still being awaited: the agent's own `retro_propose`.
+    { n: 4, k: "handover", about: "lesson", text: "a lesson" },
+    { n: 5, k: "handover", about: "notice", undelivered: true, of: 3, text: "could not be delivered" },
+    { n: 6, k: "text", text: "here is the lesson" },
+    { n: 7, k: "session", event: "end" },
+    { n: 8, k: "session", event: "start" },
+    { n: 9, k: "tool", tool: "shell", input: { command: "npm test" }, exit: 2 },
+  ]
+  assert.ok(repliesToPlugin(records).has(6), "the proposal handed back is still answered")
+  assert.ok(!ownRounds(records).steps.has(9), "and the failed /retro opens no round")
+})
+
+test("a notice of a failed send names the hand-over by its step", async () => {
+  const dir = sandbox()
+  const fake = fakeOpenCode({ directory: dir, agent: false })
+  fake.ctx.session.synthetic = async () => {
+    throw new Error("session is gone")
+  }
+  const cleanup = await plugin.setup(fake.ctx)
+  await work(fake, "ses_a")
+  await fake.hooks.get("session.prompt")({ sessionID: "ses_review", messageID: "rv", prompt: { text: "go" } })
+  await fake.commands.get("retro").execute({ sessionID: "ses_review", prompt: { text: "" } })
+  const records = readFileSync(logOf(dir, "ses_review"), "utf8").trim().split("\n").map((l) => JSON.parse(l))
+  const handovers = records.filter((r) => r.k === "handover")
+  assert.equal(handovers.at(-1).of, handovers.at(-2).n)
+  await cleanup?.()
+})
+
+test("the askings start again for a log replaced under the same id", async () => {
+  const dir = sandbox()
+  const fake = fakeOpenCode({ directory: dir, agent: false })
+  const cleanup = await plugin.setup(fake.ctx)
+  await work(fake, "ses_a")
+  await fake.hooks.get("session.execution.succeeded")?.({ sessionID: "ses_a" })
+  for (let i = 0; i < 3; i++) await retro(fake)
+  assert.match(state(dir).extracted.ses_a.detail, /asked 2 times/)
+  // Pruned and written again: a new first line, a new file — smaller than the old, so its size
+  // says nothing about whether it grew.
+  const fresh = [
+    { v: 1, n: 1, t: 1, k: "prompt", text: "a new task" },
+    { v: 1, n: 2, t: 2, k: "tool", tool: "shell", id: "c9", input: { command: "make" }, exit: 2 },
+  ]
+  writeFileSync(logOf(dir, "ses_a"), fresh.map((l) => JSON.stringify(l)).join("\n") + "\n")
+  await retro(fake)
+  await retro(fake)
+  assert.match(state(dir).extracted.ses_a.detail, /asked 1 time and/, "the new log has been asked about once")
+  await cleanup?.()
 })

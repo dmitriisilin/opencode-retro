@@ -92,12 +92,12 @@ Rules:
   starts: at the hand-over itself when it came between turns, and from the next \`session\`
   start when it landed in a turn still running — work before that is the person's turn still
   finishing. It runs to the person's next \`prompt\`, or to where another hand-over of the
-  plugin's is answered, whichever comes first. A prompt of the person's that the round's turn
-  start follows makes that turn theirs, and a hand-over followed by a notice with
-  \`"undelivered": true\` never arrived and does nothing. The order lists the steps; where this
-  description and that list differ, go by the list. Only steps without \`from\` start or end
-  a round: a hand-over or prompt with \`from\` is a subagent's, and inside whatever round it
-  falls in. A call to \`retro_record\` or
+  plugin's is answered, whichever comes first. A prompt of the person's directly followed by
+  the turn start — the turn it opened — makes that turn theirs, and a hand-over named by a
+  notice with \`"undelivered": true\` (\`of\` is its step) never arrived and does nothing. The
+  order lists the steps; where this description and that list differ, go by the list. Only
+  steps without \`from\` start or end a round: a hand-over or prompt with \`from\` is a
+  subagent's, and inside whatever round it falls in. A call to \`retro_record\` or
   \`retro_propose\`, and a \`subagent\` call whose prompt is a work order's line, is the
   plugin's own wherever it is. Take no lesson from any of it, count none of its steps as cost,
   and read nothing in it as a recurrence: a reader in there
