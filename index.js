@@ -149,14 +149,15 @@ export default {
      *    halves of a Code Mode pair until the call ends or its turn does.
      * 2. A child created while its parent runs a delegation of ours waits (`deferred`). The
      *    delegation that names it when it ends decides it; one nobody named by the parent's turn
-     *    end is ours if a delegation of ours was still running then, and the person's if not —
-     *    every one of ours having named its own (sixteenth review).
+     *    end is ours if a delegation of ours never named a child — still running then, or ended
+     *    naming none — and the person's if every one of ours named its own (sixteenth and
+     *    seventeenth reviews).
      * 3. Everything a session of ours does, or starts, is ours.
      *
-     * The cost, stated: a person's subagent run beside ours and never named, in a turn
-     * interrupted while ours still ran, is taken for ours (AGENTS.md, "Known").
+     * The cost, stated: a person's subagent run beside ours and never named, in a turn where one
+     * of ours never named its own either, is taken for ours (AGENTS.md, "Known").
      *
-     * `calls`: `session\0id` -> { session, tool, ours, open }. Code Mode reports one call as its
+     * `calls`: `session\0id` -> { session, tool, ours, open, named }. Code Mode reports one call as its
      * inner tool and again as its `execute` wrapper under one id — inner before, wrapper before,
      * inner after, wrapper after (measured, `test/ingest.test.js`) — and the wrapper is whatever
      * it wraps; `open` counts the pairs still open, and the entry goes at zero or when the
@@ -165,6 +166,8 @@ export default {
      */
     const calls = new Map()
     const deferred = new Map() // child -> the parent it appeared under (rule 2)
+    // Sessions where a delegation of ours ended this turn naming no child (rule 2).
+    const oursUnnamed = new Set()
     const MAX_CALLS = 1000
 
     /**
@@ -356,7 +359,7 @@ export default {
         // Either half naming `subagent` makes it a delegation, whichever arrived first.
         const tool = known?.tool === "subagent" ? "subagent" : (p?.tool ?? known?.tool)
         calls.delete(key) // re-inserted last, so the oldest is first to go
-        calls.set(key, { session: p?.sessionID, tool, ours, open: (known?.open ?? 0) + 1 })
+        calls.set(key, { session: p?.sessionID, tool, ours, open: (known?.open ?? 0) + 1, named: Boolean(known?.named) })
         if (calls.size > MAX_CALLS) calls.delete(calls.keys().next().value)
       }
       // Its first half was taken for the person's; it is ours, so that start is taken back.
@@ -380,7 +383,12 @@ export default {
       // reloaded mid-call — is decided here, by what the call says, the only way left.
       const key = callKey(p)
       const known = key ? calls.get(key) : undefined
-      if (known && --known.open <= 0) calls.delete(key)
+      if (known && child) known.named = true
+      if (known && --known.open <= 0) {
+        calls.delete(key)
+        // Both halves of a Code Mode pair in, and neither named a child (rule 2).
+        if (known.ours && known.tool === "subagent" && !known.named) oursUnnamed.add(p.sessionID)
+      }
       // Everything a session of ours does is ours, including a call that started before the
       // session was known to be (ninth review).
       const ours = internal.has(p?.sessionID) || (known ? known.ours : ownWork(p))
@@ -559,10 +567,11 @@ export default {
       // Before the gates: a reader's own turn ends behind them.
       if (sessionID && isTurnEnd(event)) {
         // A delegation cannot outlive the turn it runs in. Whatever is still deferred under this
-        // session was named by nobody: ours if one of ours never ended, theirs if every one of
-        // ours did and named its own (rule 2) — never a session of its own, which a delegation
+        // session was named by nobody: ours if one of ours never named a child, theirs if every
+        // one of ours named its own (rule 2) — never a session of its own, which a delegation
         // must not become.
-        const ours = oursInFlight(sessionID)
+        const ours = oursInFlight(sessionID) || oursUnnamed.has(sessionID)
+        oursUnnamed.delete(sessionID)
         for (const [child, parent] of deferred) {
           if (parent !== sessionID) continue
           deferred.delete(child)
@@ -845,8 +854,8 @@ export default {
      * before the fix?" are different questions, and only the log can answer the second.
      *
      * The date is the latest record **inside the cited range** `[first, last]`, or inside the
-     * whole log when the lesson cites no steps — in both cases no further than the reader read
-     * (`upTo`). Both halves were found by review, from opposite
+     * whole log when the lesson cites no steps — in both cases no further than the order
+     * covered (`upTo`). Both halves were found by review, from opposite
      * sides: dating by the newest record reached past the cited stretch into work done after a
      * fix and reopened accepted lessons on pre-fix evidence; reading `steps` as two separate
      * numbers then missed a recurrence inside the range, and left step-less evidence undated.
@@ -866,8 +875,8 @@ export default {
         if (!records.length) return null
         const cited = Array.isArray(steps) ? steps.map(Number).filter(Number.isFinite) : []
         const first = cited.length ? Math.min(...cited) : -Infinity
-        // Never past what the reader read: records written after its order — the session working
-        // on while it was read — would date old evidence as new (third pre-release review).
+        // Never past what the order covered: records written after it — the session working on
+        // while it was read — would date old evidence as new (third pre-release review).
         const last = Math.min(cited.length ? Math.max(...cited) : Infinity, upTo)
         const at = records.filter((r) => r.n >= first && r.n <= last && Number.isFinite(r.t)).map((r) => r.t)
         return at.length ? Math.max(...at) : null
@@ -1414,9 +1423,11 @@ export default {
         fingerprint,
         partial,
         unreported: !reported,
-        // Unreported, `claimed` is the old mark, which says nothing about what was read; the
-        // order's own range is the most the reader could have seen.
-        dateOf: datesIn(session, reported ? claimed : order.lastN),
+        // Bounded by what the order covered, not by how far the reader says it got: every step up
+        // to `lastN` went out with the order, and what the cap is for is the session's work
+        // after it (third review). Bounding by `through` made citing one more step flip the
+        // outcome (sixteenth and seventeenth reviews).
+        dateOf: datesIn(session, order.lastN),
       })
       // `open` is what makes a partial read useful: the next command reads on from the mark
       // without waiting for the log to grow.

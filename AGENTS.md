@@ -1032,8 +1032,9 @@ Known, listed so nobody discovers them as surprises:
   ours is decided when a delegation ends and names it — the one moment that is known exactly.
   Interrupt that turn and no after-hook comes (measured), and an errored delegation may name
   nothing; whatever is still deferred at the parent's turn end is then ours if a delegation of
-  ours was still running, and not logged. So a person's own subagent, run beside ours in a
-  turn interrupted while ours ran, loses its work from the log. Rounds six to fifteen of the pre-release review tried to guess better
+  ours never named a child — still running, or ended naming none — and not logged, and the
+  person's otherwise. So a person's own subagent, run beside ours in a turn where one of ours
+  was interrupted or errored, loses its work from the log. Rounds six to fifteen of the pre-release review tried to guess better
   — from prompts, from what else was in flight, from which delegations never said — and each
   round found the last one's interleaving; the fifteenth asked for decision 21's model instead,
   and this is its price.

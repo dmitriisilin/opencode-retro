@@ -1250,8 +1250,8 @@ test("a deferred child's turn is a step, not a session", async () => {
 
 test("a child nobody names by its parent's turn end is ours, even beside a delegation of the person's", async () => {
   // Rule 2, and its stated cost: with an interrupted turn running both kinds of delegation, a
-  // child no delegation named is taken for ours — never left a session of its own, which a
-  // delegation must not become (eleventh review), and never guessed at from what else ran.
+  // child no delegation named is taken for ours, since one of ours never named its own — never
+  // left a session of its own, which a delegation must not become (eleventh review).
   const dir = sandbox()
   const fake = fakeOpenCode({ directory: dir, agent: false })
   const cleanup = await plugin.setup(fake.ctx)
@@ -1429,12 +1429,14 @@ test("under Code Mode a delegation that named its child is not counted as unsaid
 
 /* Fifteenth pre-release review, over the whole series. */
 
-test("evidence citing only steps past what the reader says it read is undated, and reopens", async () => {
-  // Never past what the reader read, one rule for every citation; what it leaves undated
-  // reopens, the cheaper way to be wrong (sixteenth review, undoing an exception the fifteenth
-  // made, which dated a citation by its steps only when none of them fell inside the read).
-  const { reopened } = await citeAgainstDecision([[1, -60], [2, -50], [3, -40]], [3], { through: 2 })
-  assert.equal(reopened, true)
+test("evidence is dated by what its order covered, not by how far the reader says it got", async () => {
+  // Sixteenth and seventeenth pre-release reviews: bounded by `through`, a citation of steps the
+  // order did send came back undated and reopened a decision — and citing one more step flipped
+  // it. Every step up to the order's end went out with it.
+  const a = await citeAgainstDecision([[1, -60], [2, -50], [3, -40]], [3], { through: 2 })
+  const b = await citeAgainstDecision([[1, -60], [2, -50], [3, -40]], [2, 3], { through: 2 })
+  assert.equal(a.reopened, false, a.detail)
+  assert.equal(b.reopened, false, b.detail)
 })
 
 test("a report with no session of the person's to describe does not say no hook has fired", async () => {
@@ -1464,5 +1466,26 @@ test("a child nobody names, after every delegation of ours named its own, is the
   fake.emit({ type: "session.execution.succeeded", durable: { seq: 97 }, data: { sessionID: "ses_review" } })
   await new Promise((r) => setImmediate(r))
   assert.ok(kindsIn(dir, "ses_review").some((r) => r.id === "hx"), "the helper's work is the person's")
+  await cleanup?.()
+})
+
+test("a reader of a delegation of ours that errored naming nothing is still ours", async () => {
+  // Seventeenth pre-release review, reproduced: the errored delegation left `calls` like any
+  // that ended, so at the turn end its reader looked like the person's and was adopted.
+  const dir = sandbox()
+  const fake = fakeOpenCode({ directory: dir, agent: false })
+  const cleanup = await plugin.setup(fake.ctx)
+  await work(fake, "ses_a")
+  const { paths } = await retro(fake)
+  await fake.hooks.get("session.prompt")({ sessionID: "ses_review", messageID: "rv", prompt: { text: "go on" } })
+  const d1 = { sessionID: "ses_review", id: "d1", tool: "subagent", input: { agent: "general", prompt: `Have a look at ${paths[0]}` } }
+  await fake.hooks.get("tool.execute.before")(d1)
+  await fake.hooks.get("session.prompt")({ sessionID: "ses_reader", messageID: "r1", prompt: { text: "See the file." } })
+  fake.emit({ type: "session.created", durable: { seq: 90 }, data: { sessionID: "ses_reader", parentID: "ses_review", location: { directory: dir } } })
+  await new Promise((r) => setImmediate(r))
+  await fake.hooks.get("tool.execute.after")({ ...d1, status: "error", result: { output: "failed" } })
+  fake.emit({ type: "session.execution.succeeded", durable: { seq: 97 }, data: { sessionID: "ses_review" } })
+  await new Promise((r) => setImmediate(r))
+  assert.ok(!kindsIn(dir, "ses_review").some((r) => /See the file/.test(r.text ?? "")), "the reader is not the person's")
   await cleanup?.()
 })

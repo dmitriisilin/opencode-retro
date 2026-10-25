@@ -126,14 +126,15 @@ the plugin's bookkeeping never turns into a lesson about the plugin. Three rules
 2. A child created while its parent runs a delegation of ours is **deferred**: neither adopted
    nor claimed, its records waiting in its own log, its start and end dropped as a step's. The
    delegation naming it when it ends decides it. One nobody named by the parent's turn end is
-   ours if a delegation of ours was still running then, and the person's if every one of ours
-   had ended and named its own.
+   ours if a delegation of ours never named a child — still running then, or ended naming
+   none — and the person's if every one of ours named its own.
 3. Everything a session of ours does, or starts, is ours. A fresh session whose first prompt is
    the prescribed line is ours from that prompt.
 
 (A limit, the price of rule 2: a person's subagent run beside ours and never named, in a turn
-interrupted while ours still ran, is taken for ours, and its work is not logged. AGENTS.md, "Known". Thirteen review rounds of guessing better than this, from
-prompts and from what else was in flight, each found the last one's interleaving.)
+where one of ours never named its own either, is taken for ours, and its work is not logged. AGENTS.md, "Known". Thirteen review rounds of guessing better than this — from
+prompts, from which delegations of the person's were in flight — each found the last one's
+interleaving; this rule asks only whether one of ours is unaccounted for.)
 
 ## Invariants
 
@@ -207,6 +208,7 @@ prompts and from what else was in flight, each found the last one's interleaving
   `a deferred child's turn is a step, not a session`
   `a child nobody names by its parent's turn end is ours, even beside a delegation of the person's`
   `a child nobody names, after every delegation of ours named its own, is the person's`
+  `a reader of a delegation of ours that errored naming nothing is still ours`
   `a child left deferred with only our delegation beside it is taken for ours`
   `a deferred child keeps everything but its start and end`
   `a deferred child interrupted mid-call is adopted with the call, and the tool hook is not called dead`
