@@ -130,7 +130,8 @@ work, not the person's, and an analysis must never be analysed. Two kinds, handl
    `about: "work"` starts — from the next turn start after it, since a hand-over delivered
    into a turn still running waits for that turn, and what the turn does is the person's —
    to the next `handover` of another kind or the next `prompt` of the person's (one without
-   `from`, log.md), whichever comes first: the agent starting readers, the records coming
+   `from`, log.md), whichever comes first — and landing in a running turn, from after that
+   turn's end, since the turn that follows may not be logged as starting: the agent starting readers, the records coming
    back, `retro_propose`. With no turn start to go by, it starts at the hand-over. The
    `work` hand-overs themselves are named with it — the plugin's own text, holding nothing to
    read — and only the person's session ends it: a hand-over or a prompt with `from` does
@@ -241,6 +242,9 @@ rare, since the hand-over asks it to start readers and nothing else — is left 
   `a delegated hand-over in a log does not end the round`
   `/retro in a subagent's session issues nothing`
   `a work hand-over noted for a subagent opens no round`
+  `a /retro posted into a running turn has its round recognised though the next turn's start is never logged`
+  `a reworded reader's delegation is ours wherever it lands`
+  `a subagent's prompt does not end a reply to the plugin's hand-over`
   `a reader's call to retro_propose writes nothing into any log`
   `a reworded reader calling retro_propose is told so too`
 - One command issues at most `extractLimit` orders; the rest stay owed and are named. A

@@ -316,11 +316,14 @@ export function createIngest({
 
 /** Tool-specific fields worth keeping. Shapes verified in M0; see fixtures/payloads/. */
 function detail(p, maxOutput) {
-  if (p.status === "error") return { error: p.error ?? null }
   const result = p.result ?? {}
   const meta = result.metadata ?? {}
+  // The session a delegation started: what ties a `subagent` call to the steps whose `from` it
+  // is, wherever in the log the call itself lands (forty-second review).
+  const child = p.tool === "subagent" && typeof meta.sessionID === "string" ? { child: meta.sessionID } : {}
+  if (p.status === "error") return { ...child, error: p.error ?? null }
   const out = result.output ?? {}
-  const detail = {}
+  const detail = { ...child }
 
   if (typeof out.exit === "number" || typeof meta.exit === "number") detail.exit = out.exit ?? meta.exit
   if (Array.isArray(meta.files)) {

@@ -51,7 +51,8 @@ per line, and the fields you need are:
   (an edit, with the files it touched), \`handover\` (text this plugin wrote into the session
   itself — see the rule on reviews below), \`session\` (a turn starting or ending).
 - \`from\` — on a step that came from a subagent's session rather than the person's: its
-  session id. A \`prompt\` with \`from\` is a delegation's instruction, not the person's.
+  session id. A \`prompt\` with \`from\` is a delegation's instruction, not the person's. A
+  \`subagent\` call's \`child\` is the session it started, whose steps carry that \`from\`.
 - \`exit\` on a tool call — **read this, not \`status\`.** A shell command that failed is
   \`status: "completed"\` with a non-zero \`exit\`. An analysis that reads \`status\` sees a
   clean session.

@@ -1,4 +1,4 @@
-import { appendFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { appendFileSync, closeSync, mkdirSync, openSync, readFileSync, readSync, rmSync, writeFileSync } from "node:fs"
 import { join, relative as relativePath, resolve as resolvePath, sep } from "node:path"
 import { createIngest, isTurnEnd } from "./src/ingest.js"
 import { createPrompts } from "./src/prompts.js"
@@ -7,7 +7,7 @@ import { createShadowLog, identityOf, isReplacedLog, parseShadowLog } from "./sr
 import { createState } from "./src/state.js"
 import { concludedIn, createStore, score } from "./src/lessons.js"
 import { assessCurrency, fingerprintOf } from "./src/currency.js"
-import { composeOrder, isWorkLine, lastReadable, nothingNew, ownRounds, recordAnswer } from "./src/extract.js"
+import { composeOrder, isWorkLine, lastReadable, nothingNew, ownRounds, recordAnswer, repliesToPlugin } from "./src/extract.js"
 import { RECORD_INPUT } from "./src/contract.js"
 import {
   PROPOSE_INPUT,
@@ -679,9 +679,17 @@ export default {
       if (known && known.from === from && known.size === size && known.file === file) return known.nothing
       let nothing = false
       try {
-        const bytes = readFileSync(log.path(id))
-        const added = parseShadowLog(bytes.subarray(from).toString("utf8"))
-        nothing = added.length > 0 && nothingNew(() => parseShadowLog(bytes.toString("utf8")), added)
+        // The tail alone first; the whole log only if the tail cannot decide (forty-second review).
+        const fd = openSync(log.path(id), "r")
+        let tail
+        try {
+          tail = Buffer.alloc(Math.max(0, size - from))
+          readSync(fd, tail, 0, tail.length, from)
+        } finally {
+          closeSync(fd)
+        }
+        const added = parseShadowLog(tail.toString("utf8"))
+        nothing = added.length > 0 && nothingNew(() => parseShadowLog(readFileSync(log.path(id), "utf8")), added)
       } catch {
         nothing = false
       }
@@ -786,7 +794,10 @@ export default {
       const cited = citedSessions(store.list())
       for (const id of log.list()) {
         if (cited.has(id) || isOwed(id) || !isQuiet(id)) continue
-        if (log.remove(id)) state.forget(id)
+        if (log.remove(id)) {
+          state.forget(id)
+          grown.delete(id)
+        }
       }
     }
 
@@ -814,6 +825,7 @@ export default {
       // could be parsed. Leaving an unreadable orphan behind lets `analyseOwed` treat the
       // child as a session of its own — the one thing a delegation must never become.
       log.remove(child)
+      grown.delete(child)
       // Its end may already have been processed, before the link was known: a delegation is a
       // step in its parent's task, so there is nothing of its own to analyse — and if that end
       // was counted before we knew, the count has to come back out, or freshness moves for
@@ -1118,6 +1130,7 @@ export default {
     function claimReader(child, parent) {
       internal.add(child)
       log.remove(child)
+      grown.delete(child)
       state.uncountSession(child)
       ingest.forget(child)
       observedSessions.delete(child)
@@ -1237,6 +1250,7 @@ export default {
       const composed = composeOrder({
         records: fresh,
         rounds: own.ranges,
+        replies: repliesToPlugin(records),
         analysedUpTo: mark.n,
         concluded: concludedFrom(sessionID),
         session: sessionID,

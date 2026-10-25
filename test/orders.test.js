@@ -1729,3 +1729,58 @@ test("a reader's call to retro_propose writes nothing into any log", async () =>
   assert.equal(existsSync(logOf(dir, "ses_reader")), false)
   await cleanup?.()
 })
+
+/* Whole-series review over 4112915..85657f4. */
+
+test("a /retro posted into a running turn has its round recognised though the next turn's start is never logged", async () => {
+  // Reproduced by the review against the entry point: the plugin stops owning a session when
+  // its turn ends, so the resumed turn's start is not logged, and the round came out empty.
+  const dir = sandbox()
+  const fake = fakeOpenCode({ directory: dir, agent: false })
+  const cleanup = await plugin.setup(fake.ctx)
+  await work(fake, "ses_a")
+  await fake.hooks.get("session.prompt")({ sessionID: "ses_p", messageID: "p1", prompt: { text: "fix the build" } })
+  fake.emit({ type: "session.execution.started", durable: { seq: 1 }, data: { sessionID: "ses_p" } })
+  await new Promise((r) => setImmediate(r))
+  const sh = { sessionID: "ses_p", id: "s1", tool: "shell", input: { command: "npm run build" } }
+  await fake.hooks.get("tool.execute.before")(sh)
+  await fake.hooks.get("tool.execute.after")({ ...sh, status: "completed", result: { output: { exit: 1 } } })
+  await fake.commands.get("retro").execute({ sessionID: "ses_p", prompt: { text: "" } })
+  fake.emit({ type: "session.execution.succeeded", durable: { seq: 5 }, data: { sessionID: "ses_p" } })
+  fake.emit({ type: "session.execution.started", durable: { seq: 6 }, data: { sessionID: "ses_p" } })
+  await new Promise((r) => setImmediate(r))
+  const d = { sessionID: "ses_p", id: "d1", tool: "subagent", input: { agent: "general", prompt: "have a look at the order" } }
+  await fake.hooks.get("tool.execute.before")(d)
+  await fake.hooks.get("tool.execute.after")({ ...d, status: "completed", result: { output: "report", metadata: { sessionID: "ses_r" } } })
+  const { ownRounds } = await import("../src/extract.js")
+  const records = readFileSync(logOf(dir, "ses_p"), "utf8").trim().split("\n").map((l) => JSON.parse(l))
+  const call = records.find((r) => r.id === "d1")
+  assert.ok(ownRounds(records).steps.has(call.n), "the round is the turn after the person's ended")
+  assert.ok(!ownRounds(records).steps.has(records.find((r) => r.id === "s1").n), "and the person's call is theirs")
+  await cleanup?.()
+})
+
+test("a reworded reader's delegation is ours wherever it lands", async () => {
+  const { ownRounds } = await import("../src/extract.js")
+  const records = [
+    { n: 1, k: "handover", about: "work", text: "the logs come first" },
+    { n: 2, k: "session", event: "start" },
+    { n: 3, k: "prompt", from: "ses_r", text: "You are a subagent.\nanalyse the order at /x" },
+    { n: 4, k: "tool", tool: "retro_propose", input: {} },
+    { n: 5, k: "handover", about: "lesson", text: "a lesson" },
+    { n: 6, k: "tool", tool: "subagent", child: "ses_r", input: { prompt: "analyse the order at /x" }, output: "other session failed npm run lint" },
+  ]
+  assert.ok(ownRounds(records).steps.has(6))
+})
+
+test("a subagent's prompt does not end a reply to the plugin's hand-over", async () => {
+  const { nothingNew } = await import("../src/extract.js")
+  const all = [
+    { n: 1, k: "prompt", text: "go" },
+    { n: 2, k: "handover", about: "notice", text: "nothing to review" },
+    { n: 3, k: "prompt", from: "ses_x", text: "You are a subagent.\nexplore" },
+    { n: 4, k: "text", text: "ok, nothing to do then" },
+  ]
+  // The reply at 4 still answers the notice; the subagent's prompt in between changes nothing.
+  assert.equal(nothingNew(all, [all[3]]), true)
+})

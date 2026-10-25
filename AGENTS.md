@@ -754,7 +754,7 @@ Evaluated from the first prompt of a session and again when it ends, written int
 | Check | Assertion | What a failure means |
 |---|---|---|
 | prompt hook | a session that ran at all produced ≥1 `session.prompt` — a session whose only input was a `/retro` hand-over proves nothing, because `session.synthetic` does not fire this hook | the prompt hook is dead |
-| tool hook | once the session has ended, `session.tool.called` events seen ⇒ at least as many `tool.execute.after` hook calls, counting the plugin's own calls whose hooks it drops on purpose (counts, not ids: an interrupted call has an event and no after-hook, and that is not a dead hook); while it runs, a shortfall is just calls still in flight | the tool hook is dead, or the payload shape moved |
+| tool hook | once the session has ended, `session.tool.called` events seen ⇒ at least as many `tool.execute.after` hook calls, counting calls the turn ended in the middle of (counts, not ids: an interrupted call has an event and no after-hook, and that is not a dead hook); while it runs, a shortfall is just calls still in flight | the tool hook is dead, or the payload shape moved |
 | shadow log | the session's `.jsonl` exists and is non-empty | writing is broken (permissions, path) |
 | trigger | the end-of-session event arrived | our extraction trigger is gone |
 | extraction | ran, and produced either lessons or an explicit "nothing to learn" | the model call or the output contract broke |
@@ -810,8 +810,7 @@ checkout — then run `/retro`.
 ## Is it working
 
 - ok              prompt hook     3 prompts seen
-- ok              tool hook       12 tool-call events seen, 10 reached the hook, 2 were our
-                                  own and not logged
+- ok              tool hook       12 tool-call events seen, 12 reached the hook
 - ok              shadow log      sessions/ses_eabb21.jsonl, 47 entries
 - ok              trigger         session.execution.succeeded
 - DEGRADED        extraction      asked 2 times and no record came back
@@ -1069,7 +1068,9 @@ Known, listed so nobody discovers them as surprises:
   end the round. `/retro` itself refuses a delegated session, whose round could never be
   proposed. Whose call it *is* was tried as well — the session the round was handed to — and
   an ownership kept in memory went stale after an abandoned round and forgot itself on a
-  reload, the same way.
+  reload, the same way. The refusal of `/retro` in a subagent's session is sent without
+  resuming it — resumed, its agent would take the note as work — so it may wait in that
+  session's inbox unseen.
 - **A turn's end is taken to arrive before the next turn's hooks.** The event stream lags the
   hooks by milliseconds, and the next turn starts after a model has answered; an end delivered
   later than that would close the new turn's bookkeeping. Raised in the pre-release reviews as

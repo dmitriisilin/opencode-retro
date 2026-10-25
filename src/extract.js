@@ -80,10 +80,20 @@ export function ownRounds(records) {
       inTurn = r.event === "start"
       break
     }
+    // Starts at the next turn start — or, landing in a running turn, after that turn's end:
+    // the turn that follows may not be logged as starting at all, since the plugin stops
+    // owning a session when its turn ends and a hand-over's resumed turn fires no hook first
+    // (forty-second review, reproduced against the entry point).
     let from = inTurn ? end : i
     for (let j = i + 1; j < end; j++) {
-      if (sorted[j].k === "session" && sorted[j].event === "start" && !sorted[j].from) {
+      const r = sorted[j]
+      if (r.from || r.k !== "session") continue
+      if (r.event === "start") {
         from = j
+        break
+      }
+      if (inTurn && r.event === "end") {
+        from = j + 1
         break
       }
     }
@@ -100,6 +110,8 @@ export function ownRounds(records) {
   for (const r of sorted) if (r.k === "prompt" && r.from && steps.has(r.n)) readers.add(r.from)
   for (const r of sorted) {
     if (r.from && readers.has(r.from)) steps.add(r.n)
+    // And the delegation that started one, wherever it lands — after an early `retro_propose`.
+    if (r.k === "tool" && r.tool === "subagent" && r.child && readers.has(r.child)) steps.add(r.n)
     if (r.k !== "tool") continue
     // Ours wherever they land: a delegation's after-hook is written when its reader is done,
     // which an early `retro_propose` puts after the round has closed (thirty-second review).
@@ -131,10 +143,13 @@ export function lastReadable(records, own = ownRounds(records).steps) {
 }
 
 /** Texts that answer one of the plugin's own hand-overs (not `work`: that one has a round). */
-function repliesToPlugin(records) {
+export function repliesToPlugin(records) {
   const out = new Set()
   let answering = null
   for (const r of [...records].sort((a, b) => (a.n ?? 0) - (b.n ?? 0))) {
+    // The person's session's steps only: a subagent's prompt or hand-over neither starts nor
+    // ends a reply to the plugin (forty-second review).
+    if (r.from) continue
     if (r.k === "prompt" || (r.k === "handover" && !isWorkHandover(r))) answering = r.k
     else if (r.k === "text" && answering === "handover") out.add(r.n)
   }
@@ -195,6 +210,8 @@ export function composeOrder({
   concluded = [],
   /** The plugin's own rounds in the log, `[first, last]` each, for the reader to leave out. */
   rounds = [],
+  /** Texts that answer the plugin's hand-overs, from the whole log — one rule with `nothingNew`. */
+  replies = null,
 }) {
   // Skip only a session that cannot contain evidence of anything: one instruction, one
   // answer, nothing done. Everything else is analysed.
@@ -225,7 +242,7 @@ export function composeOrder({
   const toolCalls = records.filter((r) => r.k === "tool").length
   // One rule with `nothingNew`: the `work` hand-over's replies are its round's, already left
   // out; the other hand-overs' replies are the plugin talking to itself.
-  const plugin = repliesToPlugin(records)
+  const plugin = replies ?? repliesToPlugin(records)
   const newReply = records.some((r) => r.k === "text" && !plugin.has(r.n))
   if (reread ? asked === 0 && toolCalls === 0 && !newReply : asked <= 1 && toolCalls === 0) {
     return { ok: true, skipped: true, detail: "nothing to extract (one exchange, nothing done)" }
