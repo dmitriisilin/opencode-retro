@@ -89,8 +89,8 @@ Rules:
   \`"about": "work"\` asks for a round of this plugin's own: the agent starting readers like
   you, their records coming back, \`retro_propose\`. The round is the turn that hand-over
   starts — from the next \`session\` start after it; work before that is the person's turn
-  still finishing — to the next \`handover\` of another kind or the next \`prompt\` without
-  \`from\` (the person speaking again), whichever comes first. A call to \`retro_record\` or
+  still finishing — to the next \`handover\` of another kind or \`prompt\`, either without
+  \`from\` (the person's session again), whichever comes first. A call to \`retro_record\` or
   \`retro_propose\`, and a \`subagent\` call whose prompt is a work order's line, is the
   plugin's own wherever it is. Take no lesson from any of it, count none of its steps as cost,
   and read nothing in it as a recurrence: a reader in there

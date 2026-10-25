@@ -457,13 +457,13 @@ export default {
              */
             const failures = settleUnanswered()
             // Logs still owed beyond what this round asked for, so the hand-over can say so.
-            const left = owedLogs().filter((id) => id !== context?.sessionID).length
-            const asked = rounds.get(context?.sessionID) ?? []
-            rounds.delete(context?.sessionID)
+            const left = owedLogs().filter((id) => id !== caller).length
+            const asked = rounds.get(caller) ?? []
+            rounds.delete(caller)
             const analysed = asked.filter((s) => state.askedFor(s).done === "answered").length
             const { text, about } = await proposalText(Boolean(input?.all), { failures, left, analysed })
             // Logged, not sent: the agent asked for this and has it as the tool's result.
-            noteHandover(context?.sessionID, text, about)
+            noteHandover(caller, text, about)
             return { output: { ok: true, detail: text }, content: text }
           },
         })
@@ -640,6 +640,9 @@ export default {
      * checking.
      */
     function noteHandover(sessionID, text, about = "lesson") {
+      // Never into a reader's session, which is not logged at all — a layer under the gate in
+      // `retro_propose`, for whatever reaches here another way (fortieth review).
+      if (internal.has(sessionID)) return
       try {
         // Our own text is not material, so it does not make the log owed — `isOwed` says so
         // through `nothingNew`, in one place, for every kind of growth that holds nothing to read.
@@ -885,6 +888,17 @@ export default {
      * to wait for and the proposal goes straight out.
      */
     async function retro(sessionID, all) {
+      // Not from a delegated session: its `retro_propose` is refused, so a round started there
+      // could never be proposed — orders written and readers paid for, for nothing. Said before
+      // any order is issued (fortieth review).
+      if (sessionID && !standsAlone(sessionID)) {
+        return say(
+          sessionID,
+          "_opencode-retro: `/retro` runs in a session of your own, not in a subagent's — it starts " +
+            "readers and proposes to you there. Nothing was issued._",
+          "notice",
+        )
+      }
       const extracted = analyseOwed(sessionID)
       if (extracted.orders.length) {
         rounds.set(sessionID, extracted.orders.map((o) => o.session))

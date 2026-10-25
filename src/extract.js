@@ -55,7 +55,10 @@ const WORK_LINE = new RegExp(`^\\s*(?:[^\\n]*\\n\\s*)?${WORK_MARK}: read `)
  */
 export function ownRounds(records) {
   const sorted = [...records].sort((a, b) => (a.n ?? 0) - (b.n ?? 0))
-  const ends = (r) => (r.k === "prompt" && !r.from) || (r.k === "handover" && !isWorkHandover(r))
+  // Only the person's session ends a round. A delegated session's hand-over should never be
+  // written — `retro_propose` refuses them — but a reader that slips past the gate, before its
+  // creation is known or after a reload, must not close the round for the rest (fortieth review).
+  const ends = (r) => !r.from && (r.k === "prompt" || (r.k === "handover" && !isWorkHandover(r)))
   const steps = new Set()
   for (let i = 0; i < sorted.length; i++) {
     if (!isWorkHandover(sorted[i])) continue

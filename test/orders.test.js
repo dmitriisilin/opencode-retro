@@ -1669,6 +1669,40 @@ test("a reworded reader calling retro_propose is told so too", async () => {
   assert.equal(result.output.ok, false, "with an output the declared schema accepts")
   assert.ok(!state(dir).orders.ses_a.done, "nothing closed")
   assert.ok(existsSync(join(dir, ".retro", "work", "ses_a.md")), "and no order removed")
+  const parentLog = readFileSync(logOf(dir, "ses_review"), "utf8").trim().split("\n").map((l) => JSON.parse(l))
+  assert.ok(!parentLog.some((r) => r.k === "handover" && r.about === "lesson"), "and no hand-over written")
+  await cleanup?.()
+})
+
+test("a delegated hand-over in a log does not end the round", async () => {
+  // A reader that slipped past the gate — before its creation was known, or after a reload —
+  // must not close the round for the rest of it (fortieth review).
+  const { ownRounds } = await import("../src/extract.js")
+  const records = [
+    { n: 1, k: "handover", about: "work", text: "the logs come first" },
+    { n: 2, k: "session", event: "start" },
+    { n: 3, k: "prompt", from: "ses_kid", text: "You are a subagent.\nHave a look at /x.md" },
+    { n: 4, k: "handover", about: "lesson", from: "ses_kid", text: "a lesson" },
+    { n: 5, k: "tool", tool: "subagent", input: { prompt: "another reader, worded its own way" } },
+    { n: 6, k: "handover", about: "lesson", text: "the lesson, to the person" },
+  ]
+  const { steps } = ownRounds(records)
+  assert.ok(steps.has(5), "the round goes on past the reader's hand-over")
+  assert.ok(!steps.has(6), "and ends at the person's")
+})
+
+test("/retro in a subagent's session issues nothing", async () => {
+  // Its round could never be proposed there: `retro_propose` refuses delegated sessions.
+  const dir = sandbox()
+  const fake = fakeOpenCode({ directory: dir, agent: false })
+  const cleanup = await plugin.setup(fake.ctx)
+  await work(fake, "ses_a")
+  await fake.hooks.get("session.prompt")({ sessionID: "ses_kid", messageID: "k1", prompt: { text: "look" } })
+  fake.emit({ type: "session.created", durable: { seq: 90 }, data: { sessionID: "ses_kid", parentID: "ses_p", location: { directory: dir } } })
+  await new Promise((r) => setImmediate(r))
+  await fake.commands.get("retro").execute({ sessionID: "ses_kid", prompt: { text: "" } })
+  assert.equal(state(dir).orders?.ses_a, undefined, "no order issued")
+  assert.match(fake.synthetic.at(-1).text, /runs in a session of your own/)
   await cleanup?.()
 })
 

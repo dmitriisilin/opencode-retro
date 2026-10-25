@@ -133,7 +133,9 @@ work, not the person's, and an analysis must never be analysed. Two kinds, handl
    `from`, log.md), whichever comes first: the agent starting readers, the records coming
    back, `retro_propose`. With no turn start to go by, it starts at the hand-over. The
    `work` hand-overs themselves are named with it — the plugin's own text, holding nothing to
-   read — and a prompt with `from`, a delegation's instruction, does not end it. Calls to
+   read — and only the person's session ends it: a hand-over or a prompt with `from` does
+   not. (A delegated session's hand-over should never be written — `retro_propose` refuses
+   them — but one that slipped past must not close the round for the rest of it.) Calls to
    `retro_record` and `retro_propose`, and a `subagent` call whose prompt is a work order's
    line, are ours wherever they are — a delegation is written when its reader is done, which
    an early `retro_propose` puts after the round has closed. A reader whose delegation was
@@ -231,10 +233,13 @@ rare, since the hand-over asks it to start readers and nothing else — is left 
   `a turn that added only a round does not report its log as waiting`
 - `retro_propose` is not a delegated session's to call: a reader — known by its line or worded
   its own way — or any other subagent calling it is told so, with nothing recorded, nothing
-  closed and no order removed. (Limits, AGENTS.md "Known": a reader calling before its
-  creation is known slips through, and a `/retro` run inside a subagent's session cannot be
-  proposed there.)
+  closed and no order removed; and `/retro` itself issues nothing in a delegated session, whose
+  round could never be proposed. (Limit, AGENTS.md "Known": the plugin knows a session as
+  delegated by what it has seen, so a reader calling before its creation is known, or after a
+  reload, slips through — and then its hand-over does not end the round.)
   `a reader calling retro_propose is told it is not its call, and nothing happens`
+  `a delegated hand-over in a log does not end the round`
+  `/retro in a subagent's session issues nothing`
   `a reader's call to retro_propose writes nothing into any log`
   `a reworded reader calling retro_propose is told so too`
 - One command issues at most `extractLimit` orders; the rest stay owed and are named. A

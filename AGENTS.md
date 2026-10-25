@@ -1063,11 +1063,13 @@ Known, listed so nobody discovers them as surprises:
 - **`retro_propose` refuses delegated sessions, as far as the plugin knows them.** A reader is
   delegated, and a reader calling it would get the proposal — with an instruction to record a
   decision it cannot put to the human — and close every open order. So a session known to be
-  delegated is refused. Known means its line was seen or `session.created` named its parent: a
-  reader calling before either slips through, which it would have to do before reading
-  anything. And a `/retro` run from inside a subagent's own session cannot be proposed there.
-  Whose call it *is* was tried as well — the session the round was handed to — and an
-  ownership kept in memory went stale after an abandoned round and forgot itself on a reload.
+  delegated is refused. Known means its line was seen or `session.created` named its parent,
+  both in this process's memory: a reader calling before either, or after a reload, slips
+  through — and then its hand-over is written with `from` once it is folded in, which does not
+  end the round. `/retro` itself refuses a delegated session, whose round could never be
+  proposed. Whose call it *is* was tried as well — the session the round was handed to — and
+  an ownership kept in memory went stale after an abandoned round and forgot itself on a
+  reload, the same way.
 - **A turn's end is taken to arrive before the next turn's hooks.** The event stream lags the
   hooks by milliseconds, and the next turn starts after a model has answered; an end delivered
   later than that would close the new turn's bookkeeping. Raised in the pre-release reviews as
