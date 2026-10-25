@@ -834,7 +834,7 @@ test("own calls that never finish are bounded, so a later session quoting one is
   await cleanup?.()
 })
 
-test("evidence that cites no steps is dated by what the reader read, not by what came after the order", async () => {
+test("evidence that cites no steps is dated by what its order covered, not by what came after it", async () => {
   // Third pre-release review: "the whole log" included records written after the order, which
   // the reader never saw — a session still working after the fix dated pre-fix evidence as new.
   const { detail, reopened } = await citeAgainstDecision([[1, -60], [2, -50]], [], { after: [[3, 30]] })
@@ -1487,5 +1487,41 @@ test("a reader of a delegation of ours that errored naming nothing is still ours
   fake.emit({ type: "session.execution.succeeded", durable: { seq: 97 }, data: { sessionID: "ses_review" } })
   await new Promise((r) => setImmediate(r))
   assert.ok(!kindsIn(dir, "ses_review").some((r) => /See the file/.test(r.text ?? "")), "the reader is not the person's")
+  await cleanup?.()
+})
+
+/* Eighteenth pre-release review. */
+
+test("a reader created after its delegation already errored is still ours", async () => {
+  // A side set read at the turn end and not at creation adopted it on the spot; the delegation
+  // now stays unaccounted for in `calls`, which both decision points read.
+  const dir = sandbox()
+  const fake = fakeOpenCode({ directory: dir, agent: false })
+  const cleanup = await plugin.setup(fake.ctx)
+  await work(fake, "ses_a")
+  const { paths } = await retro(fake)
+  await fake.hooks.get("session.prompt")({ sessionID: "ses_review", messageID: "rv", prompt: { text: "go on" } })
+  const d1 = { sessionID: "ses_review", id: "d1", tool: "subagent", input: { agent: "general", prompt: `Have a look at ${paths[0]}` } }
+  await fake.hooks.get("tool.execute.before")(d1)
+  await fake.hooks.get("session.prompt")({ sessionID: "ses_reader", messageID: "r1", prompt: { text: "See the file." } })
+  await fake.hooks.get("tool.execute.after")({ ...d1, status: "error", result: { output: "failed" } })
+  fake.emit({ type: "session.created", durable: { seq: 90 }, data: { sessionID: "ses_reader", parentID: "ses_review", location: { directory: dir } } })
+  fake.emit({ type: "session.execution.succeeded", durable: { seq: 97 }, data: { sessionID: "ses_review" } })
+  await new Promise((r) => setImmediate(r))
+  assert.ok(!kindsIn(dir, "ses_review").some((r) => /See the file/.test(r.text ?? "")), "the reader is not the person's")
+  await cleanup?.()
+})
+
+test("a completed delegation that names no child session is reported as a moved result shape", async () => {
+  // Rule 2 reads the child from `result.metadata.sessionID`; if that moves, it would quietly
+  // take the person's children for ours. Gotcha 8's kind of drift, so it is said in plugin.log.
+  const dir = sandbox()
+  const fake = fakeOpenCode({ directory: dir, agent: false })
+  const cleanup = await plugin.setup(fake.ctx)
+  await fake.hooks.get("session.prompt")({ sessionID: "ses_person", messageID: "pm", prompt: { text: "explore" } })
+  const call = { sessionID: "ses_person", id: "p1", tool: "subagent", input: { agent: "explore", prompt: "look" } }
+  await fake.hooks.get("tool.execute.before")(call)
+  await fake.hooks.get("tool.execute.after")({ ...call, status: "completed", result: { output: "done", metadata: { child: "ses_x" } } })
+  assert.match(readFileSync(join(dir, ".retro", "plugin.log"), "utf8"), /named no child session/)
   await cleanup?.()
 })

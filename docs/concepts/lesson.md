@@ -88,7 +88,7 @@ told to the extractor and filters its answer, and the store refuses to reopen an
   `evidence is dated by the range it cites, not by whatever came after it in the log`
   `a recurrence after the fix inside the cited range reopens the lesson`
   `evidence that cites no steps is dated by the whole log`
-  `evidence that cites no steps is dated by what the reader read, not by what came after the order`
+  `evidence that cites no steps is dated by what its order covered, not by what came after it`
   `evidence is dated by what its order covered, not by how far the reader says it got`
   `evidence citing only steps the log does not have is undated, and reopens`
 - What a human has already fixed is named in the order, with the date, so the reading is not

@@ -161,13 +161,14 @@ export default {
      * inner tool and again as its `execute` wrapper under one id — inner before, wrapper before,
      * inner after, wrapper after (measured, `test/ingest.test.js`) — and the wrapper is whatever
      * it wraps; `open` counts the pairs still open, and the entry goes at zero or when the
-     * session's turn ends (an interrupted call has no after-hook, measured). Ids are unique
-     * within a session as measured (`call_00_<random>`).
+     * session's turn ends (an interrupted call has no after-hook, measured) — except a
+     * delegation of ours that ended naming no child, which stays until the turn ends: it is
+     * unaccounted for, and rule 2 asks exactly that of whatever is in `calls` (eighteenth
+     * review, which found a side set read at one decision point and not the other). Ids are
+     * unique within a session as measured (`call_00_<random>`).
      */
     const calls = new Map()
     const deferred = new Map() // child -> the parent it appeared under (rule 2)
-    // Sessions where a delegation of ours ended this turn naming no child (rule 2).
-    const oursUnnamed = new Set()
     const MAX_CALLS = 1000
 
     /**
@@ -384,14 +385,22 @@ export default {
       const key = callKey(p)
       const known = key ? calls.get(key) : undefined
       if (known && child) known.named = true
-      if (known && --known.open <= 0) {
-        calls.delete(key)
-        // Both halves of a Code Mode pair in, and neither named a child (rule 2).
-        if (known.ours && known.tool === "subagent" && !known.named) oursUnnamed.add(p.sessionID)
-      }
+      // Both halves of a Code Mode pair in. A delegation of ours that named no child stays, as
+      // unaccounted for, until its turn ends (rule 2).
+      if (known && --known.open <= 0 && !(known.ours && known.tool === "subagent" && !known.named)) calls.delete(key)
       // Everything a session of ours does is ours, including a call that started before the
       // session was known to be (ninth review).
       const ours = internal.has(p?.sessionID) || (known ? known.ours : ownWork(p))
+      // One whose start was never seen is unaccounted for in the same way.
+      if (!known && key && ours && p?.tool === "subagent" && !child && !internal.has(p?.sessionID)) {
+        calls.set(key, { session: p?.sessionID, tool: "subagent", ours: true, open: 0, named: false })
+      }
+      // A delegation that completed and names no session is not an interrupted or errored one:
+      // the result's shape has moved, and rule 2 would quietly take the person's children for
+      // ours. Said where a broken plugin says things (AGENTS.md Gotcha 8; eighteenth review).
+      if (p?.tool === "subagent" && p?.status === "completed" && !child && known?.open === 0 && !known.named) {
+        onError("hook.subagent", "a completed subagent call named no child session (result.metadata.sessionID) — the result shape may have changed")
+      }
       // The moment a child is known exactly: this call started it. Ours is claimed, the
       // person's adopted — whatever either was told (rule 2).
       if (child) deferred.delete(child)
@@ -570,8 +579,7 @@ export default {
         // session was named by nobody: ours if one of ours never named a child, theirs if every
         // one of ours named its own (rule 2) — never a session of its own, which a delegation
         // must not become.
-        const ours = oursInFlight(sessionID) || oursUnnamed.has(sessionID)
-        oursUnnamed.delete(sessionID)
+        const ours = oursInFlight(sessionID)
         for (const [child, parent] of deferred) {
           if (parent !== sessionID) continue
           deferred.delete(child)
@@ -1137,7 +1145,7 @@ export default {
       writeSelfCheck()
     }
 
-    /** Whether `parent` runs a delegation of ours (rule 2). */
+    /** Whether `parent` has a delegation of ours running, or ended unaccounted for (rule 2). */
     function oursInFlight(parent) {
       for (const call of calls.values()) if (call.session === parent && call.ours && call.tool === "subagent") return true
       return false

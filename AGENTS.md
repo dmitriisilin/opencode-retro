@@ -1048,10 +1048,13 @@ Known, listed so nobody discovers them as surprises:
   but the outcome recorded for the old file stays in `state.json` until the new one is
   analysed, and the session's line shows it. Forgetting it would need tombstones in a file
   that merges by union; a diagnostic line wrong until the next `/retro` does not earn them.
-- **A turn's end is taken to arrive before the next turn's hooks.** The event stream lags the
-  hooks by milliseconds, and the next turn starts after a model has answered; an end delivered
-  later than that would close the new turn's bookkeeping. Raised in the sixth pre-release
-  review as a possibility, not seen; nothing here orders the two.
+- **Events are taken to arrive in step with the hooks around them.** The event stream lags the
+  hooks by milliseconds, and what it would have to overtake takes a model's answer: a turn's
+  end is taken to arrive before the next turn's hooks, and a child's creation before the end of
+  the delegation that started it. Delivered later than that, an end would close the next
+  turn's bookkeeping, and a creation would find its delegation already gone. Raised in the
+  sixth, fifteenth and eighteenth pre-release reviews as possibilities, never seen; nothing
+  here orders the two streams, and every attempt to was a new interleaving.
 - Whether the agent answers every order is prompted, not enforced, for the same reason. An
   order nobody answers is reported with how many times it has been asked and asked again, so
   this degrades visibly rather than going silent; it is never held against the log.
