@@ -61,11 +61,6 @@ export function createIngest({
         completed: new Set(),
         seq: new Map(),
         counts: freshCounts(),
-        // A hand-over sent whose turn has not begun yet — sent into a turn still running. It
-        // starts the next turn, which has no prompt of its own (forty-fourth and forty-sixth
-        // reviews). Set only by a hand-over actually sent (`awaitTurn`), cleared when a turn
-        // starts.
-        awaiting: false,
       }
       sessions.set(id, s)
     }
@@ -161,12 +156,6 @@ export function createIngest({
      * and the session stays the plugin's, or the next turn's start would be dropped (forty-
      * fourth and forty-fifth reviews).
      */
-    /** A hand-over was sent: it will start a turn, the next if one is running now. */
-    awaitTurn(sessionID) {
-      const s = sessions.get(owner(sessionID))
-      if (s) s.awaiting = true
-    },
-
     restartNumbering(sessionID) {
       const s = sessions.get(owner(sessionID))
       if (s) s.n = 0
@@ -185,12 +174,6 @@ export function createIngest({
       s.completed.clear()
       s.seq.clear()
       s.counts = freshCounts()
-      // A hand-over still waiting is the next turn's input: counted there, or that turn — with
-      // no prompt — read as a dead prompt hook.
-      // Carried once: a hand-over that never gets a prompt after it must not excuse every turn
-      // that follows, or a dead prompt hook would never be reported (forty-fifth review).
-      if (s.awaiting) s.counts.handovers = 1
-      s.awaiting = false
     },
 
     /** Unpaired calls, flushed when a session ends so an interrupt leaves no silent gap. */
@@ -328,8 +311,6 @@ export function createIngest({
 
         case "session.execution.started":
           if (parentOf(sessionID)) return // a delegation is a step, not a session
-          // A hand-over waiting for a turn has one now, and its count is already this turn's.
-          s.awaiting = false
           append(sessionID, { k: "session", seq, event: "start" })
           return
 

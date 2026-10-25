@@ -1881,33 +1881,34 @@ test("a log pruned between turns starts its numbering again", async () => {
   }
 })
 
-test("a waiting hand-over excuses the turn it starts and no turn after it", async () => {
-  // Forty-fifth and forty-sixth pre-release reviews: with the prompt hook dead, a marker that
-  // outlived its turn excused the turns after it instead of reporting them.
-  const { createIngest } = await import("../src/ingest.js")
-  const start = { type: "session.execution.started", durable: { seq: 1 }, data: { sessionID: "s" } }
-  // Sent into a running turn: the turn after that one is the hand-over's.
-  const busy = createIngest({ emit: () => {}, maxOutput: 100 })
-  busy.prompt({ sessionID: "s", prompt: { text: "work" } })
-  busy.handover("s", "the logs come first", "work")
-  busy.awaitTurn("s")
-  busy.endTurn("s")
-  assert.equal(busy.counts("s").handovers, 1, "the turn it starts")
-  busy.event(start)
-  busy.endTurn("s")
-  assert.equal(busy.counts("s").handovers, 0, "and not the next")
-  // Sent into an idle session: it starts its own turn at once, and the person's next is theirs.
-  const idle = createIngest({ emit: () => {}, maxOutput: 100 })
-  idle.prompt({ sessionID: "s", prompt: { text: "earlier" } })
-  idle.handover("s", "the logs come first", "work")
-  idle.awaitTurn("s")
-  idle.event(start)
-  idle.endTurn("s")
-  assert.equal(idle.counts("s").handovers, 0, "the person's next turn is not excused")
-  // A hand-over logged but never sent — a tool result, a failed send — waits for nothing.
-  const unsent = createIngest({ emit: () => {}, maxOutput: 100 })
-  unsent.prompt({ sessionID: "s", prompt: { text: "earlier" } })
-  unsent.handover("s", "a lesson", "lesson")
-  unsent.endTurn("s")
-  assert.equal(unsent.counts("s").handovers, 0)
+test("a hand-over is the input of the first turn that starts after it", async () => {
+  // Forty-fourth to forty-seventh pre-release reviews: which turn a hand-over excuses is read
+  // from the order of the log, not from a flag set and cleared by async completions.
+  const dir = sandbox()
+  const fake = fakeOpenCode({ directory: dir, agent: false })
+  const cleanup = await plugin.setup(fake.ctx)
+  const start = (seq) => fake.emit({ type: "session.execution.started", durable: { seq }, data: { sessionID: "ses_p" } })
+  const end = (seq) => fake.emit({ type: "session.execution.succeeded", durable: { seq }, data: { sessionID: "ses_p" } })
+  const tick = () => new Promise((r) => setImmediate(r))
+  const report = () => readFileSync(join(dir, ".retro", "selfcheck.md"), "utf8")
+  await work(fake, "ses_a")
+  await fake.hooks.get("session.prompt")({ sessionID: "ses_p", messageID: "p1", prompt: { text: "earlier" } })
+  start(1)
+  await tick()
+  end(2)
+  await tick()
+  // Sent between turns: it starts its own, which has no prompt and is excused.
+  await fake.commands.get("retro").execute({ sessionID: "ses_p", prompt: { text: "" } })
+  start(3)
+  await tick()
+  end(4)
+  await tick()
+  assert.doesNotMatch(report(), /BROKEN\s+prompt hook/, "the hand-over's own turn is excused")
+  // The person's next turn, with the prompt hook dead: nothing of the plugin's to excuse it.
+  start(5)
+  await tick()
+  end(6)
+  await tick()
+  assert.match(report(), /BROKEN\s+prompt hook/, "a dead prompt hook is reported")
+  await cleanup?.()
 })

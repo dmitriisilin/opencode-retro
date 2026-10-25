@@ -34,9 +34,9 @@ written down.)
 traffic proved.** A session without tool calls proves nothing about the tool hook; a turn
 whose input is a hand-over proves nothing about the prompt hook — the counters are per
 turn, so a session prompted earlier and handed a lesson later was not "started by a
-hand-over"; a hand-over sent into a turn still running — it waits for that turn's end — is
-counted for the turn it starts, once, and a tool result or a notice never sent counts for
-none; a shortfall of hook calls against events is not evidence while calls are in
+hand-over"; which turn a hand-over started is read from the log — it is the input of the
+first turn that starts after it, so one sent into a running turn counts for the next, and the
+person's turn after that has nothing of the plugin's to excuse it; a shortfall of hook calls against events is not evidence while calls are in
 flight; the trigger cannot be judged before the session ends.
 
 **Stock.** What is waiting for the human: open lessons, logs owed an analysis, logs read in
@@ -113,7 +113,7 @@ last analysis of the session whichever path ran it.
   `an interrupted turn with a subagent still running is not a dead tool hook`
 - A turn whose input is a hand-over does not report a dead prompt hook.
   `a review session driven by a hand-over is not reported as a dead prompt hook`
-  `a waiting hand-over excuses the turn it starts and no turn after it`
+  `a hand-over is the input of the first turn that starts after it`
 - The surface check names exactly the `ctx` members the plugin calls.
   `the self-check requires exactly the ctx surface the plugin calls`
 - A command that throws reaches the log and the session, never a bare 500.

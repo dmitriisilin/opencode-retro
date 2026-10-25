@@ -257,7 +257,7 @@ export default {
       check.verify(
         {
           id: sessionID,
-          counts: { ...ingest.counts(sessionID), startSeen: turnSeen.has(sessionID) },
+          counts: { ...ingest.counts(sessionID), ...turnInput(sessionID), startSeen: turnSeen.has(sessionID) },
           log: logFacts(sessionID),
           triggered: null,
           ended: false,
@@ -554,7 +554,7 @@ export default {
 
       const verified = {
         id: sessionID,
-        counts: { ...ingest.counts(sessionID), startSeen: turnSeen.has(sessionID) },
+        counts: { ...ingest.counts(sessionID), ...turnInput(sessionID), startSeen: turnSeen.has(sessionID) },
         log: logFacts(sessionID),
         triggered: event.type,
         extraction: null,
@@ -603,9 +603,6 @@ export default {
         // The synthetic goes to the session's inbox; without `resume` it sits there until
         // the user happens to type something, and they never see what they asked for.
         await ctx.session.synthetic({ sessionID, text, description: "opencode-retro", resume })
-        // Sent, so it will start a turn — the next one, if this session is working now. A tool
-        // result or a notice that was never sent starts none (forty-sixth review).
-        if (resume) ingest.awaitTurn(sessionID)
       } catch (err) {
         onError("session.synthetic", err)
         // Logged first, so the log says it was never delivered — and a notice ends the round
@@ -1127,6 +1124,35 @@ export default {
         current = up
       }
       return current ?? null
+    }
+
+    /**
+     * The hand-overs behind the current turn, read from the log: every one of the person's
+     * session's since the previous turn started. A prompt or a hand-over is the input
+     * of the first turn that starts after it — so one sent into a turn still running counts
+     * for the next, one sent between turns for its own, and the person's turn after that has
+     * nothing of the plugin's to excuse it. Decided from the order of the log, not from when
+     * async completions happen to arrive: three review rounds of a flag kept in memory each
+     * found a new race (forty-fourth to forty-seventh). Empty when the log cannot be read, and
+     * the per-turn counts stand.
+     */
+    function turnInput(sessionID) {
+      let records
+      try {
+        records = parseShadowLog(readFileSync(log.path(sessionID), "utf8"))
+      } catch {
+        return {}
+      }
+      const starts = []
+      records.forEach((r, i) => {
+        if (r.k === "session" && r.event === "start" && !r.from) starts.push(i)
+      })
+      const since = starts.length >= 2 ? starts.at(-2) : -1
+      let handovers = 0
+      for (let i = since + 1; i < records.length; i++) if (!records[i].from && records[i].k === "handover") handovers++
+      // Only the hand-overs: prompts are what this process saw this turn, which a log pruned
+      // or rewritten under the session may no longer show (forty-seventh review, by the model).
+      return { handovers: Math.max(handovers, ingest.counts(sessionID).handovers) }
     }
 
     /** A turn seen to start, kept in order of the latest start (`handBack`). */
