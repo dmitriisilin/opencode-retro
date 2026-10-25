@@ -2049,3 +2049,50 @@ test("a hand-over waiting for the round's turn to end leaves that turn the round
   assert.deepEqual(ranges, [[4, 10]])
   assert.equal(nothingNew(records, records.slice(3)), true, "nothing of the person's was added")
 })
+
+/* Round 7 of 10. */
+
+test("a /retro run again after an undelivered one has its round", async () => {
+  const { ownRounds, nothingNew } = await import("../src/extract.js")
+  const records = [
+    { n: 1, k: "prompt", text: "fix bug" },
+    { n: 2, k: "tool", tool: "read", input: { path: "a.js" } },
+    { n: 3, k: "session", event: "end" },
+    { n: 4, k: "handover", about: "work", sent: true, text: "the logs come first" },
+    { n: 5, k: "handover", about: "notice", undelivered: true, text: "could not be delivered" },
+    { n: 6, k: "handover", about: "work", sent: true, text: "the logs come first" },
+    { n: 7, k: "session", event: "start" },
+    { n: 8, k: "text", text: "starting readers" },
+    { n: 9, k: "tool", tool: "read", input: { path: ".retro/work/x.md" } },
+    { n: 10, k: "tool", tool: "retro_propose", input: {} },
+    { n: 11, k: "handover", about: "lesson", text: "a lesson" },
+    { n: 12, k: "text", text: "here is the lesson" },
+    { n: 13, k: "session", event: "end" },
+  ]
+  const { steps } = ownRounds(records)
+  for (const n of [7, 8, 9]) assert.ok(steps.has(n), `step ${n} is the round's`)
+  assert.equal(nothingNew(records, records.slice(3)), true, "a log grown by the round takes no order")
+})
+
+test("the person speaking before a waiting hand-over's turn makes that turn theirs", async () => {
+  const { repliesToPlugin, lastReadable } = await import("../src/extract.js")
+  const records = [
+    { n: 1, k: "prompt", text: "fix bug" },
+    { n: 2, k: "session", event: "start" },
+    { n: 3, k: "tool", tool: "read", input: { path: "a.js" } },
+    { n: 4, k: "handover", about: "lesson", sent: true, text: "a lesson" },
+    { n: 5, k: "text", text: "fixed" },
+    { n: 6, k: "session", event: "end" },
+    { n: 7, k: "prompt", text: "now do X, that was wrong" },
+    { n: 8, k: "session", event: "start" },
+    { n: 9, k: "text", text: "you are right, X is done differently" },
+    { n: 10, k: "session", event: "end" },
+  ]
+  assert.ok(!repliesToPlugin(records).has(9), "the answer to the person is theirs")
+  assert.equal(lastReadable(records), 9)
+})
+
+test("the contract says the agent's text answering a notice is not the session's", async () => {
+  const { OUTPUT_CONTRACT } = await import("../src/contract.js")
+  assert.match(OUTPUT_CONTRACT, /ordinary work, but for the agent's text in answer to it/)
+})

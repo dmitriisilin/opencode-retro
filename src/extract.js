@@ -68,7 +68,8 @@ function isIndentedWorkLine(text) {
  * running waits in the inbox for that turn to end, and is answered from the next turn start —
  * `null` while there is none. One handed back as a tool result, or sent between turns, is
  * answered at once. One the plugin failed to send is answered nowhere, and the notice saying so
- * is no hand-over of its own: it is written to the log, never to anybody (round 6 of 10).
+ * is no hand-over of its own: it is written to the log, never to anybody (round 6 of 10). One
+ * still waiting when the person speaks is answered nowhere either: the turn is theirs.
  * The single reading of a hand-over's turn that `ownRounds` and `repliesToPlugin` share: two
  * copies of it drifted apart in rounds 5 and 6.
  */
@@ -80,6 +81,13 @@ function answerStarts(sorted) {
   for (let i = 0; i < sorted.length; i++) {
     const r = sorted[i]
     if (r.from) continue
+    // The person speaking before a waiting hand-over's turn begins makes that turn theirs: it
+    // answers them, and their material is not to be taken for a reply (round 7 of 10).
+    if (r.k === "prompt") {
+      for (const h of waiting) at.delete(h)
+      waiting = []
+      continue
+    }
     if (r.k === "session") {
       inTurn = r.event === "start"
       if (inTurn) for (const h of waiting) at.set(h, i)
@@ -120,6 +128,12 @@ export function ownRounds(records) {
   const steps = new Set()
   for (let i = 0; i < sorted.length; i++) {
     if (!isWorkHandover(sorted[i])) continue
+    // One never delivered opens nothing, and must not swallow a `/retro` run again after it,
+    // whose round is the real one (round 7 of 10). Named, as every `work` hand-over is.
+    if (!at.has(i)) {
+      steps.add(sorted[i].n)
+      continue
+    }
     // Where it ends: the next prompt of the person's session, or the place the answer to another
     // of the plugin's hand-overs begins — not where that hand-over was written, when it waits in
     // the inbox for this turn to end: until then the turn is still the round's (round 6 of 10).

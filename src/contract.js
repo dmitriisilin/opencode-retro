@@ -101,7 +101,8 @@ Rules:
   may be quoting another session's problems, and they are that session's. The order names the
   rounds it knows of by their steps. A \`handover\` with \`"about": "notice"\` is this plugin
   saying something else — nothing to review, a command that failed — and what follows it is
-  ordinary work.
+  ordinary work, but for the agent's text in answer to it, which is the plugin's exchange and
+  holds nothing of the session's.
 - \`proposal\` is optional. Omit it, or use \`null\`, when you can name the problem but not
   the fix — that is a normal and useful answer.
 - \`ask\` is optional and is for when the fix depends on something only the human knows.
