@@ -20,6 +20,13 @@ import { clamp } from "./config.js"
  * second log, a second model call and a second count against the same problem — and the
  * fragment would be read without the instruction that caused it.
  */
+/**
+ * The end of a turn. session.idle never fires outside the TUI (AGENTS.md Gotcha 2), so the end
+ * of work is session.execution.*. One list, for this file and for `index.js`.
+ */
+export const TURN_ENDS = ["session.execution.succeeded", "session.execution.failed", "session.execution.interrupted"]
+export const isTurnEnd = (event) => TURN_ENDS.includes(event?.type)
+
 export function createIngest({
   emit,
   maxOutput,
@@ -304,9 +311,8 @@ export function createIngest({
           append(sessionID, { k: "session", seq, event: "start" })
           return
 
-        case "session.execution.succeeded":
-        case "session.execution.failed":
-        case "session.execution.interrupted":
+        default:
+          if (!isTurnEnd(e)) return
           if (parentOf(sessionID) || isStep(sessionID)) return // the parent is still working
           for (const call of s.pending.values()) {
             // Counted, because it is the one honest reason an event has no after-hook: the turn

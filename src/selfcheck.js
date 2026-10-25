@@ -248,7 +248,7 @@ export function assess(session) {
     checks.push({ status: SKIPPED, name: "extraction", detail: x.detail })
   } else if (x.ok) {
     checks.push({ status: OK, name: "extraction", detail: x.detail })
-  } else if (String(x.detail ?? "").startsWith(SET_ASIDE)) {
+  } else if (x.setAside) {
     checks.push({
       status: DEGRADED,
       name: "extraction",
@@ -317,6 +317,15 @@ export function render(state) {
       state.sessionEnded
         ? `\`${state.session}\`, which ended at ${stamp(state.sessionEnded)}.`
         : `\`${state.session}\`, which was still working at ${stamp(state.verified)}.`,
+      "",
+    )
+  } else if (state.heartbeat) {
+    // Hooks have fired — for the plugin's own work only, which proves the hooks and says nothing
+    // about a session of the person's (fifteenth review: "nothing measured yet" was untrue).
+    lines.push(
+      "No session of yours measured since the plugin loaded. Hooks have fired, at",
+      `${stamp(state.heartbeat)}, but only for the plugin's own work, which is not measured; these`,
+      "lines are written again at the next prompt or tool call of a session of yours.",
       "",
     )
   } else {

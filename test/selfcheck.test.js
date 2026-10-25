@@ -299,7 +299,7 @@ test("a log read in part is named as such, not as not analysed yet", () => {
 test("a session whose log was set aside is not told the next /retro asks again", () => {
   // Fourth pre-release review: the extraction line explained every failure as one the next
   // command retries, including a log nothing will read again unless it grows.
-  const x = assess({ ...healthy, extraction: { ok: false, detail: `${SET_ASIDE}: the analysis reported reading nothing new` } })
+  const x = assess({ ...healthy, extraction: { ok: false, detail: `${SET_ASIDE}: the analysis reported reading nothing new`, setAside: true } })
   const line = x.find((c) => c.name === "extraction")
   assert.equal(line.status, STATUS.DEGRADED)
   assert.doesNotMatch(line.meaning, /asks again/)

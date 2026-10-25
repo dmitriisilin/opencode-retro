@@ -118,18 +118,22 @@ nothing done, or an end marker, still proves nothing.
 
 **The plugin's own work.** The subagents it asks for and the calls to its own tools are its
 work, not the user's: they are not written to any log, so an analysis is never analysed and
-the plugin's bookkeeping never turns into a lesson about the plugin. A reader is recognised at
-its first prompt by the exact line or by the prompt of a delegation of ours still in flight;
-anything a reader of ours starts is ours by its parent; and any other child of a session with
-a delegation of ours in flight is **deferred** — neither adopted nor claimed, its records
-waiting in its own log — until a delegation ends and its result names the child it started.
-Then ours is claimed and the person's adopted, whatever either was told. A deferred child's
-records are kept — its text, its steps, its calls — and only its start and end are dropped, as
-a step's. (A limit: a delegation that never ends — its turn interrupted — or ends without naming its
-child names no child, so whatever is still deferred when the parent's turn ends is decided by
-the delegations of that turn that never said: ours only if every one of them was ours, theirs
-otherwise.
-AGENTS.md, "Known".)
+the plugin's bookkeeping never turns into a lesson about the plugin. Three rules decide it:
+
+1. A tool call is ours or the person's as decided when it starts — by the session it runs in,
+   the tool, and for a delegation the prescribed line or an open order's path — and that holds
+   for both halves of a Code Mode pair until the call ends or its turn does.
+2. A child created while its parent runs a delegation of ours is **deferred**: neither adopted
+   nor claimed, its records waiting in its own log, its start and end dropped as a step's. A
+   delegation of the person's naming it when it ends makes it theirs; anything else — ours
+   naming it, or nothing by the parent's turn end — makes it ours.
+3. Everything a session of ours does, or starts, is ours. A fresh session whose first prompt is
+   the prescribed line is ours from that prompt.
+
+(A limit, the price of rule 2: a person's subagent run beside ours and never named — a turn
+interrupted, or a delegation errored, with both kinds running — is taken for ours, and its work
+is not logged. AGENTS.md, "Known". Thirteen review rounds of guessing better than this, from
+prompts and from what else was in flight, each found the last one's interleaving.)
 
 ## Invariants
 
@@ -185,15 +189,9 @@ AGENTS.md, "Known".)
   `a log set aside is described in the same words everywhere it is reported`
   `the third read that covered nothing new says the log is set aside, not that it will be asked again`
   `nothing to review does not promise another try for a log set aside`
-- What decides that a call or a session is the plugin's own is decided when it starts, and
-  never again when it ends — per session and call id, and for a Code Mode wrapper the same as
-  for what it wraps. A session a person types into is never taken for ours by anything short
-  of the prescribed line — or, for a fresh session, the very prompt one of our own delegations
-  is handing its reader at that moment. A child of a session with a delegation of ours in
-  flight is decided when a delegation ends and names it.
-  A call is remembered while it is in flight; one its turn ended in the middle of recognises
-  nothing afterwards, but its own after-hook still finds it. An after-hook whose start was
-  never seen is decided by what it says.
+- Which call and which session is the plugin's own follows the three rules above, decided
+  once. A session a person types into is never taken for ours by anything short of the
+  prescribed line; an after-hook whose start was never seen is decided by what it says.
   `talking about work orders does not stop a session being logged`
   `a person who names an open order's path in a new session is still logged`
   `a reworded delegation of a work order stays out of the person's log`
@@ -207,12 +205,11 @@ AGENTS.md, "Known".)
   `a reworded reader is not folded into the person's log while its delegation runs`
   `a report about a session that turns out to be ours goes back to the last that ended, rather than stay`
   `a deferred child's turn is a step, not a session`
-  `a child left deferred by a delegation that never ended is decided when its parent's turn is`
+  `a child nobody names by its parent's turn end is ours, even beside a delegation of the person's`
   `a child left deferred with only our delegation beside it is taken for ours`
   `a deferred child keeps everything but its start and end`
   `a deferred child interrupted mid-call is adopted with the call, and the tool hook is not called dead`
   `a delegation of the person's that already named its child does not make a deferred reader theirs`
-  `a person's delegation that errors without naming its child keeps that child theirs`
   `a person's call interrupted in an earlier turn does not make a later reader theirs`
   `under Code Mode a delegation that named its child is not counted as unsaid`
   `a deferred child is not counted as waiting while /retro would not ask about it`
@@ -224,7 +221,6 @@ AGENTS.md, "Known".)
   `a reader delegating part of its reading does not make the report about itself`
   `a reader's helper is ours however it was told what to do`
   `a reader already recognised is not claimed again when its delegation ends`
-  `a turn's end arriving late does not make the next turn's own calls the person's`
   `a child is not taken for a reader while anything of the person's runs beside our delegation`
 - One command issues at most `extractLimit` orders; the rest stay owed and are named. A
   skipped log takes no order.

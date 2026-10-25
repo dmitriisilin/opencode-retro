@@ -74,6 +74,7 @@ last analysis of the session whichever path ran it.
   `an analysis does not take over a report that describes another session`
   `an analysis of the session being worked in does not report it as ended`
   `a reader recognised by its parent takes the report back to the person's session`
+  `a report with no session of the person's to describe does not say no hook has fired`
   `a reader that reported reading nothing new is not reported as no answer`
   `a session whose log was set aside is not told the next /retro asks again`
 - A call the turn ended in the middle of accounts for its event: an interrupted turn with a

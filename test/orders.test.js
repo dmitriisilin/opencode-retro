@@ -582,7 +582,7 @@ test("every report of how many times a log was asked names the same number", asy
  * back. Each record is `[n, minutes from the decision]`: negative is before the fix, positive
  * after it.
  */
-async function citeAgainstDecision(records, steps, { after = [] } = {}) {
+async function citeAgainstDecision(records, steps, { after = [], through } = {}) {
   const dir = sandbox()
   const fake = fakeOpenCode({ directory: dir, agent: false })
   const cleanup = await plugin.setup(fake.ctx)
@@ -609,7 +609,7 @@ async function citeAgainstDecision(records, steps, { after = [] } = {}) {
     const line = { v: 1, n, t: decided + minutes * 60_000, k: "tool", id: `c${n}`, tool: "read", input: { path: "x" }, status: "completed" }
     writeFileSync(logOf(dir, "ses_later"), JSON.stringify(line) + "\n", { flag: "a" })
   }
-  const result = await record(fake, "ses_later", [{ ...LESSON, steps }], { dir })
+  const result = await record(fake, "ses_later", [{ ...LESSON, steps }], { dir, through })
   const reopened = existsSync(join(dir, ".retro", "lessons", `${LESSON.id}.md`))
   await cleanup?.()
   return { detail: result.output.detail, reopened }
@@ -1008,26 +1008,6 @@ test("a Code Mode wrapper reported ahead of an own call leaves nothing unpaired 
   await cleanup?.()
 })
 
-test("a turn's end arriving late does not make the next turn's own calls the person's", async () => {
-  // The event stream lags the hooks: a sweep on a turn's end took the next turn's calls with it.
-  const dir = sandbox()
-  const fake = fakeOpenCode({ directory: dir, agent: false })
-  const cleanup = await plugin.setup(fake.ctx)
-  await work(fake, "ses_a")
-  const { paths } = await retro(fake)
-  const prompt = `Please read ${paths[0]} and follow it.`
-  const inner = { sessionID: "ses_review", messageID: "m", id: "x1", tool: "subagent", input: { agent: "general", prompt } }
-  const wrapper = { ...inner, tool: "execute", input: { code: "await tools.subagent(...)" } }
-  await fake.hooks.get("tool.execute.before")(inner)
-  fake.emit({ type: "session.execution.succeeded", durable: { seq: 80 }, data: { sessionID: "ses_review" } })
-  await new Promise((r) => setImmediate(r))
-  await fake.hooks.get("tool.execute.before")(wrapper)
-  await fake.hooks.get("tool.execute.after")({ ...inner, status: "completed", result: { output: "done", metadata: { sessionID: "ses_reader" } } })
-  await fake.hooks.get("tool.execute.after")({ ...wrapper, status: "completed", result: { output: "done" } })
-  assert.deepEqual(kindsIn(dir, "ses_review").filter((r) => r.k === "tool"), [])
-  await cleanup?.()
-})
-
 test("a child is not taken for a reader while anything of the person's runs beside our delegation", async () => {
   const dir = sandbox()
   const fake = fakeOpenCode({ directory: dir, agent: false })
@@ -1268,23 +1248,22 @@ test("a deferred child's turn is a step, not a session", async () => {
   await cleanup?.()
 })
 
-test("a child left deferred by a delegation that never ended is decided when its parent's turn is", async () => {
-  // Eleventh pre-release review: released as a session of its own, it was analysed apart from
-  // the delegation that started it — which a delegation must never be. With the person's own
-  // delegation in flight beside ours, it is taken for theirs.
+test("a child nobody names by its parent's turn end is ours, even beside a delegation of the person's", async () => {
+  // Rule 2, and its stated cost: with an interrupted turn running both kinds of delegation, a
+  // child no delegation named is taken for ours — never left a session of its own, which a
+  // delegation must not become (eleventh review), and never guessed at from what else ran.
   const dir = sandbox()
   const fake = fakeOpenCode({ directory: dir, agent: false })
   const cleanup = await plugin.setup(fake.ctx)
   await deferHelper(fake, dir)
   fake.emit({ type: "session.execution.interrupted", durable: { seq: 95 }, data: { sessionID: "ses_review" } })
   await new Promise((r) => setImmediate(r))
-  assert.ok(kindsIn(dir, "ses_review").some((r) => r.id === "hx"), "adopted into the person's log")
-  assert.equal(existsSync(logOf(dir, "ses_helper")), false)
+  assert.ok(!kindsIn(dir, "ses_review").some((r) => r.id === "hx"), "not adopted")
+  assert.equal(existsSync(logOf(dir, "ses_helper")), false, "and no log of its own")
   const { paths } = await retro(fake, { invoker: "ses_other" })
-  assert.ok(!paths.some((path) => path.includes("ses_helper")), "and never asked about on its own")
+  assert.ok(!paths.some((path) => path.includes("ses_helper")), "so never asked about on its own")
   await cleanup?.()
 })
-
 test("a child left deferred with only our delegation beside it is taken for ours", async () => {
   const dir = sandbox()
   const fake = fakeOpenCode({ directory: dir, agent: false })
@@ -1359,6 +1338,8 @@ test("a child already adopted is not deferred by its creation arriving late", as
 /* Twelfth pre-release review. */
 
 test("a deferred child interrupted mid-call is adopted with the call, and the tool hook is not called dead", async () => {
+  // Twelfth pre-release review, reproduced: adopted, its open call was lost from the log while
+  // its event still counted, and the self-check called the tool hook dead.
   const dir = sandbox()
   const fake = fakeOpenCode({ directory: dir, agent: false })
   const cleanup = await plugin.setup(fake.ctx)
@@ -1366,6 +1347,9 @@ test("a deferred child interrupted mid-call is adopted with the call, and the to
   await fake.hooks.get("tool.execute.before")({ sessionID: "ses_helper", id: "open1", tool: "read", input: { path: "big" } })
   fake.emit({ type: "session.tool.called", durable: { seq: 94 }, data: { sessionID: "ses_helper", id: "open1", tool: "read" } })
   fake.emit({ type: "session.execution.interrupted", durable: { seq: 95 }, data: { sessionID: "ses_helper" } })
+  await new Promise((r) => setImmediate(r))
+  // The person's delegation ends and names it: theirs, adopted with the call still open.
+  await fake.hooks.get("tool.execute.after")({ sessionID: "ses_review", id: "p1", tool: "subagent", input: { agent: "explore", prompt: "explore the repo" }, status: "error", result: { output: "interrupted", metadata: { sessionID: "ses_helper" } } })
   fake.emit({ type: "session.execution.interrupted", durable: { seq: 96 }, data: { sessionID: "ses_review" } })
   await new Promise((r) => setImmediate(r))
   const theirs = kindsIn(dir, "ses_review")
@@ -1373,7 +1357,6 @@ test("a deferred child interrupted mid-call is adopted with the call, and the to
   assert.doesNotMatch(readFileSync(join(dir, ".retro", "selfcheck.md"), "utf8"), /BROKEN\s+tool hook/)
   await cleanup?.()
 })
-
 test("a delegation of the person's that already named its child does not make a deferred reader theirs", async () => {
   const dir = sandbox()
   const fake = fakeOpenCode({ directory: dir, agent: false })
@@ -1397,19 +1380,6 @@ test("a delegation of the person's that already named its child does not make a 
 })
 
 /* Thirteenth pre-release review. */
-
-test("a person's delegation that errors without naming its child keeps that child theirs", async () => {
-  const dir = sandbox()
-  const fake = fakeOpenCode({ directory: dir, agent: false })
-  const cleanup = await plugin.setup(fake.ctx)
-  await deferHelper(fake, dir)
-  // Ours is still running; the person's errors and names nothing at all.
-  await fake.hooks.get("tool.execute.after")({ sessionID: "ses_review", id: "p1", tool: "subagent", input: { agent: "explore", prompt: "explore the repo" }, status: "error", result: { output: "failed" } })
-  fake.emit({ type: "session.execution.succeeded", durable: { seq: 97 }, data: { sessionID: "ses_review" } })
-  await new Promise((r) => setImmediate(r))
-  assert.ok(kindsIn(dir, "ses_review").some((r) => r.id === "hx"), "the helper's work is the person's")
-  await cleanup?.()
-})
 
 test("a person's call interrupted in an earlier turn does not make a later reader theirs", async () => {
   const dir = sandbox()
@@ -1454,5 +1424,29 @@ test("under Code Mode a delegation that named its child is not counted as unsaid
   fake.emit({ type: "session.execution.interrupted", durable: { seq: 95 }, data: { sessionID: "ses_review" } })
   await new Promise((r) => setImmediate(r))
   assert.ok(!kindsIn(dir, "ses_review").some((r) => /See the file/.test(r.text ?? "")), "the reader is not the person's")
+  await cleanup?.()
+})
+
+/* Fifteenth pre-release review, over the whole series. */
+
+test("evidence citing only steps past what the reader says it read is dated by its citation", async () => {
+  // The upper bound alone was clamped to `through`, so a citation wholly past it matched no
+  // record, came back undated, and reopened a decision.
+  const { detail, reopened } = await citeAgainstDecision([[1, -60], [2, -50], [3, -40]], [3], { through: 2 })
+  assert.equal(reopened, false, detail)
+})
+
+test("a report with no session of the person's to describe does not say no hook has fired", async () => {
+  const dir = sandbox()
+  const fake = fakeOpenCode({ directory: dir, agent: false })
+  const cleanup = await plugin.setup(fake.ctx)
+  await fake.hooks.get("session.prompt")({ sessionID: "ses_helper", messageID: "h1", prompt: { text: "skim it" } })
+  await fake.hooks.get("session.prompt")({ sessionID: "ses_reader", messageID: "r1", prompt: { text: "opencode-retro work order: read /x/.retro/work/ses_a.md and do what it says." } })
+  fake.emit({ type: "session.created", durable: { seq: 91 }, data: { sessionID: "ses_helper", parentID: "ses_reader", location: { directory: dir } } })
+  await new Promise((r) => setImmediate(r))
+  const report = readFileSync(join(dir, ".retro", "selfcheck.md"), "utf8")
+  assert.doesNotMatch(report, /ses_helper/)
+  assert.doesNotMatch(report, /Nothing measured yet/)
+  assert.match(report, /No session of yours measured since the plugin loaded/)
   await cleanup?.()
 })

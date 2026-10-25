@@ -318,7 +318,7 @@ test("nothing to review does not promise another try for a log set aside", async
   // Fifth pre-release review.
   const { renderNothing } = await import("../src/propose.js")
   const { SET_ASIDE } = await import("../src/selfcheck.js")
-  const text = renderNothing({ extracted: { failures: [{ session: "ses_x", detail: `${SET_ASIDE}: shadow log could not be read` }] } })
+  const text = renderNothing({ extracted: { failures: [{ session: "ses_x", detail: `${SET_ASIDE}: shadow log could not be read`, setAside: true }] } })
   assert.doesNotMatch(text, /tries again/)
   assert.match(text, /unless it grows/)
 })

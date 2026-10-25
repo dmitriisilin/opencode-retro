@@ -324,7 +324,7 @@ export function renderNothing({ queued = 0, extracted = null, dir = DEFAULTS.dir
   if (failures.length) {
     // A log set aside is not tried again, and saying it is sent the reader to a `/retro` that
     // would not touch it (fifth review).
-    const aside = failures.filter((f) => String(f.detail ?? "").startsWith(SET_ASIDE)).length
+    const aside = failures.filter((f) => f.setAside).length
     const next =
       aside === failures.length
         ? `nothing reads ${aside === 1 ? "it" : "them"} again unless ${aside === 1 ? "it grows" : "they grow"}.`

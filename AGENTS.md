@@ -1028,19 +1028,25 @@ Known, listed so nobody discovers them as surprises:
   it. A provider that numbered calls per message would lose a call's record when an id came
   round again. Not guarded against: no provider OpenCode drives has been seen doing it, and a
   finer key risks splitting a Code Mode wrapper from what it wraps.
-- **A delegation that never ends is guessed at.** A child of a session with a delegation of
-  ours in flight is decided when a delegation ends and names it — the one moment that is
-  known exactly, which ended four review rounds of guessing earlier from prompts and from what
-  else was in flight. Interrupt that turn and no after-hook comes (measured: an interrupted
-  call has none); a delegation that errors may end without naming its child. Either way, at
-  the parent's turn end whatever is still deferred is decided by the delegations that never
-  said which child was theirs, in that turn: ours only if every one was ours, theirs otherwise.
-  Wrong only when delegations of both kinds were left unsaid in the same turn.
+- **A child nobody names is taken for ours.** A child of a session running a delegation of
+  ours is decided when a delegation ends and names it — the one moment that is known exactly.
+  Interrupt that turn and no after-hook comes (measured), and an errored delegation may name
+  nothing; whatever is still deferred at the parent's turn end is then ours, and not logged.
+  So a person's own subagent, run beside ours in a turn that was interrupted or errored, loses
+  its work from the log. Rounds six to fifteen of the pre-release review tried to guess better
+  — from prompts, from what else was in flight, from which delegations never said — and each
+  round found the last one's interleaving; the fifteenth asked for decision 21's model instead,
+  and this is its price.
 - **A reader adopted before it is recognised keeps what was adopted.** After a reload in the
   middle of a delegation, nothing of ours is known to be in flight, so a reworded reader is
   adopted by `session.created`; its delegation's end still claims it, and nothing more of it is
   logged, but what was absorbed by then stays in the person's log. A reload mid-delegation and
   a reworded line at once.
+- **The self-check's extraction line can describe a replaced log's last analysis.** A log
+  pruned after its week of silence and written again under the same session id starts owed,
+  but the outcome recorded for the old file stays in `state.json` until the new one is
+  analysed, and the session's line shows it. Forgetting it would need tombstones in a file
+  that merges by union; a diagnostic line wrong until the next `/retro` does not earn them.
 - **A turn's end is taken to arrive before the next turn's hooks.** The event stream lags the
   hooks by milliseconds, and the next turn starts after a model has answered; an end delivered
   later than that would close the new turn's bookkeeping. Raised in the sixth pre-release
