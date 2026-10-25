@@ -38,15 +38,29 @@ const OWN_TOOLS = new Set(["retro_record", "retro_propose"])
  * this line by accident.
  */
 export function isWorkLine(text) {
-  return typeof text === "string" && WORK_LINE.test(text)
+  if (typeof text !== "string") return false
+  // At the very start, at the first column: nothing before it, not even blank lines or spaces —
+  // a prompt that opens with the indented line pasted from the hand-over is a person's (rounds
+  // 3 and 4 of 10).
+  if (text.startsWith(WORK_LINE)) return true
+  // Or on the line right after OpenCode's own (measured: "You are a subagent spawned by
+  // another session.", then exactly one newline). There an indent is allowed: the hand-over
+  // shows the line indented, and an agent copying it exactly passes the indent on — and only
+  // a subagent's prompt ever starts with OpenCode's line (round 5). No regular expression:
+  // one that backtracked over the first line took seconds on a long pasted prompt, inside
+  // the prompt hook (round 5 of 10).
+  const nl = text.indexOf("\n")
+  if (nl < 0 || !text.startsWith(OPENCODE_SUBAGENT)) return false
+  return isIndentedWorkLine(text.slice(nl + 1))
 }
-// At the start, or right after one non-empty line before it — OpenCode's — at the start of its
-// own line, and no further: a person pasting the hand-over, where the line sits indented and
-// after a blank line, is not a reader (thirty-third review; round 3 of 10).
-// Nothing before it at all, not even blank lines or spaces: a prompt that opens with the
-// indented line pasted from the hand-over is a person's (round 4 of 10). Measured: OpenCode
-// joins its own line and the delegation with exactly one newline.
-const WORK_LINE = new RegExp(`^(?:[^\\n]*\\S[^\\n]*\\n)?${WORK_MARK}: read `)
+const WORK_LINE = `${WORK_MARK}: read `
+const OPENCODE_SUBAGENT = "You are a subagent"
+/** The line, after spaces or tabs: as an agent writes a delegation, never a person's prompt. */
+function isIndentedWorkLine(text) {
+  let i = 0
+  while (text[i] === " " || text[i] === "\t") i++
+  return text.startsWith(WORK_LINE, i)
+}
 
 /**
  * The plugin's own rounds in a log, as step ranges (analysis.md, "The plugin's own work").
@@ -114,7 +128,8 @@ export function ownRounds(records) {
     if (r.k !== "tool") continue
     // Ours wherever they land: a delegation's after-hook is written when its reader is done,
     // which an early `retro_propose` puts after the round has closed (thirty-second review).
-    if (OWN_TOOLS.has(r.tool) || (r.tool === "subagent" && isWorkLine(r.input?.prompt))) steps.add(r.n)
+    // A delegation's own text is the agent's, never the person's, so an indent is allowed.
+    if (OWN_TOOLS.has(r.tool) || (r.tool === "subagent" && typeof r.input?.prompt === "string" && (isWorkLine(r.input.prompt) || isIndentedWorkLine(r.input.prompt)))) steps.add(r.n)
   }
   // The ranges the order names are the steps themselves, run by run, so a reader is told about
   // everything that is ours — a reworded reader's records after its round included, and a
@@ -149,7 +164,20 @@ export function repliesToPlugin(records) {
   // instruction and their text, as the agent's own text is. One already running before the
   // hand-over is the person's, and stays so (forty-second to forty-fourth reviews).
   const answeringBy = new Set()
+  // A hand-over sent into a turn still running waits for that turn to end: what the turn says
+  // meanwhile is the person's, and the reply starts with the next turn (round 5 of 10) — as a
+  // round does in `ownRounds`. One handed back as a tool result is answered at once.
+  let inTurn = false
+  let waiting = false
   for (const r of [...records].sort((a, b) => (a.n ?? 0) - (b.n ?? 0))) {
+    if (r.k === "session" && !r.from) {
+      inTurn = r.event === "start"
+      if (inTurn && waiting) {
+        answering = "handover"
+        waiting = false
+      }
+      continue
+    }
     if (r.from) {
       if (r.k === "prompt" && answering === "handover" && !answeringBy.has(r.from)) {
         answeringBy.add(r.from)
@@ -157,8 +185,11 @@ export function repliesToPlugin(records) {
       } else if (r.k === "text" && answeringBy.has(r.from)) out.add(r.n)
       continue
     }
-    if (r.k === "prompt" || (r.k === "handover" && !isWorkHandover(r))) answering = r.k
-    else if (r.k === "text" && answering === "handover") out.add(r.n)
+    if (r.k === "handover" && !isWorkHandover(r) && r.sent && inTurn) waiting = true
+    else if (r.k === "prompt" || (r.k === "handover" && !isWorkHandover(r))) {
+      answering = r.k
+      waiting = false
+    } else if (r.k === "text" && answering === "handover") out.add(r.n)
   }
   return out
 }

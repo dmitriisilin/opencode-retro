@@ -1983,3 +1983,33 @@ test("a person's first message quoting the work line after a blank line is still
   // Round 4 of 10: and not at the very start either, after blank lines and an indent.
   assert.equal(isWorkLine("\n\n    opencode-retro work order: read /x/.retro/work/ses_a.md and do what it says.\n\nwhat does this mean?"), false)
 })
+
+/* Round 5 of 10. */
+
+test("a notice sent into a running turn leaves the rest of that turn the person's", async () => {
+  const { nothingNew } = await import("../src/extract.js")
+  const records = [
+    { n: 1, k: "prompt", text: "fix bug" },
+    { n: 2, k: "session", event: "start" },
+    { n: 3, k: "text", text: "looking" },
+    { n: 4, k: "handover", about: "notice", sent: true, text: "nothing to review" },
+    { n: 5, k: "text", text: "I found the cause and fixed it" },
+    { n: 6, k: "session", event: "end" },
+  ]
+  assert.equal(nothingNew(records, records.slice(4)), false, "the person's answer is something to read")
+})
+
+test("a long first prompt is checked for the reader line in linear time", async () => {
+  const { isWorkLine } = await import("../src/extract.js")
+  const long = "x".repeat(400_000)
+  const t = Date.now()
+  assert.equal(isWorkLine(long), false)
+  assert.equal(isWorkLine(long + "\nmore"), false)
+  assert.ok(Date.now() - t < 200, `took ${Date.now() - t} ms`)
+})
+
+test("a reader whose delegation copied the indented line is still recognised", async () => {
+  const { isWorkLine } = await import("../src/extract.js")
+  assert.equal(isWorkLine("You are a subagent spawned by another session.\n    opencode-retro work order: read /x.md and do what it says."), true)
+  assert.equal(isWorkLine("what does this do?\n    opencode-retro work order: read /x.md"), false, "a person's quote is not")
+})
