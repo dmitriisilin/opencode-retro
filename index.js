@@ -181,8 +181,6 @@ export default {
     // parent -> { ours, theirs }: delegations of this turn that ended without naming a child
     // (an errored call may). Read with what is still in flight when the turn ends.
     const unsaid = new Map()
-    // Children a turn end decided for want of a delegation that said: final, whatever arrives.
-    const settled = new Set()
     const MAX_CALLS = 1000
 
     /**
@@ -376,7 +374,15 @@ export default {
         // Either half naming `subagent` makes it a delegation, whichever arrived first.
         const tool = known?.tool === "subagent" ? "subagent" : (p?.tool ?? known?.tool)
         calls.delete(key) // re-inserted last, so the oldest is first to go
-        calls.set(key, { session: p?.sessionID, tool, ours, prompt: prompt || known?.prompt || null, open: (known?.open ?? 0) + 1, stale: Boolean(known?.stale) })
+        calls.set(key, {
+          session: p?.sessionID,
+          tool,
+          ours,
+          prompt: prompt || known?.prompt || null,
+          open: (known?.open ?? 0) + 1,
+          stale: Boolean(known?.stale),
+          named: Boolean(known?.named),
+        })
         if (calls.size > MAX_CALLS) {
           let evict = calls.keys().next().value
           for (const [k, call] of calls) if (call.stale) { evict = k; break }
@@ -407,11 +413,12 @@ export default {
       if (known && --known.open <= 0) calls.delete(key)
       if (known && child) known.named = true
       // A delegation that ends naming no child still started one, perhaps: the turn's end
-      // must count it among those that never said (thirteenth review). Once both halves of a
-      // Code Mode pair are in — the wrapper's names nothing even when the inner call did — and
-      // only for this turn: a stale call's late after-hook belongs to a turn already decided
-      // (fourteenth review).
-      if (known?.tool === "subagent" && !known.named && !known.stale && known.open <= 0) {
+      // must count it among those that never said (thirteenth review), once both halves of a
+      // Code Mode pair are in: the wrapper's names nothing even when the inner call did
+      // (fourteenth). A stale call is not singled out: an interrupted call has no after-hook
+      // (measured), so a stale one arriving means the turn's end came early — the case
+      // AGENTS.md "Known" assumes away — and skipping it only made that case worse (fifteenth).
+      if (known?.tool === "subagent" && !known.named && known.open <= 0) {
         const n = unsaid.get(p.sessionID) ?? { ours: 0, theirs: 0 }
         n[known.ours ? "ours" : "theirs"]++
         unsaid.set(p.sessionID, n)
@@ -422,8 +429,7 @@ export default {
       // The moment a child is known exactly: this call started it. Ours is claimed, the
       // person's adopted — whatever either was told.
       if (child) deferred.delete(child)
-      // Decided once: a child its parent's turn end has already settled stays settled.
-      if (child && !internal.has(child) && !settled.has(child)) (ours ? claimReader : adopt)(child, p.sessionID)
+      if (child && !internal.has(child)) (ours ? claimReader : adopt)(child, p.sessionID)
       if (ours) return
       ingest.toolAfter(p)
       // Measured on the parent, never on the child: the child's records are written into
@@ -610,7 +616,6 @@ export default {
         for (const [child, parent] of deferred) {
           if (parent !== sessionID) continue
           deferred.delete(child)
-          settled.add(child)
           ;(ours ? claimReader : adopt)(child, parent)
         }
         for (const call of calls.values()) if (call.session === sessionID) call.stale = true
@@ -795,7 +800,12 @@ export default {
       // this one was replaced or truncated. Treating the missing identity as "same file" let a
       // longer replacement keep the old step mark and its early steps were filtered away.
       const replaced = isReplacedLog(mark, file?.id ?? null, { exists: Boolean(file) }) || (file?.size ?? 0) < mark.size
-      if (replaced && (mark.size || mark.n)) state.forget(id)
+      if (replaced && (mark.size || mark.n)) {
+        state.forget(id)
+        // What this process remembers of the old log's analysis goes with its mark (fifteenth
+        // review): a replay or a report must not describe a file that no longer exists.
+        lastExtraction.delete(id)
+      }
       return state.looked(id)
     }
 

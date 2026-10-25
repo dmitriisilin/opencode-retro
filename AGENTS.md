@@ -1036,6 +1036,11 @@ Known, listed so nobody discovers them as surprises:
   the parent's turn end whatever is still deferred is decided by the delegations that never
   said which child was theirs, in that turn: ours only if every one was ours, theirs otherwise.
   Wrong only when delegations of both kinds were left unsaid in the same turn.
+- **A reader adopted before it is recognised keeps what was adopted.** After a reload in the
+  middle of a delegation, nothing of ours is known to be in flight, so a reworded reader is
+  adopted by `session.created`; its delegation's end still claims it, and nothing more of it is
+  logged, but what was absorbed by then stays in the person's log. A reload mid-delegation and
+  a reworded line at once.
 - **A turn's end is taken to arrive before the next turn's hooks.** The event stream lags the
   hooks by milliseconds, and the next turn starts after a model has answered; an end delivered
   later than that would close the new turn's bookkeeping. Raised in the sixth pre-release
