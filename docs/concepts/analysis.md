@@ -127,7 +127,8 @@ Then ours is claimed and the person's adopted, whatever either was told. A defer
 records are kept — its text, its steps, its calls — and only its start and end are dropped, as
 a step's. (A limit: a delegation that never ends — its turn interrupted — or ends without naming its
 child names no child, so whatever is still deferred when the parent's turn ends is decided by
-the delegations that never said: ours if none of them was the person's, theirs otherwise.
+the delegations of that turn that never said: ours only if every one of them was ours, theirs
+otherwise.
 AGENTS.md, "Known".)
 
 ## Invariants
@@ -211,6 +212,8 @@ AGENTS.md, "Known".)
   `a deferred child keeps everything but its start and end`
   `a deferred child interrupted mid-call is adopted with the call, and the tool hook is not called dead`
   `a delegation of the person's that already named its child does not make a deferred reader theirs`
+  `a person's delegation that errors without naming its child keeps that child theirs`
+  `a person's call interrupted in an earlier turn does not make a later reader theirs`
   `a deferred child is not counted as waiting while /retro would not ask about it`
   `a child already adopted is not deferred by its creation arriving late`
   `a person's call is not taken for ours because one of ours elsewhere has the same id`

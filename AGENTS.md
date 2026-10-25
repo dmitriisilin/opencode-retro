@@ -1034,8 +1034,8 @@ Known, listed so nobody discovers them as surprises:
   else was in flight. Interrupt that turn and no after-hook comes (measured: an interrupted
   call has none); a delegation that errors may end without naming its child. Either way, at
   the parent's turn end whatever is still deferred is decided by the delegations that never
-  said which child was theirs: ours if none of them was the person's, theirs otherwise. Wrong
-  only when delegations of both kinds were left unsaid in the same turn.
+  said which child was theirs, in that turn: ours only if every one was ours, theirs otherwise.
+  Wrong only when delegations of both kinds were left unsaid in the same turn.
 - **A turn's end is taken to arrive before the next turn's hooks.** The event stream lags the
   hooks by milliseconds, and the next turn starts after a model has answered; an end delivered
   later than that would close the new turn's bookkeeping. Raised in the sixth pre-release

@@ -124,6 +124,9 @@ export function createIngest({
         // counted — and the self-check called the tool hook dead (twelfth review).
         for (const [id, call] of child.pending) if (!parent.pending.has(id)) parent.pending.set(id, call)
         for (const [id, seq] of child.seq) if (!parent.seq.has(id)) parent.seq.set(id, seq)
+        // And the calls it already recorded, so a Code Mode wrapper's after-hook arriving after
+        // the adoption is still the same call, not a second record (thirteenth review).
+        for (const id of child.completed) parent.completed.add(id)
         sessions.delete(sessionID)
       }
       return parent

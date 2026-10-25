@@ -178,6 +178,9 @@ export default {
      * took four review rounds of interleavings to get wrong (sixth to ninth).
      */
     const deferred = new Map() // child -> the parent it appeared under
+    // parent -> { ours, theirs }: delegations of this turn that ended without naming a child
+    // (an errored call may). Read with what is still in flight when the turn ends.
+    const unsaid = new Map()
     const MAX_CALLS = 1000
 
     /**
@@ -341,7 +344,7 @@ export default {
       if (p?.sessionID) {
         // A prompt starts a turn; one arriving after the last turn's end is a new turn.
         ended.delete(p.sessionID)
-        turnSeen.add(p.sessionID)
+        sawTurn(p.sessionID)
       }
       ingest.prompt(p)
       observe(rootOf(p.sessionID))
@@ -400,13 +403,21 @@ export default {
       const key = callKey(p)
       const known = key ? calls.get(key) : undefined
       if (known && --known.open <= 0) calls.delete(key)
+      // A delegation that ends naming no child still started one, perhaps: the turn's end
+      // must count it among those that never said (thirteenth review).
+      if (known?.tool === "subagent" && !child && known.open <= 0) {
+        const n = unsaid.get(p.sessionID) ?? { ours: 0, theirs: 0 }
+        n[known.ours ? "ours" : "theirs"]++
+        unsaid.set(p.sessionID, n)
+      }
       // Everything a session of ours does is ours, including a call that started before the
       // session was known to be (ninth review).
       const ours = internal.has(p?.sessionID) || (known ? known.ours : ownWork(p))
       // The moment a child is known exactly: this call started it. Ours is claimed, the
       // person's adopted — whatever either was told.
       if (child) deferred.delete(child)
-      if (child && !internal.has(child)) (ours ? claimReader : adopt)(child, p.sessionID)
+      // Decided once: a child its parent's turn end has already settled stays settled.
+      if (child && !internal.has(child) && !parents.has(child)) (ours ? claimReader : adopt)(child, p.sessionID)
       if (ours) return
       ingest.toolAfter(p)
       // Measured on the parent, never on the child: the child's records are written into
@@ -583,12 +594,17 @@ export default {
         // without naming its child. Decided now the only way left, by the delegations that
         // never said — ours if none of them was the person's, theirs otherwise — and never left
         // as a session of its own, which a delegation must not become (tenth to twelfth
-        // reviews; AGENTS.md, "Known"). Before the stale mark below, which they are read past.
-        const unsaid = delegationsInFlight(sessionID, { stale: true })
+        // reviews; AGENTS.md, "Known"). Ours only when every delegation left unsaid was ours:
+        // with nothing of ours unsaid, the child cannot be ours. Before the stale mark below,
+        // so this turn's calls count and no earlier turn's leftovers do.
+        const open = delegationsInFlight(sessionID)
+        const nameless = unsaid.get(sessionID) ?? { ours: 0, theirs: 0 }
+        unsaid.delete(sessionID)
+        const ours = open.ours + nameless.ours > 0 && open.theirs + nameless.theirs === 0
         for (const [child, parent] of deferred) {
           if (parent !== sessionID) continue
           deferred.delete(child)
-          ;(unsaid.theirs ? adopt : claimReader)(child, parent)
+          ;(ours ? claimReader : adopt)(child, parent)
         }
         for (const call of calls.values()) if (call.session === sessionID) call.stale = true
       }
@@ -604,7 +620,7 @@ export default {
         // the previous turn's. Before the ownership gate on purpose: the start event arrives
         // before the turn's first hook.
         ended.delete(sessionID)
-        turnSeen.add(sessionID)
+        sawTurn(sessionID)
       }
 
       // Only a session a hook has fired for is ours. `ctx.event.subscribe` reaches every
@@ -1096,6 +1112,12 @@ export default {
      * The end of a turn. session.idle never fires outside the TUI (AGENTS.md Gotcha 2), so the
      * end of work is session.execution.*.
      */
+    /** A turn seen to start, kept in order of the latest start (`handBack`). */
+    function sawTurn(sessionID) {
+      turnSeen.delete(sessionID)
+      turnSeen.add(sessionID)
+    }
+
     function isTurnEnd(event) {
       return (
         event?.type === "session.execution.succeeded" ||
@@ -1132,13 +1154,19 @@ export default {
      */
     function handBack(sessionID) {
       if (check.describing() !== sessionID) return
-      const person = [...observedSessions].reverse().find((s) => s !== sessionID && standsAlone(s) && !ended.has(s))
+      // Working: observed most recently, or — a session resumed by a hand-over, which fires no
+      // prompt hook — with a turn started and not observed yet. Only sessions we own.
+      const working = (s) => s !== sessionID && standsAlone(s) && !ended.has(s) && ingest.owned(s)
+      const person = [...observedSessions].reverse().find(working) ?? [...turnSeen].reverse().find(working)
       if (person) return observe(person, { force: true })
       // None working: the last one that ended, as it was measured then (tenth and eleventh).
       const last = [...lastVerified.keys()].reverse().find((s) => s !== sessionID && standsAlone(s) && ended.has(s))
       if (last) {
-        // Owed first, as the end of its turn put it: an older result describes a log since grown.
-        const extraction = isOwed(last) ? { owed: true } : (lastExtraction.get(last) ?? state.extractionOf(last) ?? null)
+        // A log grown since its last analysis is waiting, as the end of its turn put it; a failed
+        // or partial read says so itself (thirteenth review).
+        const mark = state.looked(last)
+        const grown = isOwed(last) && !mark.failed && !mark.open
+        const extraction = grown ? { owed: true } : (lastExtraction.get(last) ?? state.extractionOf(last) ?? (isOwed(last) ? { owed: true } : null))
         check.replay({ ...lastVerified.get(last), extraction })
       } else check.clear()
       writeSelfCheck()
@@ -1162,10 +1190,10 @@ export default {
     }
 
     /** The delegations `parent` has in flight, ours and the person's: one pass, one rule. */
-    function delegationsInFlight(parent, { stale = false } = {}) {
+    function delegationsInFlight(parent) {
       const found = { ours: 0, theirs: 0 }
       for (const call of calls.values()) {
-        if (call.session !== parent || call.tool !== "subagent" || (call.stale && !stale)) continue
+        if (call.session !== parent || call.tool !== "subagent" || call.stale) continue
         found[call.ours ? "ours" : "theirs"]++
       }
       return found
