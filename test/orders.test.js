@@ -2133,3 +2133,19 @@ test("the contract describes a round as the code reads it, and defers to the ord
   assert.match(OUTPUT_CONTRACT, /A prompt of the person's before the round's\s+turn starts makes that turn theirs/)
   assert.match(OUTPUT_CONTRACT, /go by the list/)
 })
+
+/* Round 10 of 10. */
+
+test("the askings add up in the session /retro runs in, which its own rounds lengthen", async () => {
+  const dir = sandbox()
+  const fake = fakeOpenCode({ directory: dir, agent: false })
+  const cleanup = await plugin.setup(fake.ctx)
+
+  await work(fake, "ses_a")
+  for (let i = 0; i < 3; i++) await retro(fake, { invoker: "ses_a" })
+
+  const last = await retro(fake, { invoker: "ses_a" })
+  assert.equal(last.paths.length, 1, "still asked about")
+  assert.match(state(dir).extracted.ses_a.detail, /asked 3 times and no record came back/)
+  await cleanup?.()
+})

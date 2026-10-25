@@ -204,9 +204,12 @@ rare, since the hand-over asks it to start readers and nothing else — is left 
   `a record is refused once its log was replaced, even if its round is still closeable`
 - An order not answered by the next `/retro` is reported with how many times the log has been
   asked about, and asked again. It never retires the log: the plugin does not know whether
-  anybody came.
+  anybody came. The count starts again only when the log grew by something to read — not by
+  the plugin's own hand-overs and rounds, which lengthen the session `/retro` runs in every
+  time.
   `an order nobody answered is reported and asked again, not held against the log`
   `a log asked about many times is never given up on for it, and says how many`
+  `the askings add up in the session /retro runs in, which its own rounds lengthen`
   `/retro all reports a log it could not read, as well as the plan`
 - A read the plugin could not complete is an attempt, and three on one input retire the log.
   A reader that reported reading nothing new is one of these — an answer that covered nothing —
