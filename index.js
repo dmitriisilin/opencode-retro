@@ -555,8 +555,8 @@ export default {
         if (isForeign(event)) return
         if (internal.has(sessionID)) return
         // Anything a reader of ours starts is ours, since every call of a session of ours is
-        // (eighth review). A child of a parent with a delegation of ours in flight waits for a
-        // delegation to end and say which it started (`deferred`).
+        // (eighth review). A child of a parent with a delegation of ours unaccounted for —
+        // running, or ended naming none — waits to be told whose it is (rule 2, `deferred`).
         if (event.data?.parentID && internal.has(event.data.parentID)) {
           claimReader(sessionID, event.data.parentID)
           return
@@ -574,8 +574,9 @@ export default {
         // session was named by nobody: ours if one of ours never named a child, theirs if every
         // one of ours named its own (rule 2) — never a session of its own, which a delegation
         // must not become.
-        // A session of ours has no deferred children left by now: claiming it claimed them.
-        const ours = unaccountedUnder(sessionID)
+        // A session of ours starts nothing of the person's (rule 3). Claiming it claims what was
+        // deferred under it already; this is the belt to that.
+        const ours = internal.has(sessionID) || unaccountedUnder(sessionID)
         for (const [child, parent] of deferred) {
           if (parent !== sessionID) continue
           deferred.delete(child)
@@ -1347,9 +1348,11 @@ export default {
         if (!ended.has(sessionID)) {
           if (observe(sessionID, { force: true })) return
         } else {
-          // Shown as measured when it ended: nothing is measured now, so the heartbeat stays.
+          // Re-evaluated now, with the outcome that just arrived: the extraction line is new, and
+          // the plugin has just shown it is alive — during a /retro round, recording outcomes is
+          // most of what moves the heartbeat (twelfth and twenty-first reviews).
           const verified = lastVerified.get(sessionID)
-          if (verified) check.replay({ ...verified, extraction: result })
+          if (verified) check.verify({ ...verified, extraction: result })
         }
       }
       // Once per record: observing writes the report itself (nineteenth review).

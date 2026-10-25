@@ -295,9 +295,7 @@ export function render(state) {
     "```",
     `loaded     ${stamp(state.loaded)}   (plugin start)`,
     `heartbeat  ${stamp(state.heartbeat)}   (refreshed while a session works, at most once a minute)`,
-    state.checks.length
-      ? `verified   ${stamp(state.verified)}   (when the checks below were last evaluated)`
-      : `verified   ${stamp(state.verified)}   (when a session of yours was last measured)`,
+    `verified   ${stamp(state.verified)}   (when the checks below were last evaluated)`,
     "```",
     "",
     "**If you are working right now and `heartbeat` is more than a few minutes old, this",
