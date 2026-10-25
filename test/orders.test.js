@@ -1355,3 +1355,43 @@ test("a child already adopted is not deferred by its creation arriving late", as
   assert.ok(kindsIn(dir, "ses_review").some((r) => r.id === "late"), "its later work still goes to the person's log")
   await cleanup?.()
 })
+
+/* Twelfth pre-release review. */
+
+test("a deferred child interrupted mid-call is adopted with the call, and the tool hook is not called dead", async () => {
+  const dir = sandbox()
+  const fake = fakeOpenCode({ directory: dir, agent: false })
+  const cleanup = await plugin.setup(fake.ctx)
+  await deferHelper(fake, dir)
+  await fake.hooks.get("tool.execute.before")({ sessionID: "ses_helper", id: "open1", tool: "read", input: { path: "big" } })
+  fake.emit({ type: "session.tool.called", durable: { seq: 94 }, data: { sessionID: "ses_helper", callID: "open1", tool: "read" } })
+  fake.emit({ type: "session.execution.interrupted", durable: { seq: 95 }, data: { sessionID: "ses_helper" } })
+  fake.emit({ type: "session.execution.interrupted", durable: { seq: 96 }, data: { sessionID: "ses_review" } })
+  await new Promise((r) => setImmediate(r))
+  const theirs = kindsIn(dir, "ses_review")
+  assert.ok(theirs.some((r) => r.k === "tool" && r.id === "open1" && r.status === "unfinished"), "the open call is in their log, as unfinished")
+  assert.doesNotMatch(readFileSync(join(dir, ".retro", "selfcheck.md"), "utf8"), /BROKEN\s+tool hook/)
+  await cleanup?.()
+})
+
+test("a delegation of the person's that already named its child does not make a deferred reader theirs", async () => {
+  const dir = sandbox()
+  const fake = fakeOpenCode({ directory: dir, agent: false })
+  const cleanup = await plugin.setup(fake.ctx)
+  await work(fake, "ses_a")
+  const { paths } = await retro(fake)
+  await fake.hooks.get("session.prompt")({ sessionID: "ses_review", messageID: "rv", prompt: { text: "go on" } })
+  const mine = { sessionID: "ses_review", id: "p1", tool: "subagent", input: { agent: "explore", prompt: "explore the repo" } }
+  await fake.hooks.get("tool.execute.before")(mine)
+  await fake.hooks.get("tool.execute.before")({ sessionID: "ses_review", id: "d1", tool: "subagent", input: { agent: "general", prompt: `Have a look at ${paths[0]}` } })
+  await fake.hooks.get("session.prompt")({ sessionID: "ses_reader", messageID: "r1", prompt: { text: "See the file." } })
+  fake.emit({ type: "session.created", durable: { seq: 90 }, data: { sessionID: "ses_reader", parentID: "ses_review", location: { directory: dir } } })
+  await new Promise((r) => setImmediate(r))
+  // The person's delegation ends and names its own child; ours is interrupted.
+  await fake.hooks.get("tool.execute.after")({ ...mine, status: "completed", result: { output: "done", metadata: { sessionID: "ses_helper" } } })
+  fake.emit({ type: "session.execution.interrupted", durable: { seq: 95 }, data: { sessionID: "ses_review" } })
+  await new Promise((r) => setImmediate(r))
+  assert.ok(!kindsIn(dir, "ses_review").some((r) => /See the file/.test(r.text ?? "")), "the reader is not the person's")
+  assert.equal(existsSync(logOf(dir, "ses_reader")), false)
+  await cleanup?.()
+})

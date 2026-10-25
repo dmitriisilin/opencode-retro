@@ -125,9 +125,10 @@ a delegation of ours in flight is **deferred** — neither adopted nor claimed, 
 waiting in its own log — until a delegation ends and its result names the child it started.
 Then ours is claimed and the person's adopted, whatever either was told. A deferred child's
 records are kept — its text, its steps, its calls — and only its start and end are dropped, as
-a step's. (A limit: a delegation that never ends — its turn interrupted — names no child, so
-whatever is still deferred when the parent's turn ends is decided the only way left: ours if
-nothing of the person's was delegated beside ours, theirs otherwise. AGENTS.md, "Known".)
+a step's. (A limit: a delegation that never ends — its turn interrupted — or ends without naming its
+child names no child, so whatever is still deferred when the parent's turn ends is decided by
+the delegations that never said: ours if none of them was the person's, theirs otherwise.
+AGENTS.md, "Known".)
 
 ## Invariants
 
@@ -208,6 +209,8 @@ nothing of the person's was delegated beside ours, theirs otherwise. AGENTS.md, 
   `a child left deferred by a delegation that never ended is decided when its parent's turn is`
   `a child left deferred with only our delegation beside it is taken for ours`
   `a deferred child keeps everything but its start and end`
+  `a deferred child interrupted mid-call is adopted with the call, and the tool hook is not called dead`
+  `a delegation of the person's that already named its child does not make a deferred reader theirs`
   `a deferred child is not counted as waiting while /retro would not ask about it`
   `a child already adopted is not deferred by its creation arriving late`
   `a person's call is not taken for ours because one of ours elsewhere has the same id`

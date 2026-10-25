@@ -29,6 +29,13 @@ export function createSelfCheck({ versions, repo, loadedAt = Date.now() }) {
     activeAt: null,
   }
 
+  /** What the report says about one session, however it was measured. */
+  const describe = (session, endedAt) => {
+    state.session = session.id
+    state.sessionEnded = endedAt
+    state.checks = assess(session)
+  }
+
   return {
     state,
     active: (checks) => {
@@ -53,9 +60,7 @@ export function createSelfCheck({ versions, repo, loadedAt = Date.now() }) {
     verify(session, at = Date.now()) {
       state.verified = at
       state.heartbeat = at
-      state.session = session.id
-      state.sessionEnded = session.ended === false ? null : (session.endedAt ?? at)
-      state.checks = assess(session)
+      describe(session, session.ended === false ? null : (session.endedAt ?? at))
       return state
     },
     /**
@@ -64,9 +69,7 @@ export function createSelfCheck({ versions, repo, loadedAt = Date.now() }) {
      */
     replay(session) {
       state.verified = session.endedAt ?? state.verified
-      state.session = session.id
-      state.sessionEnded = session.endedAt ?? null
-      state.checks = assess(session)
+      describe(session, session.endedAt ?? null)
       return state
     },
     /** The session the report currently describes. */

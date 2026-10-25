@@ -161,7 +161,7 @@ export default {
      *
      * A call its turn ended in the middle of is marked `stale` when the end arrives, not
      * dropped: its after-hook can still follow, and must find it. Stale entries recognise no
-     * session (`delegatedByUs`, `oursInFlight`) and are the first to go past `MAX_CALLS`.
+     * session (`delegatedByUs`, `delegationsInFlight`) and are the first to go past `MAX_CALLS`.
      *
      * `prompt` is what an own delegation hands its reader, whose session starts before the call
      * ends and is recognised by it (`delegatedByUs`).
@@ -177,9 +177,7 @@ export default {
      * Recognising it any earlier — by its prompt, or by what else its parent had in flight —
      * took four review rounds of interleavings to get wrong (sixth to ninth).
      */
-    // child -> { parent, theirs }: the parent it appeared under, and whether a delegation of the
-    // person's was in flight there beside ours at the time.
-    const deferred = new Map()
+    const deferred = new Map() // child -> the parent it appeared under
     const MAX_CALLS = 1000
 
     /**
@@ -570,8 +568,8 @@ export default {
           claimReader(sessionID, event.data.parentID)
           return
         }
-        if (event.data?.parentID && !parents.has(sessionID) && oursInFlight(event.data.parentID)) {
-          deferred.set(sessionID, { parent: event.data.parentID, theirs: theirsInFlight(event.data.parentID) })
+        if (event.data?.parentID && !parents.has(sessionID) && delegationsInFlight(event.data.parentID).ours) {
+          deferred.set(sessionID, event.data.parentID)
           handBack(sessionID)
           return
         }
@@ -580,17 +578,19 @@ export default {
       // The calls its turn ended in the middle of recognise nothing any more. Before the gates:
       // a reader's own turn ends behind them.
       if (sessionID && isTurnEnd(event)) {
-        for (const call of calls.values()) if (call.session === sessionID) call.stale = true
         // A delegation cannot outlive the turn it runs in, so whatever is still deferred under
-        // this session was started by one that will never say so: interrupted. Decided now the
-        // only way left — ours if nothing of the person's was delegated beside ours, theirs
-        // otherwise — and never left as a session of its own, which a delegation must not
-        // become (tenth and eleventh reviews; AGENTS.md, "Known").
-        for (const [child, { parent, theirs }] of deferred) {
+        // this session was started by one that will never say which: interrupted, or ended
+        // without naming its child. Decided now the only way left, by the delegations that
+        // never said — ours if none of them was the person's, theirs otherwise — and never left
+        // as a session of its own, which a delegation must not become (tenth to twelfth
+        // reviews; AGENTS.md, "Known"). Before the stale mark below, which they are read past.
+        const unsaid = delegationsInFlight(sessionID, { stale: true })
+        for (const [child, parent] of deferred) {
           if (parent !== sessionID) continue
           deferred.delete(child)
-          ;(theirs ? adopt : claimReader)(child, parent)
+          ;(unsaid.theirs ? adopt : claimReader)(child, parent)
         }
+        for (const call of calls.values()) if (call.session === sessionID) call.stale = true
       }
 
       // Whose events are taken in at all. A deferred session's are — its text, its steps, the
@@ -1132,14 +1132,13 @@ export default {
      */
     function handBack(sessionID) {
       if (check.describing() !== sessionID) return
-      // Working: observed most recently, or with a turn started and not yet observed.
-      const working = (s) => s !== sessionID && standsAlone(s) && !ended.has(s)
-      const person = [...observedSessions].reverse().find(working) ?? [...turnSeen].reverse().find(working)
+      const person = [...observedSessions].reverse().find((s) => s !== sessionID && standsAlone(s) && !ended.has(s))
       if (person) return observe(person, { force: true })
       // None working: the last one that ended, as it was measured then (tenth and eleventh).
       const last = [...lastVerified.keys()].reverse().find((s) => s !== sessionID && standsAlone(s) && ended.has(s))
       if (last) {
-        const extraction = lastExtraction.get(last) ?? state.extractionOf(last) ?? (isOwed(last) ? { owed: true } : null)
+        // Owed first, as the end of its turn put it: an older result describes a log since grown.
+        const extraction = isOwed(last) ? { owed: true } : (lastExtraction.get(last) ?? state.extractionOf(last) ?? null)
         check.replay({ ...lastVerified.get(last), extraction })
       } else check.clear()
       writeSelfCheck()
@@ -1162,16 +1161,14 @@ export default {
       return false
     }
 
-    /** Whether `parent` has a delegation of ours in flight. */
-    function oursInFlight(parent) {
-      for (const call of calls.values()) if (call.session === parent && call.ours && !call.stale && call.tool === "subagent") return true
-      return false
-    }
-
-    /** Whether `parent` has a delegation of the person's in flight. */
-    function theirsInFlight(parent) {
-      for (const call of calls.values()) if (call.session === parent && !call.ours && !call.stale && call.tool === "subagent") return true
-      return false
+    /** The delegations `parent` has in flight, ours and the person's: one pass, one rule. */
+    function delegationsInFlight(parent, { stale = false } = {}) {
+      const found = { ours: 0, theirs: 0 }
+      for (const call of calls.values()) {
+        if (call.session !== parent || call.tool !== "subagent" || (call.stale && !stale)) continue
+        found[call.ours ? "ours" : "theirs"]++
+      }
+      return found
     }
 
     function flat(text) {

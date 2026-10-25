@@ -119,6 +119,11 @@ export function createIngest({
         for (const key of ["prompts", "texts", "steps", "toolHook", "toolEvents", "ours"]) {
           parent.counts[key] += child.counts[key]
         }
+        // And its calls still open, so the parent's end writes them as unfinished. Dropped, a
+        // deferred child interrupted mid-call lost the call from the log while its event still
+        // counted — and the self-check called the tool hook dead (twelfth review).
+        for (const [id, call] of child.pending) if (!parent.pending.has(id)) parent.pending.set(id, call)
+        for (const [id, seq] of child.seq) if (!parent.seq.has(id)) parent.seq.set(id, seq)
         sessions.delete(sessionID)
       }
       return parent

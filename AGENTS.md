@@ -1032,9 +1032,10 @@ Known, listed so nobody discovers them as surprises:
   ours in flight is decided when a delegation ends and names it — the one moment that is
   known exactly, which ended four review rounds of guessing earlier from prompts and from what
   else was in flight. Interrupt that turn and no after-hook comes (measured: an interrupted
-  call has none), so at the parent's turn end whatever is still deferred is decided by what
-  was in flight beside it: ours if nothing of the person's was delegated too, theirs
-  otherwise. Wrong only for an interrupted turn that ran both kinds of delegation at once.
+  call has none); a delegation that errors may end without naming its child. Either way, at
+  the parent's turn end whatever is still deferred is decided by the delegations that never
+  said which child was theirs: ours if none of them was the person's, theirs otherwise. Wrong
+  only when delegations of both kinds were left unsaid in the same turn.
 - **A turn's end is taken to arrive before the next turn's hooks.** The event stream lags the
   hooks by milliseconds, and the next turn starts after a model has answered; an end delivered
   later than that would close the new turn's bookkeeping. Raised in the sixth pre-release
