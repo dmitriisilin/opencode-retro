@@ -124,15 +124,15 @@ the plugin's bookkeeping never turns into a lesson about the plugin. Three rules
    the tool, and for a delegation the prescribed line or an open order's path — and that holds
    for both halves of a Code Mode pair until the call ends or its turn does.
 2. A child created while its parent runs a delegation of ours is **deferred**: neither adopted
-   nor claimed, its records waiting in its own log, its start and end dropped as a step's. A
-   delegation of the person's naming it when it ends makes it theirs; anything else — ours
-   naming it, or nothing by the parent's turn end — makes it ours.
+   nor claimed, its records waiting in its own log, its start and end dropped as a step's. The
+   delegation naming it when it ends decides it. One nobody named by the parent's turn end is
+   ours if a delegation of ours was still running then, and the person's if every one of ours
+   had ended and named its own.
 3. Everything a session of ours does, or starts, is ours. A fresh session whose first prompt is
    the prescribed line is ours from that prompt.
 
-(A limit, the price of rule 2: a person's subagent run beside ours and never named — a turn
-interrupted, or a delegation errored, with both kinds running — is taken for ours, and its work
-is not logged. AGENTS.md, "Known". Thirteen review rounds of guessing better than this, from
+(A limit, the price of rule 2: a person's subagent run beside ours and never named, in a turn
+interrupted while ours still ran, is taken for ours, and its work is not logged. AGENTS.md, "Known". Thirteen review rounds of guessing better than this, from
 prompts and from what else was in flight, each found the last one's interleaving.)
 
 ## Invariants
@@ -206,6 +206,7 @@ prompts and from what else was in flight, each found the last one's interleaving
   `a report about a session that turns out to be ours goes back to the last that ended, rather than stay`
   `a deferred child's turn is a step, not a session`
   `a child nobody names by its parent's turn end is ours, even beside a delegation of the person's`
+  `a child nobody names, after every delegation of ours named its own, is the person's`
   `a child left deferred with only our delegation beside it is taken for ours`
   `a deferred child keeps everything but its start and end`
   `a deferred child interrupted mid-call is adopted with the call, and the tool hook is not called dead`

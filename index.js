@@ -147,13 +147,14 @@ export default {
      *
      * 1. A tool call is ours or the person's as decided when it starts, and that holds for both
      *    halves of a Code Mode pair until the call ends or its turn does.
-     * 2. A child created while its parent runs a delegation of ours waits (`deferred`); a
-     *    delegation of the person's naming it when it ends makes it theirs, and anything else —
-     *    ours naming it, or nothing by the parent's turn end — makes it ours.
+     * 2. A child created while its parent runs a delegation of ours waits (`deferred`). The
+     *    delegation that names it when it ends decides it; one nobody named by the parent's turn
+     *    end is ours if a delegation of ours was still running then, and the person's if not —
+     *    every one of ours having named its own (sixteenth review).
      * 3. Everything a session of ours does, or starts, is ours.
      *
-     * The cost, stated: a person's subagent run beside ours and never named — a turn interrupted
-     * or a delegation errored with both kinds running — is taken for ours (AGENTS.md, "Known").
+     * The cost, stated: a person's subagent run beside ours and never named, in a turn
+     * interrupted while ours still ran, is taken for ours (AGENTS.md, "Known").
      *
      * `calls`: `session\0id` -> { session, tool, ours, open }. Code Mode reports one call as its
      * inner tool and again as its `execute` wrapper under one id — inner before, wrapper before,
@@ -227,7 +228,7 @@ export default {
           // will read them — but only while nothing owes them. A log that grows is owed afresh;
           // announcing it as beyond reading next to the line saying it will be tried again is
           // two contradictory claims in one report.
-          setAside: log.list().filter((id) => !isOwed(id) && state.extractionOf(id)?.ok === false).length,
+          setAside: log.list().filter((id) => !isOwed(id) && state.extractionOf(id)?.setAside).length,
         })
         mkdirSync(config.dir, { recursive: true })
         writeFileSync(config.selfcheck, check.render())
@@ -558,12 +559,14 @@ export default {
       // Before the gates: a reader's own turn ends behind them.
       if (sessionID && isTurnEnd(event)) {
         // A delegation cannot outlive the turn it runs in. Whatever is still deferred under this
-        // session was named by nobody, and is ours (rule 2); never a session of its own, which a
-        // delegation must not become.
+        // session was named by nobody: ours if one of ours never ended, theirs if every one of
+        // ours did and named its own (rule 2) — never a session of its own, which a delegation
+        // must not become.
+        const ours = oursInFlight(sessionID)
         for (const [child, parent] of deferred) {
           if (parent !== sessionID) continue
           deferred.delete(child)
-          if (!internal.has(child)) claimReader(child, parent)
+          if (!internal.has(child)) (ours ? claimReader : adopt)(child, parent)
         }
         // The turn's calls go with it, an interrupted one included (rule 1).
         for (const [key, call] of calls) if (call.session === sessionID) calls.delete(key)
@@ -865,10 +868,7 @@ export default {
         const first = cited.length ? Math.min(...cited) : -Infinity
         // Never past what the reader read: records written after its order — the session working
         // on while it was read — would date old evidence as new (third pre-release review).
-        const top = cited.length ? Math.max(...cited) : Infinity
-        // Unless all it cites lies past it: a reader citing steps beyond its own `through` is
-        // contradicting itself, and its citation is the better evidence of the two (fifteenth).
-        const last = first > upTo ? top : Math.min(top, upTo)
+        const last = Math.min(cited.length ? Math.max(...cited) : Infinity, upTo)
         const at = records.filter((r) => r.n >= first && r.n <= last && Number.isFinite(r.t)).map((r) => r.t)
         return at.length ? Math.max(...at) : null
       }

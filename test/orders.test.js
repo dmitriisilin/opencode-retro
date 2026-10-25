@@ -1429,11 +1429,12 @@ test("under Code Mode a delegation that named its child is not counted as unsaid
 
 /* Fifteenth pre-release review, over the whole series. */
 
-test("evidence citing only steps past what the reader says it read is dated by its citation", async () => {
-  // The upper bound alone was clamped to `through`, so a citation wholly past it matched no
-  // record, came back undated, and reopened a decision.
-  const { detail, reopened } = await citeAgainstDecision([[1, -60], [2, -50], [3, -40]], [3], { through: 2 })
-  assert.equal(reopened, false, detail)
+test("evidence citing only steps past what the reader says it read is undated, and reopens", async () => {
+  // Never past what the reader read, one rule for every citation; what it leaves undated
+  // reopens, the cheaper way to be wrong (sixteenth review, undoing an exception the fifteenth
+  // made, which dated a citation by its steps only when none of them fell inside the read).
+  const { reopened } = await citeAgainstDecision([[1, -60], [2, -50], [3, -40]], [3], { through: 2 })
+  assert.equal(reopened, true)
 })
 
 test("a report with no session of the person's to describe does not say no hook has fired", async () => {
@@ -1447,6 +1448,21 @@ test("a report with no session of the person's to describe does not say no hook 
   const report = readFileSync(join(dir, ".retro", "selfcheck.md"), "utf8")
   assert.doesNotMatch(report, /ses_helper/)
   assert.doesNotMatch(report, /Nothing measured yet/)
-  assert.match(report, /No session of yours measured since the plugin loaded/)
+  assert.match(report, /No session of yours to describe right now/)
+  await cleanup?.()
+})
+
+test("a child nobody names, after every delegation of ours named its own, is the person's", async () => {
+  // Sixteenth pre-release review: claimed as ours, the person's helper was deleted, though every
+  // reader of ours was already accounted for.
+  const dir = sandbox()
+  const fake = fakeOpenCode({ directory: dir, agent: false })
+  const cleanup = await plugin.setup(fake.ctx)
+  await deferHelper(fake, dir)
+  await fake.hooks.get("tool.execute.after")({ sessionID: "ses_review", id: "d1", tool: "subagent", input: { agent: "general", prompt: "x" }, status: "completed", result: { output: "done", metadata: { sessionID: "ses_reader" } } })
+  await fake.hooks.get("tool.execute.after")({ sessionID: "ses_review", id: "p1", tool: "subagent", input: { agent: "explore", prompt: "explore the repo" }, status: "error", result: { output: "failed" } })
+  fake.emit({ type: "session.execution.succeeded", durable: { seq: 97 }, data: { sessionID: "ses_review" } })
+  await new Promise((r) => setImmediate(r))
+  assert.ok(kindsIn(dir, "ses_review").some((r) => r.id === "hx"), "the helper's work is the person's")
   await cleanup?.()
 })

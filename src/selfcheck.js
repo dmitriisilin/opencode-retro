@@ -320,12 +320,13 @@ export function render(state) {
       "",
     )
   } else if (state.heartbeat) {
-    // Hooks have fired — for the plugin's own work only, which proves the hooks and says nothing
-    // about a session of the person's (fifteenth review: "nothing measured yet" was untrue).
+    // Hooks have fired, so "nothing measured yet" would be untrue (fifteenth review); what was
+    // measured turned out not to be a session of the person's, or not yet known to be one.
     lines.push(
-      "No session of yours measured since the plugin loaded. Hooks have fired, at",
-      `${stamp(state.heartbeat)}, but only for the plugin's own work, which is not measured; these`,
-      "lines are written again at the next prompt or tool call of a session of yours.",
+      `No session of yours to describe right now. Hooks have fired (last at ${stamp(state.heartbeat)}),`,
+      "but the session they were measured on turned out to be the plugin's own work, or a",
+      "delegation not yet known to be yours. These lines are written again at the next prompt",
+      "or tool call of a session of yours.",
       "",
     )
   } else {

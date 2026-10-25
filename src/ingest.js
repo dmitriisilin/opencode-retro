@@ -24,7 +24,7 @@ import { clamp } from "./config.js"
  * The end of a turn. session.idle never fires outside the TUI (AGENTS.md Gotcha 2), so the end
  * of work is session.execution.*. One list, for this file and for `index.js`.
  */
-export const TURN_ENDS = ["session.execution.succeeded", "session.execution.failed", "session.execution.interrupted"]
+const TURN_ENDS = ["session.execution.succeeded", "session.execution.failed", "session.execution.interrupted"]
 export const isTurnEnd = (event) => TURN_ENDS.includes(event?.type)
 
 export function createIngest({
