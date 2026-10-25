@@ -105,11 +105,14 @@ last analysis of the session whichever path ran it.
   delegation — or, when that cannot be measured (a hook of the plugin's
   own, a session already ended), the session the report describes. A session seen for the first time is measured at once, then at most once
   a minute; while a session of the person's works, the heartbeat is never written alone over
-  checks a minute stale, whoever's hooks are firing.
+  checks a minute stale, whoever's hooks are firing — a minute since the checks were last
+  evaluated, not since the report was last written, which a reader's record or a decision
+  does without measuring anything.
   `while a session works, its checks are evaluated again once a minute, not only the heartbeat`
   `a /retro round's readers keep the session the report describes measured`
   `a delegated child's hooks keep its parent measured`
   `a hook that names no session still keeps the report measured`
+  `the report's own writes do not keep the session it describes from being measured`
 - A call the turn ended in the middle of accounts for its event: an interrupted turn with a
   subagent still running is not a dead tool hook.
   `an interrupted turn with a subagent still running is not a dead tool hook`

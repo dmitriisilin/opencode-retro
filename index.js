@@ -124,6 +124,11 @@ export default {
     // writes a hook causes (`observe`, `pulse`). A first observation, a forced one and a
     // command's write are not throttled.
     let lastWrite = 0
+    // When the checks were last evaluated: what throttles a hook's measuring (`observe`). Not the
+    // write clock — a reader's record rewrites the report about its own log, and a round's
+    // records came often enough to keep the person's session from being measured again while
+    // its heartbeat went on moving (checks after the ten rounds).
+    let lastVerify = 0
     /**
      * Sessions that are the plugin's own work — the subagents reading work orders. Nothing of
      * theirs is written to any log (analysis.md, "The plugin's own work").
@@ -250,11 +255,12 @@ export default {
       if (ended.has(sessionID)) return
       const now = Date.now()
       const first = !observedSessions.has(sessionID)
-      if (!first && !force && now - lastWrite < config.heartbeatMs) return
+      if (!first && !force && now - lastVerify < config.heartbeatMs) return
       // Re-inserted, so the set is in order of the latest observation (`handBack`).
       observedSessions.delete(sessionID)
       observedSessions.add(sessionID)
       const measured = measure(sessionID)
+      lastVerify = now
       check.verify(
         {
           id: sessionID,
@@ -575,6 +581,7 @@ export default {
       // One write for the end of a turn (thirty-sixth review), and as the stock has it: a turn
       // that added nothing to read — a round of the plugin's own — leaves the log not owed, and
       // the line says what is known instead (thirty-fifth review).
+      lastVerify = Date.now()
       check.verify({ ...verified, extraction: extractionFor(sessionID, { owedIfUnknown: true, records: measured.records }) })
       writeSelfCheck()
     }
@@ -1339,7 +1346,7 @@ export default {
       // it was written for, and a log pruned and written again under the same id is new
       // material, never asked about (checks after the ten rounds).
       const sameLog = !previous.id || previous.id === identity
-      const grew = !sameLog || (readSize > previous.size && !(previous.asked && grewByNothing(sessionID, previous.size, readSize, records)))
+      const grew = !sameLog || (readSize > previous.size && !(before && grewByNothing(sessionID, previous.size, readSize, records)))
       const asked = (grew ? 0 : before) + 1
       // `lastReal`: the last step anything could be read in — not the plugin's own, not a turn's
       // end. A reader leaves a trailing round out as it is told to, and reading up to here is

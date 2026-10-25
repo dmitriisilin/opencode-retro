@@ -2307,3 +2307,30 @@ test("an asking that was answered is not counted among those nobody answered", a
   assert.match(state(dir).extracted.ses_a.detail, /asked 1 time and no record came back/)
   await cleanup?.()
 })
+
+test("the report's own writes do not keep the session it describes from being measured", async () => {
+  const real = Date.now
+  let now = Date.parse("2026-10-25T10:00:00Z")
+  Date.now = () => now
+  try {
+    const dir = sandbox()
+    const fake = fakeOpenCode({ directory: dir, agent: false })
+    const cleanup = await plugin.setup(fake.ctx)
+    await fake.hooks.get("session.prompt")({ sessionID: "ses_p", messageID: "m1", prompt: { text: "go" } })
+    await fake.hooks.get("session.prompt")({ sessionID: "ses_reader", messageID: "r1", prompt: { text: "opencode-retro work order: read /x/.retro/work/ses_q.md and do what it says." } })
+    for (let i = 0; i < 4; i++) {
+      // A write that measures nothing — a decision recorded, a reader's record — then a hook.
+      now += 40_000
+      await fake.tools.get("retro_decide").execute({ id: "no-such-lesson", status: "rejected" }, { sessionID: "ses_p" })
+      now += 21_000
+      const call = { sessionID: "ses_reader", id: `r${i}`, tool: "read", input: { path: "x" } }
+      await fake.hooks.get("tool.execute.before")(call)
+      await fake.hooks.get("tool.execute.after")({ ...call, status: "completed", result: { output: "y" } })
+    }
+    const report = readFileSync(join(dir, ".retro", "selfcheck.md"), "utf8")
+    assert.match(report, /verified\s+2026-10-25 10:04/, "measured again, not only the heartbeat")
+    await cleanup?.()
+  } finally {
+    Date.now = real
+  }
+})
