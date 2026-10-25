@@ -598,7 +598,7 @@ export default {
       // and a marker written after the work it opens — an agent answering fast enough, or a
       // fake answering at once — put the round's start behind its end, and the person's next
       // work inside it (analysis.md, "The plugin's own work").
-      noteHandover(sessionID, text, about)
+      noteHandover(sessionID, text, about, { sent: resume })
       try {
         // The synthetic goes to the session's inbox; without `resume` it sits there until
         // the user happens to type something, and they never see what they asked for.
@@ -639,7 +639,7 @@ export default {
      * other end, when the review added a session and 19 steps of cost to the lesson it was
      * checking.
      */
-    function noteHandover(sessionID, text, about = "lesson") {
+    function noteHandover(sessionID, text, about = "lesson", { sent = false } = {}) {
       // Never for a delegated session: a reader's is not logged at all, and no hand-over of the
       // plugin's is that session's — a layer under the gates in `retro_propose` and `/retro`,
       // for whatever reaches here another way (fortieth and forty-first reviews).
@@ -647,7 +647,7 @@ export default {
       try {
         // Our own text is not material, so it does not make the log owed — `isOwed` says so
         // through `nothingNew`, in one place, for every kind of growth that holds nothing to read.
-        ingest.handover(sessionID, text, about)
+        ingest.handover(sessionID, text, about, { sent })
       } catch (err) {
         onError("handover.log", err)
       }
@@ -1149,10 +1149,13 @@ export default {
       })
       const since = starts.length >= 2 ? starts.at(-2) : -1
       let handovers = 0
-      for (let i = since + 1; i < records.length; i++) if (!records[i].from && records[i].k === "handover") handovers++
+      // Only a hand-over sent to start a turn: `retro_propose`'s is a tool result inside the turn
+      // it answers, and counted, it excused the person's next turn — a dead prompt hook hidden
+      // after every review (forty-eighth review).
+      for (let i = since + 1; i < records.length; i++) if (!records[i].from && records[i].k === "handover" && records[i].sent) handovers++
       // Only the hand-overs: prompts are what this process saw this turn, which a log pruned
       // or rewritten under the session may no longer show (forty-seventh review, by the model).
-      return { handovers: Math.max(handovers, ingest.counts(sessionID).handovers) }
+      return { handovers }
     }
 
     /** A turn seen to start, kept in order of the latest start (`handBack`). */

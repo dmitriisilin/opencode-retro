@@ -245,7 +245,7 @@ export function createIngest({
      *
      * It also marks the session as ours, which it is: the command ran in it.
      */
-    handover(sessionID, text, about = "lesson") {
+    handover(sessionID, text, about = "lesson", { sent = false } = {}) {
       const s = session(owner(sessionID))
       s.owned = true
       // Counted because a hand-over is the only input some sessions ever get. The self-check
@@ -257,7 +257,9 @@ export function createIngest({
       // log and mean different things — the extraction contract discounts work that reviews
       // a lesson it was handed, which would have swallowed real work done after a request
       // for an analysis.
-      append(sessionID, { k: "handover", about, text: text ?? "" })
+      // `sent`: sent to start a turn, as a `/retro` hand-over is — not a tool result the agent
+      // already holds, nor a notice; only a sent one can be what started a turn (forty-eighth).
+      append(sessionID, { k: "handover", about, ...(sent ? { sent: true } : {}), text: text ?? "" })
     },
 
     /**
