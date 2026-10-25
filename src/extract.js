@@ -40,9 +40,10 @@ const OWN_TOOLS = new Set(["retro_record", "retro_propose"])
 export function isWorkLine(text) {
   return typeof text === "string" && WORK_LINE.test(text)
 }
-// At the start, or after one line before it — OpenCode's — and no further: a person pasting the
-// whole hand-over, where the line sits indented deep in it, is not a reader (thirty-third review).
-const WORK_LINE = new RegExp(`^\\s*(?:[^\\n]*\\n\\s*)?${WORK_MARK}: read `)
+// At the start, or right after one non-empty line before it — OpenCode's — at the start of its
+// own line, and no further: a person pasting the hand-over, where the line sits indented and
+// after a blank line, is not a reader (thirty-third review; round 3 of 10).
+const WORK_LINE = new RegExp(`^\\s*(?:[^\\n]*\\S[^\\n]*\\n)?${WORK_MARK}: read `)
 
 /**
  * The plugin's own rounds in a log, as step ranges (analysis.md, "The plugin's own work").

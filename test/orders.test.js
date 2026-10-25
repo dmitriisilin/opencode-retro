@@ -1971,3 +1971,13 @@ test("a hand-over that never arrived, or arrived during the turn, excuses nothin
     await cleanup?.()
   }
 })
+
+test("a person's first message quoting the work line after a blank line is still logged", async () => {
+  // Round 3 of 10: the line was accepted after any whitespace, blank lines and indentation
+  // included, and a session that quoted it — copied from the hand-over — was never logged.
+  const { isWorkLine } = await import("../src/extract.js")
+  assert.equal(isWorkLine("what does this do?\n\n    opencode-retro work order: read /x/.retro/work/ses_a.md and do what it says."), false)
+  assert.equal(isWorkLine("what does this do?\n    opencode-retro work order: read /x.md"), false, "indented, it is quoted")
+  assert.equal(isWorkLine("You are a subagent spawned by another session.\nopencode-retro work order: read /x.md and do what it says."), true)
+  assert.equal(isWorkLine("opencode-retro work order: read /x.md"), true)
+})
