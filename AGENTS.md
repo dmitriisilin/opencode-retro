@@ -1028,6 +1028,13 @@ Known, listed so nobody discovers them as surprises:
   it. A provider that numbered calls per message would lose a call's record when an id came
   round again. Not guarded against: no provider OpenCode drives has been seen doing it, and a
   finer key risks splitting a Code Mode wrapper from what it wraps.
+- **A reader recognised only when its delegation ends leaves behind what was already
+  adopted.** A reader is recognised by the exact line, by the very prompt of a delegation of
+  ours in flight, or by a parent with nothing of the person's running beside our delegation.
+  An agent that rewords the delegation *and* runs work of the person's beside it defeats all
+  three until the delegation's after-hook, and by then `session.created` has folded the
+  reader's records into the person's log, which cannot give them back. Both at once, on top
+  of a hand-over that asks for one reader at a time and nothing else; not guarded further.
 - **A turn's end is taken to arrive before the next turn's hooks.** The event stream lags the
   hooks by milliseconds, and the next turn starts after a model has answered; an end delivered
   later than that would close the new turn's bookkeeping. Raised in the sixth pre-release

@@ -1094,3 +1094,19 @@ test("the third read that covered nothing new says the log is set aside, not tha
   assert.doesNotMatch(reply, /will be asked about again/)
   await cleanup?.()
 })
+
+test("a reader delegating part of its reading does not make the report about itself", async () => {
+  // Seventh pre-release review: claiming the helper re-measured its parent — our own reader.
+  const dir = sandbox()
+  const fake = fakeOpenCode({ directory: dir, agent: false })
+  const cleanup = await plugin.setup(fake.ctx)
+  await work(fake, "ses_a")
+  const { paths } = await retro(fake)
+  await fake.hooks.get("session.prompt")({ sessionID: "ses_reader", messageID: "r1", prompt: { text: `opencode-retro work order: read ${paths[0]} and do what it says.` } })
+  const help = { sessionID: "ses_reader", id: "h1", tool: "subagent", input: { agent: "explore", prompt: "skim the log" } }
+  await fake.hooks.get("tool.execute.before")(help)
+  await fake.hooks.get("tool.execute.after")({ ...help, status: "completed", result: { output: "skimmed", metadata: { sessionID: "ses_helper" } } })
+  const report = readFileSync(join(dir, ".retro", "selfcheck.md"), "utf8")
+  assert.doesNotMatch(report, /ses_reader|ses_helper/)
+  await cleanup?.()
+})

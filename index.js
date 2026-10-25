@@ -143,7 +143,7 @@ export default {
     const rounds = new Map()
     /**
      * Tool calls in flight, and whether each is the plugin's own — decided when the call starts,
-     * and never again: `session\0message\0id` -> { session, tool, ours, prompt, open }.
+     * and never again: `session\0id` -> { session, tool, ours, prompt, open, stale }.
      *
      * Which call is ours used to be re-decided when it finished. By then the reader has recorded
      * and its order is closed, so a delegation recognised by the order's path no longer matched
@@ -376,7 +376,7 @@ export default {
       if (child && (ours || internal.has(child))) {
         // One of ours. If its own prompt did not carry the mark (the agent may have worded the
         // delegation its own way), whatever it wrote before the link was known goes now.
-        claimReader(child, p.sessionID)
+        if (!internal.has(child)) claimReader(child, p.sessionID)
       } else if (child) {
         adopt(child, p.sessionID)
       }
@@ -1063,7 +1063,9 @@ export default {
       observedSessions.delete(child)
       turnSeen.delete(child)
       ended.delete(child)
-      if (parent) observe(rootOf(parent), { force: true })
+      // Not when the parent is a reader itself, delegating part of its reading: the report is
+      // never about one of ours (seventh review).
+      if (parent && !internal.has(parent)) observe(rootOf(parent), { force: true })
     }
 
     /**

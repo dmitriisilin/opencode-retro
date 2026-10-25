@@ -197,6 +197,7 @@ the plugin's bookkeeping never turns into a lesson about the plugin.
   `an own delegation interrupted with its turn recognises nothing afterwards`
   `an interrupted call of the person's does not stop a later reader being recognised by its parent`
   `a Code Mode wrapper reported ahead of an own call leaves nothing unpaired in the person's log`
+  `a reader delegating part of its reading does not make the report about itself`
   `a turn's end arriving late does not make the next turn's own calls the person's`
   `a child is not taken for a reader while anything of the person's runs beside our delegation`
 - One command issues at most `extractLimit` orders; the rest stay owed and are named. A
