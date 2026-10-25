@@ -121,6 +121,8 @@ export default {
     /** Evidence from each finished session, kept so a later extraction can complete its report. */
     const lastVerified = new Map()
     let lastBeat = 0
+    // When a hook last had the report written for its heartbeat (`pulse`).
+    let lastPulse = 0
     /**
      * Sessions that are the plugin's own work — the subagents reading work orders. Nothing of
      * theirs is written to any log (analysis.md, "The plugin's own work").
@@ -311,6 +313,7 @@ export default {
       try {
         await ctx[domain].hook(name, (payload) => {
           try {
+            pulse()
             handler(payload)
           } catch (err) {
             onError(`${domain}.${name}`, err)
@@ -371,9 +374,6 @@ export default {
       // Its first half was taken for the person's; it is ours, so that start is taken back.
       if (ours && known && !known.ours) ingest.unstart(p?.sessionID, p?.id)
       if (ours) {
-        // A hook fired, in a session of the person's: during a /retro round these are most of
-        // what does, so they keep the heartbeat honest (selfcheck.md).
-        if (!internal.has(p?.sessionID)) observe(rootOf(p.sessionID))
         // A wrapper of a call already counted is the same call.
         if (known?.ours) return
         // Not logged, but counted: the event stream sees this call like any other, and the
@@ -1091,6 +1091,20 @@ export default {
       return typeof text === "string" && text.trimStart().startsWith(`${WORK_MARK}: read `)
     }
 
+    /**
+     * Any hook fired — the person's, or a reader's of ours. The heartbeat moves, and nothing
+     * else may move it: not the event stream, which keeps running when hooks die, nor a tool of
+     * ours (selfcheck.md, "Only a hook moves the heartbeat"; twenty-third review). The report is
+     * written for it at most once a minute; observing a session writes it too.
+     */
+    function pulse() {
+      const now = Date.now()
+      check.beat(now)
+      if (now - lastPulse < config.heartbeatMs) return
+      lastPulse = now
+      writeSelfCheck()
+    }
+
     /** A turn seen to start, kept in order of the latest start (`handBack`). */
     function sawTurn(sessionID) {
       turnSeen.delete(sessionID)
@@ -1396,7 +1410,7 @@ export default {
       if (!file || (order.id && file.id && order.id !== file.id)) {
         state.close(session, "void")
         removeWork(session)
-        reportOutcome(session, { ok: false, detail: "the log was replaced since its order was written; it is asked for again" })
+        writeSelfCheck()
         return { ok: false, detail: `the log of \`${session}\` was replaced since its order was written; it will be asked for again.` }
       }
       /**

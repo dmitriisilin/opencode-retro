@@ -59,9 +59,12 @@ export function createSelfCheck({ versions, repo, loadedAt = Date.now() }) {
      */
     verify(session, at = Date.now()) {
       state.verified = at
-      state.heartbeat = at
       describe(session, session.ended === false ? null : (session.endedAt ?? at))
       return state
+    },
+    /** A hook fired. The only thing that moves the heartbeat (selfcheck.md). */
+    beat(at = Date.now()) {
+      state.heartbeat = at
     },
     /**
      * Evaluate the checks again over what was measured when a session's turn ended — with a new

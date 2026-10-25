@@ -1618,3 +1618,30 @@ test("a recorded outcome is evaluated anew without moving the heartbeat, and a r
     Date.now = real
   }
 })
+
+test("an outcome for a session still working leaves the heartbeat, and a reader's own hooks move it", async () => {
+  // Twenty-third pre-release review: the working-session branch observed, and observing moved
+  // the heartbeat from a tool of ours; a reader's hooks, all a round has for minutes, did not.
+  const real = Date.now
+  let now = Date.parse("2026-10-25T10:00:00Z")
+  Date.now = () => now
+  try {
+    const dir = sandbox()
+    const fake = fakeOpenCode({ directory: dir, agent: false })
+    const cleanup = await plugin.setup(fake.ctx)
+    await work(fake, "ses_b") // still working
+    now += 10 * 60_000
+    await retro(fake, { invoker: "ses_b" })
+    await record(fake, "ses_b", [LESSON], { dir })
+    let report = readFileSync(join(dir, ".retro", "selfcheck.md"), "utf8")
+    assert.match(report, /heartbeat\s+2026-10-25 10:00/, "a tool of ours is not a hook firing")
+    now += 10 * 60_000
+    await fake.hooks.get("session.prompt")({ sessionID: "ses_reader", messageID: "r1", prompt: { text: "opencode-retro work order: read /x/.retro/work/ses_q.md and do what it says." } })
+    await fake.hooks.get("tool.execute.before")({ sessionID: "ses_reader", id: "rr", tool: "read", input: { path: "x" } })
+    report = readFileSync(join(dir, ".retro", "selfcheck.md"), "utf8")
+    assert.match(report, /heartbeat\s+2026-10-25 10:20/, "a reader's hook is a hook firing")
+    await cleanup?.()
+  } finally {
+    Date.now = real
+  }
+})

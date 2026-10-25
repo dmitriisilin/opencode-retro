@@ -721,11 +721,12 @@ say so, with numbers, instead of guessing.
 | Field | Written | Costs | Gone means |
 |---|---|---|---|
 | `loaded` | plugin `setup` runs | nothing | the plugin is not being loaded at all |
-| `heartbeat` | on tool-call activity, throttled to ≤1 write/min | one small file write | hooks stopped firing mid-session |
-| `verified` | whenever the assertions below are evaluated: the first prompt of a session, then on activity at ≤1 write/min, then again when it ends | one file write | hooks are not firing at all |
+| `heartbeat` | whenever any hook fires — and only then — written at most once a minute | one small file write | hooks stopped firing mid-session |
+| `verified` | whenever the assertions below are evaluated: the first prompt of a session, then on activity at ≤1 write/min, when a turn ends, when an outcome is recorded | one file write | nothing is being evaluated at all |
 
 The gaps diagnose the halves. All three old → not running. `loaded` fresh and the rest old →
-we load, but no hook ever fires.
+we load, but no hook ever fires. `verified` fresh and `heartbeat` old → the event stream and
+the plugin's own tools run, and the hooks do not: nothing but a hook moves the heartbeat.
 
 **The assertions are evaluated from the first prompt, not only when a session ends.** They
 used to wait for the end, which left the file saying "nothing measured yet" for exactly as
