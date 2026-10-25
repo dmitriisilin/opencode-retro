@@ -1081,6 +1081,21 @@ Known, listed so nobody discovers them as surprises:
   hooks by milliseconds, and the next turn starts after a model has answered; an end delivered
   later than that would close the new turn's bookkeeping. Raised in the pre-release reviews as
   a possibility, never seen; nothing here orders the two streams.
+- **A turn whose start went unlogged reads as between turns.** A process that did not own the
+  session when the start event arrived — reloaded in the middle of a turn — writes no start
+  record, and a `/retro` sent into that turn opens its round at once, taking the rest of the
+  turn's work for the plugin's. The self-check's reading of which turn a hand-over began does
+  look past an unlogged start (`turnHandovers`); the rounds do not. Raised in three review
+  rounds after the ten, each time needing a reload and a `/retro` in the same turn; left alone,
+  because guessing a turn from its tool calls is the kind of inference the markers replaced.
+- **A long-lived service keeps what it learned about every session.** The ingest's per-session
+  entry is kept across turns, since ownership must survive them, and nothing evicts it but a
+  reader claimed or a child adopted; the report's own maps grow the same way. Bounded by the
+  sessions one process sees, not by the active ones.
+- **A report reads a log more than once.** One read per report, but the owed check and the
+  rounds each sort and walk it again, and a growth check misses its cache when two callers ask
+  from different offsets. Cost, not correctness; inside hooks, on a log a session left open for
+  weeks.
 - Whether the agent answers every order is prompted, not enforced, for the same reason. An
   order nobody answers is reported with how many times it has been asked and asked again, so
   this degrades visibly rather than going silent; it is never held against the log.
