@@ -402,9 +402,9 @@ test("the order tells the reader where the plugin's own work is and to leave it 
   const { paths } = await retro(fake, { invoker: "ses_other" })
   const order = readFileSync(paths.find((path) => path.includes("ses_review")), "utf8")
   assert.match(order, /The plugin's own work — leave it out/)
-  const { ownRounds } = await import("../src/extract.js")
+  const { ownRounds, formatRanges } = await import("../src/extract.js")
   const logged = readFileSync(logOf(dir, "ses_review"), "utf8").trim().split("\n").map((l) => JSON.parse(l))
-  const named = ownRounds(logged).ranges.map(([a, b]) => (a === b ? `step ${a}` : `steps ${a}–${b}`)).join(", ")
+  const named = formatRanges(ownRounds(logged).ranges)
   assert.ok(named.length > 0)
   assert.ok(order.includes(`describe: ${named}.`), `the order names exactly the plugin's own steps: ${named}`)
   assert.match(order, /asks for a round of this plugin's own/, "and the rule that says what a round is")
@@ -1495,7 +1495,7 @@ test("a hand-over that could not be delivered is followed by a notice saying so"
 
 /* Thirty-third pre-release review. */
 
-test("a hand-over that landed in a running turn with no turn after it opens an empty round", async () => {
+test("a hand-over that landed in a running turn with no turn after it takes nothing of the person's", async () => {
   const { ownRounds, nothingNew } = await import("../src/extract.js")
   const records = [
     { n: 1, k: "prompt", text: "fix the build" },
@@ -1652,38 +1652,31 @@ test("a turn that added only a round does not report its log as waiting", async 
   await cleanup?.()
 })
 
-test("a reworded reader calling retro_propose is told so too", async () => {
-  // Thirty-sixth pre-release review: the guard asked only whether the caller was a reader known
-  // by its line; one worded its own way is an ordinary child, and still closed every order.
-  const dir = sandbox()
-  const fake = fakeOpenCode({ directory: dir, agent: false })
-  const cleanup = await plugin.setup(fake.ctx)
-  await work(fake, "ses_a")
-  await retro(fake)
-  await fake.hooks.get("session.prompt")({ sessionID: "ses_kid", messageID: "k1", prompt: { text: "have a look" } })
-  fake.emit({ type: "session.created", durable: { seq: 90 }, data: { sessionID: "ses_kid", parentID: "ses_review", location: { directory: dir } } })
-  await new Promise((r) => setImmediate(r))
-  const result = await fake.tools.get("retro_propose").execute({}, { sessionID: "ses_kid" })
-  assert.match(result.content, /Not yours to call/)
-  assert.equal(result.output.ok, false, "with an output the declared schema accepts")
-  assert.ok(!state(dir).orders.ses_a.done, "nothing closed")
-  await cleanup?.()
+test("a reworded reader calling retro_propose writes nothing that ends the round", async () => {
+  // Thirty-eighth pre-release review: a hand-over noted for a delegated session went into the
+  // person's log and closed the round there, leaving the rest of it as the person's.
+  const { ownRounds } = await import("../src/extract.js")
+  const records = [
+    { n: 1, k: "handover", about: "work", text: "the logs come first" },
+    { n: 2, k: "session", event: "start" },
+    { n: 3, k: "prompt", from: "ses_kid", text: "You are a subagent.\nHave a look at /x.md" },
+    { n: 4, k: "handover", about: "lesson", from: "ses_kid", text: "a lesson" },
+    { n: 5, k: "tool", tool: "subagent", input: { prompt: "another reader, worded its own way" } },
+    { n: 6, k: "handover", about: "lesson", text: "the lesson, to the person" },
+  ]
+  const { steps } = ownRounds(records)
+  assert.ok(steps.has(5), "the round goes on past the reader's hand-over")
+  assert.ok(!steps.has(6), "and ends at the person's")
 })
 
-test("while a round is open, only the session it was handed to may call retro_propose", async () => {
-  // Thirty-seventh pre-release review: decided by who the caller is, which needs no event to
-  // have arrived first — a reader worded its own way, calling before its creation is known, is
-  // refused like any other session.
+test("a reader's call to retro_propose writes nothing into any log", async () => {
   const dir = sandbox()
   const fake = fakeOpenCode({ directory: dir, agent: false })
   const cleanup = await plugin.setup(fake.ctx)
   await work(fake, "ses_a")
-  await retro(fake) // handed to ses_review
-  const stranger = await fake.tools.get("retro_propose").execute({}, { sessionID: "ses_kid_not_yet_known" })
-  assert.match(stranger.content, /Not yours to call/)
-  assert.ok(!state(dir).orders.ses_a.done, "nothing closed")
-  await record(fake, "ses_a", [], { dir })
-  const owner = await fake.tools.get("retro_propose").execute({}, { sessionID: "ses_review" })
-  assert.doesNotMatch(owner.content, /Not yours to call/, "the session it was handed to may")
+  const { paths } = await retro(fake)
+  await fake.hooks.get("session.prompt")({ sessionID: "ses_reader", messageID: "r1", prompt: { text: `opencode-retro work order: read ${paths[0]} and do what it says.` } })
+  await fake.tools.get("retro_propose").execute({}, { sessionID: "ses_reader" })
+  assert.equal(existsSync(logOf(dir, "ses_reader")), false)
   await cleanup?.()
 })

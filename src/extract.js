@@ -19,6 +19,9 @@ import { OUTPUT_CONTRACT, normaliseLessons } from "./contract.js"
 /** The first line of every work order, which is also how the plugin knows its own subagents. */
 export const WORK_MARK = "opencode-retro work order"
 
+/** Step ranges as an order names them: `step 4, steps 6–9`. One spelling, shared with the tests. */
+export const formatRanges = (ranges) => ranges.map(([a, b]) => (a === b ? `step ${a}` : `steps ${a}–${b}`)).join(", ")
+
 /** A hand-over asking for a round: a marker, holding nothing to read. */
 const isWorkHandover = (r) => r.k === "handover" && r.about === "work"
 
@@ -52,7 +55,9 @@ const WORK_LINE = new RegExp(`^\\s*(?:[^\\n]*\\n\\s*)?${WORK_MARK}: read `)
  */
 export function ownRounds(records) {
   const sorted = [...records].sort((a, b) => (a.n ?? 0) - (b.n ?? 0))
-  const ends = (r) => (r.k === "prompt" && !r.from) || (r.k === "handover" && !isWorkHandover(r))
+  // Only the person's session ends a round: a hand-over noted for a delegated one — a reader
+  // worded its own way calling `retro_propose` — is inside it (thirty-eighth review).
+  const ends = (r) => !r.from && (r.k === "prompt" || (r.k === "handover" && !isWorkHandover(r)))
   const steps = new Set()
   for (let i = 0; i < sorted.length; i++) {
     if (!isWorkHandover(sorted[i])) continue
@@ -82,8 +87,7 @@ export function ownRounds(records) {
     // A `work` hand-over is the plugin's own text, the opening one and any second one alike:
     // named with its round, so the order's ranges stay whole and no hand-over goes unnamed
     // (thirty-sixth and thirty-seventh reviews). It holds nothing to read either way.
-    steps.add(sorted[i].n)
-    for (let j = from; j < end; j++) steps.add(sorted[j].n)
+    for (let j = i; j < end; j++) if (j >= from || isWorkHandover(sorted[j])) steps.add(sorted[j].n)
     i = end - 1
   }
   // A delegated session that began inside a round — a reader worded its own way — is ours in
@@ -258,7 +262,7 @@ export function composeOrder({
           "The plugin's own work — leave it out",
           "These steps are the plugin's own — its rounds and its own calls, as the rules below " +
             "describe: " +
-            rounds.map(([a, b]) => (a === b ? `step ${a}` : `steps ${a}–${b}`)).join(", ") +
+            formatRanges(rounds) +
             ". So is any call to `retro_record` or `retro_propose`, and any `subagent` call whose " +
             "prompt is a work order's line, wherever it is.",
         )
