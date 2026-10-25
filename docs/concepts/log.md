@@ -17,6 +17,11 @@ nobody can interpret.
 stream reaches every session in the project, including foreign ones, so an event may
 *annotate* a log that a hook opened and may never open one.
 
+**Origin (`from`).** A record written into a log for a session other than its owner — a
+delegation's, folded into the task that delegated it — carries that session's id as `from`. A
+`prompt` with `from` is the delegation's instruction; one without it is the person's. Without
+it the log could not tell the two apart.
+
 **Step number (`n`).** The plugin's own counter, one per owner, continuous for the life of
 the file. It is the coordinate a lesson's evidence uses, so it must be unique within a
 file and must not restart when a new process appends to an existing log. The plugin is
@@ -50,12 +55,13 @@ rendered as one.
   different file is void. A mark written before identities existed is voided by the one
   other safe signal: a byte count larger than the file on disk.
 
-**Owed.** A log the plugin still has to read: its size grew past the mark, or the mark is
-`open`, or the mark is `failed` with attempts left. Owed is computed from the file and its
-mark, every time — there is no queue to fall out of step with them — and it is the only
-reason an analysis happens. The plugin's own hand-over, written into a log that was read to its end,
-does not make it owed: it is not material (analysis.md), and the next read carries it along
-with whatever follows.
+**Owed.** A log the plugin still has to read: it grew past the mark by something an analysis
+could read, or the mark is `open`, or the mark is `failed` with attempts left. Owed is
+computed from the file and its mark, every time — there is no queue to fall out of step with
+them — and it is the only reason an analysis happens. Growth that holds nothing to read does
+not make a log owed: a hand-over, a turn's start or end, a reply to the plugin's own
+hand-over, and the plugin's own rounds (analysis.md, "The plugin's own work"). It stays in the
+log, and the next read carries it along with whatever follows.
 
 **Read to its end.** A log whose mark covers its whole size with neither flag set. Not
 permanent: a session prompted again grows past its mark and is owed again.

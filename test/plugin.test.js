@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url"
 import plugin from "../index.js"
 import { fakeOpenCode as sharedFake } from "./fake-opencode.js"
 import { parseShadowLog } from "../src/shadowlog.js"
+import { nothingNew } from "../src/extract.js"
 import { parseFrontmatter } from "../src/frontmatter.js"
 
 /**
@@ -83,7 +84,15 @@ const owed = (directory) => {
     .map((f) => f.slice(0, -6))
     .filter((id) => {
       const m = typeof looked[id] === "number" ? { size: looked[id] } : (looked[id] ?? {})
-      return statSync(join(dir, `${id}.jsonl`)).size > (m.size ?? 0) || m.open || (m.failed && (m.attempts ?? 0) < 3)
+      // Grown past the mark by something an analysis could read (log.md, "Owed"); a log that
+      // cannot be read is owed whatever it holds, as the plugin has it.
+      let grew = statSync(join(dir, `${id}.jsonl`)).size > (m.size ?? 0)
+      try {
+        const bytes = readFileSync(join(dir, `${id}.jsonl`))
+        const added = parseShadowLog(bytes.subarray(m.size ?? 0).toString("utf8"))
+        if (grew && added.length > 0 && nothingNew(parseShadowLog(bytes.toString("utf8")), added)) grew = false
+      } catch {}
+      return grew || m.open || (m.failed && (m.attempts ?? 0) < 3)
     })
     .sort()
 }

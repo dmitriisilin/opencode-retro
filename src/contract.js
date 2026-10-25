@@ -50,6 +50,8 @@ per line, and the fields you need are:
   \`tool\` (a tool call, with \`tool\`, \`input\`, \`status\`, \`exit\` and \`output\`), \`step\`
   (an edit, with the files it touched), \`handover\` (text this plugin wrote into the session
   itself — see the rule on reviews below), \`session\` (a turn starting or ending).
+- \`from\` — on a step that came from a subagent's session rather than the person's: its
+  session id. A \`prompt\` with \`from\` is a delegation's instruction, not the person's.
 - \`exit\` on a tool call — **read this, not \`status\`.** A shell command that failed is
   \`status: "completed"\` with a non-zero \`exit\`. An analysis that reads \`status\` sees a
   clean session.
@@ -82,10 +84,18 @@ Rules:
   lesson it handed over is the review of that lesson, not the problem happening again: do not
   report it as a recurrence, and do not count its steps as cost. Counting it would make every
   lesson that gets reviewed look more important for having been reviewed. Only
-  \`"about": "lesson"\` means that. A \`handover\` with \`"about": "work"\` is this plugin
-  asking for an analysis, and one with \`"about": "notice"\` is this plugin saying something
-  else — nothing to review, a command that failed. Neither says anything about the session,
-  and whatever follows them is ordinary work.
+  \`"about": "lesson"\` means that.
+- **The plugin's own work is not the session's — leave it out.** A \`handover\` with
+  \`"about": "work"\` starts a round of this plugin's own: the agent starting readers like
+  you, their records coming back, \`retro_propose\`. The round runs to the next \`handover\`
+  of another kind or the next \`prompt\` without \`from\` — the person speaking again —
+  whichever comes first. A call to \`retro_record\`
+  or \`retro_propose\` is the plugin's own wherever it is. Take no lesson from any of it,
+  count none of its steps as cost, and read nothing in it as a recurrence: a reader in there
+  may be quoting another session's problems, and they are that session's. The order names the
+  rounds it knows of by their steps. A \`handover\` with \`"about": "notice"\` is this plugin
+  saying something else — nothing to review, a command that failed — and what follows it is
+  ordinary work.
 - \`proposal\` is optional. Omit it, or use \`null\`, when you can name the problem but not
   the fix — that is a normal and useful answer.
 - \`ask\` is optional and is for when the fix depends on something only the human knows.

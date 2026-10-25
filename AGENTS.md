@@ -948,8 +948,11 @@ understood is just a diagnostic that was written badly.
 - [x] Gone with the call they served: `options.model`, `extractTimeoutMs`, `asyncExtract`,
       the variant choice, the model-resolution chain, the empty-reply retry, and
       `session.create / generate / remove` from the required surface.
-- [x] The plugin's own work — its subagents, the calls that start them, its own tools — is
-      kept out of every log, so an analysis is never analysed.
+- [x] An analysis is never analysed. A reader's session is not logged; the rest of a round —
+      the delegations, the plugin's own tool calls — is logged between its hand-overs, the
+      order tells the next reader to leave it out, and it is not new material (analysis.md).
+      *First built as a mechanical filter on every call, which took thirteen review rounds to
+      fail at; replaced on the owner's suggestion by the markers that were already there.*
 - [x] The two hand-overs are told apart in the log (`about`), because the extraction contract
       discounts work that reviews a lesson and would have discounted work done after a
       request for an analysis.
@@ -1031,45 +1034,33 @@ Known, listed so nobody discovers them as surprises:
   stays open and comes back next time with the currency check noting that its target has
   changed — recoverable, but it is the one step the plugin cannot do for itself.
 - **Call ids are taken to be unique within a session**, as measured (`call_00_<random>`), and
-  the log, the pairing of hooks and the record of which calls are the plugin's own all rest on
-  it. A provider that numbered calls per message would lose a call's record when an id came
+  the log and the pairing of hooks rest on it. A provider that numbered calls per message would lose a call's record when an id came
   round again. Not guarded against: no provider OpenCode drives has been seen doing it, and a
   finer key risks splitting a Code Mode wrapper from what it wraps.
-- **A child nobody names is taken for ours.** A child of a session running a delegation of
-  ours is decided when a delegation ends and names it — the one moment that is known exactly.
-  Interrupt that turn and no after-hook comes (measured), and an errored delegation may name
-  nothing; whatever is still deferred at the parent's turn end is then ours if a delegation of
-  ours never named a child — still running, or ended naming none — and not logged, and the
-  person's otherwise. So a person's own subagent, run beside ours in a turn where one of ours
-  was interrupted or errored, loses its work from the log. Rounds six to fifteen of the pre-release review tried to guess better
-  — from prompts, from what else was in flight, from which delegations never said — and each
-  round found the last one's interleaving; the fifteenth asked for decision 21's model instead,
-  and this is its price.
-- **A reload in the middle of a delegation forgets what was in flight.** Which calls are ours
-  and which children are deferred is held in memory, so a plugin reloaded mid-delegation (an
-  edit to `opencode.json`, a service restart) knows of none: a reworded reader is adopted by
-  `session.created`, and what it absorbed stays in the person's log though the delegation's
-  end still claims it; a child deferred before the reload is left a log of its own and read
-  like a session by a later `/retro`. A reload mid-delegation and a reworded line, or a reload
-  while a child waits.
+- **What the person's agent does inside a round is left out with it.** A round — from the
+  `work` hand-over to the next hand-over of another kind or the person's next prompt — is the
+  plugin's own, and the reader of the next order is told to leave it out (analysis.md). The
+  hand-over asks the agent to start readers and nothing else, so the only thing lost is work it
+  did of its own accord in between. *This replaces thirteen review rounds of deciding, call by
+  call and child by child, which work was ours — by the delegation's prompt, by its order's
+  path, by what else its parent had in flight, by which delegation named which child. Every
+  round found the last one's interleaving. The owner's question ended it: why not tell the
+  reader where the plugin's work begins and ends, and let it leave that out?*
+- **A reload in the middle of a round can leave a reader's log behind.** A reader is known by
+  its first prompt, and that knowledge is in memory: reloaded mid-delegation (an edit to
+  `opencode.json`, a service restart), the plugin logs the reader's later work as a session of
+  its own until the delegation ends and names it, which folds it into the person's log inside
+  the round. A delegation that never ends after the reload leaves that log on its own, and a
+  later `/retro` reads it like a session.
 - **The self-check's extraction line can describe a replaced log's last analysis.** A log
   pruned after its week of silence and written again under the same session id starts owed,
   but the outcome recorded for the old file stays in `state.json` until the new one is
   analysed, and the session's line shows it. Forgetting it would need tombstones in a file
   that merges by union; a diagnostic line wrong until the next `/retro` does not earn them.
-- **Rule 2 reads a delegation's child from `result.metadata.sessionID`**, as measured. If that
-  moves, every delegation of ours looks unaccounted for, and a person's child deferred beside
-  one and never named is taken for ours — silently, the kind of drift Gotcha 8 is about. A
-  warning was tried in the eighteenth review and removed in the nineteenth: it could not see a
-  Code Mode delegation, would have fired on legitimate results, and reached only `plugin.log`.
-  What does catch it is the bench, whose review session would stop showing the person's work.
-- **Events are taken to arrive in step with the hooks around them.** The event stream lags the
-  hooks by milliseconds, and what it would have to overtake takes a model's answer: a turn's
-  end is taken to arrive before the next turn's hooks, and a child's creation before the end of
-  the delegation that started it. Delivered later than that, an end would close the next
-  turn's bookkeeping, and a creation would find its delegation already gone. Raised in the
-  sixth, fifteenth and eighteenth pre-release reviews as possibilities, never seen; nothing
-  here orders the two streams, and every attempt to was a new interleaving.
+- **A turn's end is taken to arrive before the next turn's hooks.** The event stream lags the
+  hooks by milliseconds, and the next turn starts after a model has answered; an end delivered
+  later than that would close the new turn's bookkeeping. Raised in the pre-release reviews as
+  a possibility, never seen; nothing here orders the two streams.
 - Whether the agent answers every order is prompted, not enforced, for the same reason. An
   order nobody answers is reported with how many times it has been asked and asked again, so
   this degrades visibly rather than going silent; it is never held against the log.

@@ -19,6 +19,61 @@ import { OUTPUT_CONTRACT, normaliseLessons } from "./contract.js"
 /** The first line of every work order, which is also how the plugin knows its own subagents. */
 export const WORK_MARK = "opencode-retro work order"
 
+/** The plugin's own tools: a call to one is the plugin's work wherever it is (analysis.md). */
+const OWN_TOOLS = new Set(["retro_record", "retro_propose"])
+
+/**
+ * The plugin's own rounds in a log, as step ranges (analysis.md, "The plugin's own work").
+ *
+ * A round starts at a `handover` with `about: "work"` and runs to the next `handover` of
+ * another kind or the next `prompt` of the person's (one with no `from`), whichever comes
+ * first — neither of which is part of it.
+ * A call to one of the plugin's own tools is the plugin's wherever it is. One definition,
+ * read two ways: the order lists the rounds for its reader to leave out, and the plugin does
+ * not count them as new material.
+ */
+export function ownRounds(records) {
+  const steps = new Set()
+  const ranges = []
+  let open = null
+  for (const r of [...records].sort((a, b) => (a.n ?? 0) - (b.n ?? 0))) {
+    if (r.k === "handover" && r.about === "work") {
+      if (open === null) open = [r.n, r.n]
+    } else if (open && ((r.k === "prompt" && !r.from) || r.k === "handover")) {
+      ranges.push(open)
+      open = null
+    }
+    if (open) {
+      open[1] = r.n
+      steps.add(r.n)
+    } else if (r.k === "tool" && OWN_TOOLS.has(r.tool)) {
+      steps.add(r.n)
+    }
+  }
+  if (open) ranges.push(open)
+  return { steps, ranges }
+}
+
+/**
+ * Whether the records a log gained since its mark (`added`, out of `all`) hold nothing to read:
+ * each is a step that cannot hold evidence — a hand-over, a turn's start or end, a reply to the
+ * plugin's own hand-over — or part of the plugin's own work. A log grown by nothing else is not
+ * owed for it (log.md, "Owed"): otherwise every `/retro` left its own session waiting, and the
+ * next one paid a read to skip the round.
+ */
+export function nothingNew(all, added) {
+  const own = ownRounds(all).steps
+  const answersPlugin = new Set()
+  let answering = null
+  for (const r of [...all].sort((a, b) => (a.n ?? 0) - (b.n ?? 0))) {
+    if (r.k === "prompt" || r.k === "handover") answering = r.k
+    else if (r.k === "text" && answering === "handover") answersPlugin.add(r.n)
+  }
+  const material = (r) =>
+    r.k === "prompt" || r.k === "tool" || (r.k === "text" && !answersPlugin.has(r.n)) || (r.k === "step" && r.files?.length > 0)
+  return added.every((r) => !material(r) || own.has(r.n))
+}
+
 /**
  * The work order for one log: which log to read, what is new in it, and what the plugin
  * knows that the reader cannot. Returns `{ skipped }` for a log that cannot hold evidence,
@@ -47,6 +102,8 @@ export function composeOrder({
   analysedUpTo = 0,
   /** Lessons already decided from this very session, so the same ground is not covered twice. */
   concluded = [],
+  /** The plugin's own rounds in the log, `[first, last]` each, for the reader to leave out. */
+  rounds = [],
 }) {
   // Skip only a session that cannot contain evidence of anything: one instruction, one
   // answer, nothing done. Everything else is analysed.
@@ -114,6 +171,14 @@ export function composeOrder({
     prompt.text,
     section("Session", [`id: ${session}`, `log: ${logPath}`, `steps: 1 to ${lastN || "?"}`].join("\n")),
     section("What to read", scope),
+    rounds.length
+      ? section(
+          "The plugin's own work — leave it out",
+          "These steps are rounds of this plugin's own, as the rules below describe: " +
+            rounds.map(([a, b]) => (a === b ? `step ${a}` : `steps ${a}–${b}`)).join(", ") +
+            ". So is any call to `retro_record` or `retro_propose`.",
+        )
+      : null,
     section("Already concluded from this session", renderConcluded(concluded)),
     section("Already fixed", renderFixed(store.listArchive?.() ?? [])),
     section("Lessons already recorded", renderExisting(existing, lessonsDir)),

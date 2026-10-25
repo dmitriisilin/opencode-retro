@@ -178,10 +178,17 @@ const isMaterial = (r) => MATERIAL.has(r.k) || (r.k === "step" && r.files?.lengt
  */
 const materialSteps = (records) => {
   let answering = null
+  // The plugin's own round (analysis.md, "The plugin's own work"): from a `work` hand-over to
+  // the next hand-over of another kind or the next prompt. Written out here from the concept,
+  // not borrowed from the code it checks.
+  let inRound = false
   const out = []
   for (const r of [...records].sort((a, b) => a.n - b.n)) {
+    if (r.k === "handover" && r.about === "work") inRound = true
+    else if ((r.k === "prompt" && !r.from) || r.k === "handover") inRound = false
     if (r.k === "prompt" || r.k === "handover") answering = r.k
-    if (!isMaterial(r)) continue
+    if (!isMaterial(r) || inRound) continue
+    if (r.k === "tool" && (r.tool === "retro_record" || r.tool === "retro_propose")) continue
     if (r.k === "text" && answering === "handover") continue
     out.push(r)
   }

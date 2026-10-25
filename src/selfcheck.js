@@ -145,7 +145,6 @@ export function assess(session) {
    */
   const counted = () =>
     `${c.toolEvents} tool-call event${c.toolEvents === 1 ? "" : "s"} seen, ${c.toolHook} reached the hook` +
-    (c.ours ? `, ${c.ours} ${c.ours === 1 ? "was" : "were"} our own and not logged` : "") +
     (c.unfinished ? `, ${c.unfinished} unfinished when the turn ended` : "")
 
   if (!c.toolEvents) {
@@ -158,14 +157,12 @@ export function assess(session) {
       detail: session.ended === false ? "no tool calls seen yet" : "no tool calls in this turn",
       meaning: "nothing to compare against; a turn without tool calls cannot prove the hook works.",
     })
-  } else if (c.toolHook + (c.unfinished ?? 0) + (c.ours ?? 0) >= c.toolEvents) {
-    // Two kinds of event legitimately have no after-hook behind them. A call the turn ended in
-    // the middle of has one by nature, and the log records it as `unfinished`: counting it as a
-    // missing hook call reported BROKEN for every interrupted turn with a subagent still
-    // running (found by the model test). And a call of the plugin's own — its tools, the
-    // subagents it asks for — has its hooks dropped on purpose, because none of that is the
-    // user's work: counting those reported BROKEN for every `/retro` that analysed anything
-    // (found by the first live run of the subagent path).
+  } else if (c.toolHook + (c.unfinished ?? 0) >= c.toolEvents) {
+    // A call the turn ended in the middle of legitimately has no after-hook behind it, and the
+    // log records it as `unfinished`: counting it as a missing hook call reported BROKEN for
+    // every interrupted turn with a subagent still running (found by the model test). The
+    // plugin's own calls in a person's session are logged like any other now, so they need no
+    // accounting of their own; a reader's session drops its events and its hooks alike.
     checks.push({
       status: OK,
       name: "tool hook",
@@ -328,12 +325,11 @@ export function render(state) {
     )
   } else if (state.heartbeat) {
     // Hooks have fired, so "nothing measured yet" would be untrue (fifteenth review); what was
-    // measured turned out not to be a session of the person's, or not yet known to be one.
+    // measured turned out not to be a session of the person's.
     lines.push(
       `No session of yours to describe right now. Hooks have fired (last at ${stamp(state.heartbeat)}),`,
-      "but the session they were measured on turned out to be the plugin's own work, or a",
-      "delegation not yet known to be yours. These lines are written again at the next prompt",
-      "or tool call of a session of yours.",
+      "but the session they were measured on turned out to be the plugin's own work. These",
+      "lines are written again at the next prompt or tool call of a session of yours.",
       "",
     )
   } else {

@@ -32,9 +32,6 @@ export function createIngest({
   maxOutput,
   now = () => Date.now(),
   parentOf = () => null,
-  // A session whose start and end are a delegation's steps although no parent is known yet —
-  // a child deferred until the delegation that started it says so (analysis.md).
-  isStep = () => false,
   // Where this session's numbering left off. The counter is in memory, so without this a new
   // process appending to an existing log starts again at 1 and a lesson's step range stops
   // resolving to one record. Measured on real logs: three and four such blocks in one file.
@@ -61,7 +58,7 @@ export function createIngest({
         pending: new Map(),
         completed: new Set(),
         seq: new Map(),
-        counts: { prompts: 0, handovers: 0, toolHook: 0, toolEvents: 0, ours: 0, unfinished: 0, steps: 0, texts: 0, records: 0 },
+        counts: { prompts: 0, handovers: 0, toolHook: 0, toolEvents: 0, unfinished: 0, steps: 0, texts: 0, records: 0 },
       }
       sessions.set(id, s)
     }
@@ -91,7 +88,9 @@ export function createIngest({
     const target = owner(sessionID)
     const s = session(target)
     s.counts.records++
-    emit(target, { v: 1, n: ++s.n, t: now(), ...record })
+    // A record of a delegation's own session says so: its prompt is the delegation's
+    // instruction, not the person's, and the log alone could not tell the two apart.
+    emit(target, { v: 1, n: ++s.n, t: now(), ...(target !== sessionID ? { from: sessionID } : {}), ...record })
   }
 
   return {
@@ -123,7 +122,7 @@ export function createIngest({
         // The counters recorded before the link are part of the parent's evidence now. If the
         // prompt is not moved with it, the self-check reports the parent's prompt hook dead
         // because the only prompt it ever saw was the child's instruction.
-        for (const key of ["prompts", "texts", "steps", "toolHook", "toolEvents", "ours"]) {
+        for (const key of ["prompts", "texts", "steps", "toolHook", "toolEvents"]) {
           parent.counts[key] += child.counts[key]
         }
         // And its calls still open, so the parent's end writes them as unfinished. Dropped, a
@@ -149,15 +148,6 @@ export function createIngest({
     counts: (sessionID) => session(owner(sessionID)).counts,
     sessions: () => [...sessions.keys()],
     forget: (sessionID) => sessions.delete(sessionID),
-
-    /**
-     * Take back a call's start: it turned out to be the plugin's own, after its first half —
-     * a Code Mode wrapper reported ahead of what it wraps — was taken as the person's. Left
-     * pending, it was flushed into their log as an unpaired call when the session ended.
-     */
-    unstart(sessionID, id) {
-      sessions.get(owner(sessionID))?.pending.delete(id)
-    },
 
     /** Unpaired calls, flushed when a session ends so an interrupt leaves no silent gap. */
     pending: (sessionID) => [...session(sessionID).pending.values()],
@@ -244,20 +234,6 @@ export function createIngest({
     },
 
     /**
-     * A tool call of the plugin's own, in the user's session: its own tools, and the
-     * subagents it asks for. These are not written to any log (analysis.md), so their
-     * `tool.execute.*` hooks are deliberately dropped — but the event stream counts them like
-     * any other call, and the self-check compares the two. Counted here so the comparison can
-     * account for the ones we skipped on purpose, the same way it accounts for a call the turn
-     * ended in the middle of. Without it, a `/retro` reported BROKEN about a healthy tool hook
-     * — measured on the first live run of the subagent path.
-     */
-    ownCall(sessionID) {
-      const s = sessions.get(owner(sessionID))
-      if (s?.owned) s.counts.ours++
-    },
-
-    /**
      * Everything we take from the event stream rather than from a hook.
      *
      * An event may annotate a session we already own; it may never open one. The hooks fire
@@ -307,13 +283,13 @@ export function createIngest({
           return
 
         case "session.execution.started":
-          if (parentOf(sessionID) || isStep(sessionID)) return // a delegation is a step, not a session
+          if (parentOf(sessionID)) return // a delegation is a step, not a session
           append(sessionID, { k: "session", seq, event: "start" })
           return
 
         default:
           if (!isTurnEnd(e)) return
-          if (parentOf(sessionID) || isStep(sessionID)) return // the parent is still working
+          if (parentOf(sessionID)) return // the parent is still working
           for (const call of s.pending.values()) {
             // Counted, because it is the one honest reason an event has no after-hook: the turn
             // ended (an interrupt, usually) while the call was still running.

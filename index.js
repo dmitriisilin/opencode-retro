@@ -7,7 +7,7 @@ import { createShadowLog, identityOf, isReplacedLog, parseShadowLog } from "./sr
 import { createState } from "./src/state.js"
 import { concludedIn, createStore, score } from "./src/lessons.js"
 import { assessCurrency, fingerprintOf } from "./src/currency.js"
-import { WORK_MARK, composeOrder, recordAnswer } from "./src/extract.js"
+import { WORK_MARK, composeOrder, nothingNew, ownRounds, recordAnswer } from "./src/extract.js"
 import { RECORD_INPUT } from "./src/contract.js"
 import {
   PROPOSE_INPUT,
@@ -145,43 +145,13 @@ export default {
      */
     const rounds = new Map()
     /**
-     * Which call and which session is the plugin's own, in three rules (fifteenth review, which
-     * asked for the model decision 21 asks for, after thirteen rounds had grown a state machine):
-     *
-     * 1. A tool call is ours or the person's as decided when it starts, and that holds for both
-     *    halves of a Code Mode pair until the call ends or its turn does.
-     * 2. A child created while its parent runs a delegation of ours waits (`deferred`). The
-     *    delegation that names it when it ends decides it; one nobody named by the parent's turn
-     *    end is ours if a delegation of ours never named a child — still running then, or ended
-     *    naming none — and the person's if every one of ours named its own (sixteenth and
-     *    seventeenth reviews).
-     * 3. Everything a session of ours does, or starts, is ours.
-     *
-     * The cost, stated: a person's subagent run beside ours and never named, in a turn where one
-     * of ours never named its own either, is taken for ours (AGENTS.md, "Known").
-     *
-     * `calls`: `session\0id` -> { session, tool, ours, open, named }. Code Mode reports one call as its
-     * inner tool and again as its `execute` wrapper under one id — inner before, wrapper before,
-     * inner after, wrapper after (measured, `test/ingest.test.js`) — and the wrapper is whatever
-     * it wraps; `open` counts the pairs still open, and the entry goes at zero or when the
-     * session's turn ends (an interrupted call has no after-hook, measured) — except a
-     * delegation of ours that ended naming no child, which stays until the turn ends: it is
-     * unaccounted for, and rule 2 asks exactly that of whatever is in `calls` (eighteenth
-     * review, which found a side set read at one decision point and not the other). Ids are
-     * unique within a session as measured (`call_00_<random>`).
+     * Whether a log is a session of its own — the person's, read and reported as one: not a
+     * delegation (`parents`) and not one of our readers (`internal`). One predicate for every
+     * consumer (tenth review).
      */
-    const calls = new Map()
-    const deferred = new Map() // child -> the parent it appeared under (rule 2)
-    const MAX_CALLS = 1000
-
-    /**
-     * Whether a log is a session of its own — the person's, read and reported as one. Not a
-     * delegation (`parents`), not ours (`internal`), not waiting to be told which (`deferred`).
-     * One predicate for every consumer, because each set added in review was checked by hand
-     * in the places noticed and missed in the rest (tenth review).
-     */
-    const standsAlone = (id) => !parents.has(id) && !internal.has(id) && !deferred.has(id)
-    const callKey = (p) => (p?.id != null ? `${p?.sessionID}\u0000${p.id}` : null)
+    const standsAlone = (id) => !parents.has(id) && !internal.has(id)
+    // id -> { from, size, nothing }: what `grewByNothing` found, for the size it found it at.
+    const grown = new Map()
 
     /**
      * What is waiting, as the marks say it is. A log whose last read failed is named as a
@@ -308,7 +278,6 @@ export default {
       maxOutput: config.maxOutput,
       emit: (sessionID, record) => log.write(sessionID, record),
       parentOf: (sessionID) => parents.get(sessionID) ?? null,
-      isStep: (sessionID) => deferred.has(sessionID),
       startAt: (sessionID) => log.lastN(sessionID),
     })
 
@@ -342,9 +311,8 @@ export default {
       // ever a fresh session: one that already has a log is somebody's work, and is never
       // reclassified by what they happen to type.
       if (p?.sessionID && !log.probe(p.sessionID) && isWorkLine(p?.prompt?.text)) {
-        // Fresh, so there is nothing written to take back — only what knew it as anything else.
+        // Fresh, so there is nothing written to take back.
         internal.add(p.sessionID)
-        deferred.delete(p.sessionID)
         turnSeen.delete(p.sessionID)
         return
       }
@@ -358,65 +326,24 @@ export default {
       // Measured by `pulse`, after this handler: the one place a hook measures.
     })
 
-    /**
-     * The plugin's own work, kept out of every log: its subagents, the calls that start them,
-     * and the calls to the tools only that work uses. Otherwise the next analysis reads the
-     * last one — a subagent reading another session's log, inside this one.
-     */
-    const ownWork = (p) =>
-      internal.has(p?.sessionID) ||
-      p?.tool === "retro_record" ||
-      p?.tool === "retro_propose" ||
-      (p?.tool === "subagent" && isWorkText(p?.input?.prompt))
-
+    // A reader's session is not logged; everything else is, the plugin's own calls included
+    // (analysis.md, "The plugin's own work"): a round is marked in the log by its hand-overs,
+    // and the reader of the next order leaves it out. Thirteen review rounds of deciding call
+    // by call which work was ours ended here.
     await hook("tool", "execute.before", (p) => {
-      const key = callKey(p)
-      const known = key ? calls.get(key) : undefined
-      const ours = Boolean(known?.ours) || ownWork(p)
-      if (key) {
-        // Either half naming `subagent` makes it a delegation, whichever arrived first.
-        const tool = known?.tool === "subagent" ? "subagent" : (p?.tool ?? known?.tool)
-        calls.delete(key) // re-inserted last, so the oldest is first to go
-        calls.set(key, { session: p?.sessionID, tool, ours, open: (known?.open ?? 0) + 1, named: Boolean(known?.named) })
-        // Past the cap, the oldest call still open goes; never one kept as unaccounted for,
-        // which rule 2 still needs and its turn's end removes (nineteenth review).
-        if (calls.size > MAX_CALLS) {
-          for (const [k, call] of calls) if (call.open > 0) { calls.delete(k); break }
-        }
-      }
-      // Its first half was taken for the person's; it is ours, so that start is taken back.
-      if (ours && known && !known.ours) ingest.unstart(p?.sessionID, p?.id)
-      if (ours) {
-        // A wrapper of a call already counted is the same call.
-        if (known?.ours) return
-        // Not logged, but counted: the event stream sees this call like any other, and the
-        // self-check compares the two sides. See `ingest.ownCall`. Not for a call made *inside*
-        // one of our own sessions, though: `handleEvent` drops those sessions' events, so
-        // counting their calls added to one side only, and enough of them would cover a real
-        // shortfall — the dead hook decision 19 exists to catch (pre-release review).
-        if (!internal.has(p?.sessionID)) ingest.ownCall(p?.sessionID)
-        return
-      }
+      if (internal.has(p?.sessionID)) return
       ingest.toolBefore(p)
     })
     await hook("tool", "execute.after", (p) => {
       const child = p.tool === "subagent" ? p.result?.metadata?.sessionID : null
-      // Decided at the start (`calls`). Only a call whose start this process never saw — it was
-      // reloaded mid-call — is decided here, by what the call says, the only way left.
-      const key = callKey(p)
-      const known = key ? calls.get(key) : undefined
-      if (known && child) known.named = true
-      // Both halves of a Code Mode pair in. A delegation of ours that named no child stays, as
-      // unaccounted for, until its turn ends (rule 2).
-      if (known && --known.open <= 0 && !unaccounted(known)) calls.delete(key)
-      // Everything a session of ours does is ours, including a call that started before the
-      // session was known to be (ninth review).
-      const ours = internal.has(p?.sessionID) || (known ? known.ours : ownWork(p))
-      // The moment a child is known exactly: this call started it. Ours is claimed, the
-      // person's adopted — whatever either was told (rule 2).
-      if (child) deferred.delete(child)
-      if (child && !internal.has(child)) (ours ? claimReader : adopt)(child, p.sessionID)
-      if (ours) return
+      if (internal.has(p?.sessionID)) {
+        // What a reader starts is ours with it.
+        if (child && !internal.has(child)) claimReader(child, p.sessionID)
+        return
+      }
+      // A delegation's child belongs to the task that delegated it — unless it is one of our
+      // readers, which is in no log at all.
+      if (child && !internal.has(child)) adopt(child, p.sessionID)
       ingest.toolAfter(p)
       // Measured by `pulse`, after this handler, on the parent and never on the child: the
       // child's records are written into the parent's log, so the self-check would otherwise
@@ -569,40 +496,16 @@ export default {
         // is over.
         if (isForeign(event)) return
         if (internal.has(sessionID)) return
-        // Anything a reader of ours starts is ours, since every call of a session of ours is
-        // (eighth review). A child of a parent with a delegation of ours unaccounted for —
-        // running, or ended naming none — waits to be told whose it is (rule 2, `deferred`).
+        // Anything a reader of ours starts is ours (eighth review). Any other child belongs to
+        // the task that delegated it — a reader worded its own way included, which the reader
+        // of the next order leaves out as part of the round (analysis.md).
         if (event.data?.parentID && internal.has(event.data.parentID)) {
           claimReader(sessionID, event.data.parentID)
           return
         }
-        if (event.data?.parentID && !parents.has(sessionID) && unaccountedUnder(event.data.parentID)) {
-          deferred.set(sessionID, event.data.parentID)
-          handBack(sessionID, personBehind(event.data.parentID))
-          return
-        }
         if (event.data?.parentID) adopt(sessionID, event.data.parentID)
       }
-      // Before the gates: a reader's own turn ends behind them.
-      if (sessionID && isTurnEnd(event)) {
-        // A delegation cannot outlive the turn it runs in. Whatever is still deferred under this
-        // session was named by nobody: ours if one of ours never named a child, theirs if every
-        // one of ours named its own (rule 2) — never a session of its own, which a delegation
-        // must not become.
-        // A session of ours starts nothing of the person's (rule 3). Claiming it claims what was
-        // deferred under it already; this is the belt to that.
-        const ours = internal.has(sessionID) || unaccountedUnder(sessionID)
-        for (const [child, parent] of deferred) {
-          if (parent !== sessionID) continue
-          deferred.delete(child)
-          if (!internal.has(child)) (ours ? claimReader : adopt)(child, parent)
-        }
-        // The turn's calls go with it, an interrupted one included (rule 1).
-        for (const [key, call] of calls) if (call.session === sessionID) calls.delete(key)
-      }
 
-      // Whose events are taken in at all. A deferred session's are — its text, its steps, the
-      // seq of its calls — and only its start and end are dropped, as a step's (`isStep`).
       if (sessionID && (foreign.has(sessionID) || internal.has(sessionID))) return
       ingest.event(event)
 
@@ -627,7 +530,7 @@ export default {
 
       if (ended.has(sessionID)) return
       // A subagent finishing is a step in its parent's task, not a session to analyse.
-      if (parents.has(sessionID) || deferred.has(sessionID)) return
+      if (parents.has(sessionID)) return
       ended.add(sessionID)
       observedSessions.delete(sessionID)
 
@@ -672,11 +575,15 @@ export default {
     return () => controller.abort()
 
     async function say(sessionID, text, about = "lesson") {
+      // Logged before it is sent: a hand-over marks where a round of the plugin's own starts,
+      // and a marker written after the work it opens — an agent answering fast enough, or a
+      // fake answering at once — put the round's start behind its end, and the person's next
+      // work inside it (analysis.md, "The plugin's own work").
+      noteHandover(sessionID, text, about)
       try {
         // The synthetic goes to the session's inbox; without `resume` it sits there until
         // the user happens to type something, and they never see what they asked for.
         await ctx.session.synthetic({ sessionID, text, description: "opencode-retro", resume: true })
-        noteHandover(sessionID, text, about)
       } catch (err) {
         onError("session.synthetic", err)
       }
@@ -724,9 +631,30 @@ export default {
      */
     function isOwed(id) {
       const mark = markOf(id)
-      if (log.stat(id).size > mark.size) return true
+      const size = log.stat(id).size
+      if (size > mark.size && !grewByNothing(id, mark.size, size)) return true
       if (mark.open) return true
       return Boolean(mark.failed && (mark.attempts ?? 0) < 3)
+    }
+
+    /**
+     * Whether a log grew past its mark by nothing an analysis could read — the plugin's own
+     * round, a hand-over, a turn's end (`nothingNew`). Remembered by size, because the report
+     * asks about every log each time it is written.
+     */
+    function grewByNothing(id, from, size) {
+      const known = grown.get(id)
+      if (known && known.from === from && known.size === size) return known.nothing
+      let nothing = false
+      try {
+        const bytes = readFileSync(log.path(id))
+        const added = parseShadowLog(bytes.subarray(from).toString("utf8"))
+        nothing = added.length > 0 && nothingNew(parseShadowLog(bytes.toString("utf8")), added)
+      } catch {
+        nothing = false
+      }
+      grown.set(id, { from, size, nothing })
+      return nothing
     }
 
     /** Unwritten for a week (session.md, "Quiet"): the only place the plugin reads a clock. */
@@ -1091,9 +1019,6 @@ export default {
     function workPath(session) {
       return join(config.work, `${session}.md`)
     }
-    function workName(session) {
-      return `${retroDir}/work/${session}.md`
-    }
 
     /**
      * Whether a prompt is the exact line the hand-over prescribes for a reader. The only thing
@@ -1114,7 +1039,7 @@ export default {
     function pulse(sessionID) {
       // The one place a hook measures (twenty-seventh review, after three rounds of writers on
       // one clock starving each other). What it measures is the person's session behind the
-      // hook — through a delegation, or one still deferred — or, when that cannot be measured
+      // hook — through a delegation — or, when that cannot be measured
       // (a hook of one of ours, a session already ended), the session the report describes. A
       // session seen for the first time is measured at once; after that, once a minute, and
       // never a fresh heartbeat written over checks a minute stale.
@@ -1133,7 +1058,7 @@ export default {
       let current = sessionID
       for (let i = 0; current && i < 64; i++) {
         if (internal.has(current)) return null
-        const up = parents.get(current) ?? deferred.get(current)
+        const up = parents.get(current)
         if (!up || up === current) return current
         current = up
       }
@@ -1160,11 +1085,8 @@ export default {
       observedSessions.delete(child)
       turnSeen.delete(child)
       ended.delete(child)
-      deferred.delete(child)
-      // What it started before it was known to be ours went its parent's way (ninth review), or
-      // is waiting to be told whose it is (rule 3, nineteenth).
+      // What it started before it was known to be ours went its parent's way (ninth review).
       for (const [grandchild, of] of parents) if (of === child && !internal.has(grandchild)) claimReader(grandchild)
-      for (const [grandchild, of] of deferred) if (of === child && !internal.has(grandchild)) claimReader(grandchild)
       handBack(child, personBehind(parent))
     }
 
@@ -1218,43 +1140,6 @@ export default {
     }
 
     /**
-     * A delegation of ours that has not named its child — running, or ended naming none. One that
-     * named it is accounted for even while its Code Mode wrapper is still to finish (nineteenth).
-     */
-    function unaccounted(call) {
-      return call.ours && call.tool === "subagent" && !call.named
-    }
-
-    /** Whether `parent` has a delegation of ours unaccounted for (rule 2). */
-    function unaccountedUnder(parent) {
-      for (const call of calls.values()) if (call.session === parent && unaccounted(call)) return true
-      return false
-    }
-
-    /**
-     * Whether a prompt is the plugin asking a subagent to read one of its work orders.
-     *
-     * Strict on purpose. This used to match any text containing the mark or `.retro/work/`, and
-     * a match marks a session as the plugin's own **for good** — every later prompt, tool call
-     * and event of it left out of the log. So a person who asked their own agent "what is in
-     * `.retro/work/`?" silently stopped being logged from that moment, which in this repository,
-     * where the plugin runs on itself, is not a far-fetched thing to type (pre-release review).
-     *
-     * For a *delegation* — the `subagent` call an agent makes in answer to our hand-over —
-     * two ways in, both about an order we actually issued: the exact line, or the exact path of
-     * an order that is still open, for an agent that worded it its own way. Decided once, when
-     * the call starts (`calls`). What is left: a person's own agent delegating a subagent
-     * with a prompt that names an open order's exact path is taken for ours, and that
-     * subagent's work is not logged. A session a person types into is never taken for ours by
-     * a path — see `isWorkLine`.
-     */
-    function isWorkText(text) {
-      if (typeof text !== "string") return false
-      if (isWorkLine(text)) return true
-      return state.openOrders().some((o) => text.includes(workPath(o.session)) || text.includes(workName(o.session)))
-    }
-
-    /**
      * Read a log and write its work order (analysis.md, "Work order").
      *
      * Returns `{ skipped }` for a log that cannot hold evidence — settled at once, no order;
@@ -1303,9 +1188,15 @@ export default {
        * Only the part that has not been turned into lessons yet, with the prompts kept
        * whatever their step: they say what the session was for.
        */
-      const fresh = mark.n > 0 ? records.filter((r) => r.n > mark.n || r.k === "prompt") : records
+      // The plugin's own rounds are not new material: a log that grew by nothing but a round
+      // takes no order (analysis.md, "The plugin's own work").
+      const own = ownRounds(records)
+      const fresh = (mark.n > 0 ? records.filter((r) => r.n > mark.n || r.k === "prompt") : records).filter(
+        (r) => !own.steps.has(r.n),
+      )
       const composed = composeOrder({
         records: fresh,
+        rounds: own.ranges,
         analysedUpTo: mark.n,
         concluded: concludedFrom(sessionID),
         session: sessionID,

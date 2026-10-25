@@ -54,7 +54,7 @@ closed. Accepting or rejecting moves the file to `archive/`; `later` keeps it op
 - A hand-over is written into the session's log whichever way it arrived, and says which
   kind it was.
   `the proposal retro_propose returns is written into the session's log`
-  `the plugin's own analysis is not logged as the user's work`
+  `a round of the plugin's own is logged, and a log grown by nothing else takes no order`
 - The hand-over text comes from the prompt file, and a missing file degrades to a terse
   hand-over rather than a silent one.
   `the hand-over instructions come from the prompt file, not from source`

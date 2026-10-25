@@ -117,25 +117,27 @@ prompts it carries, a hand-over the plugin wrote itself and the agent's answer t
 nothing done, or an end marker, still proves nothing.
 
 **The plugin's own work.** The subagents it asks for and the calls to its own tools are its
-work, not the user's: they are not written to any log, so an analysis is never analysed and
-the plugin's bookkeeping never turns into a lesson about the plugin. Three rules decide it:
+work, not the person's, and an analysis must never be analysed. Two kinds, handled two ways:
 
-1. A tool call is ours or the person's as decided when it starts — by the session it runs in,
-   the tool, and for a delegation the prescribed line or an open order's path — and that holds
-   for both halves of a Code Mode pair until the call ends or its turn does.
-2. A child created while its parent has a delegation of ours that has not yet named its child
-   — running, or ended naming none: **unaccounted for** — is **deferred**: neither adopted
-   nor claimed, its records waiting in its own log, its start and end dropped as a step's. The
-   delegation naming it when it ends decides it. One nobody named by the parent's turn end is
-   ours if a delegation of ours never named a child — still running then, or ended naming
-   none — and the person's if every one of ours named its own.
-3. Everything a session of ours does, or starts, is ours. A fresh session whose first prompt is
-   the prescribed line is ours from that prompt.
+1. **A reader's session is not logged.** A fresh session whose first prompt is the prescribed
+   line is one of ours, and so is anything such a session starts. Its whole job is reading
+   other sessions' logs, so its own log would be copies of them. Recognised by the line alone,
+   because a session is never taken for ours by anything less.
+2. **Everything else is logged, and marked.** A **round** is the stretch of a log from a
+   `handover` with `about: "work"` to the next `handover` of another kind or the next
+   `prompt` of the person's — one without `from` (log.md) — whichever comes first: the agent starting readers, the records coming back,
+   `retro_propose`. Calls to `retro_record` and `retro_propose` are ours wherever they are. A
+   reader whose delegation was worded its own way is an ordinary child, folded into the
+   person's log like any subagent — inside the round. The order tells the reader to leave a
+   round out (no lesson, no cost, no recurrence), and the plugin does not count a round as new
+   material, so a log that grew by nothing but a round takes no order.
 
-(A limit, the price of rule 2: a person's subagent run beside ours and never named, in a turn
-where one of ours never named its own either, is taken for ours, and its work is not logged. AGENTS.md, "Known". Thirteen review rounds of guessing better than this — from
-prompts, from which delegations of the person's were in flight — each found the last one's
-interleaving; this rule asks only whether one of ours is unaccounted for.)
+*Replaces thirteen review rounds of deciding mechanically, call by call, which work was ours —
+by the delegation's prompt, by its open order's path, by what else its parent had in flight, by
+which delegation named which child. Each round found the last one's interleaving. The markers
+were in the log all along, and judging what a stretch of log is is the reader's job (decision
+4). A limit, stated: whatever the person's agent does inside a round that is not the round —
+rare, since the hand-over asks it to start readers and nothing else — is left out with it.*
 
 ## Invariants
 
@@ -191,44 +193,17 @@ interleaving; this rule asks only whether one of ours is unaccounted for.)
   `a log set aside is described in the same words everywhere it is reported`
   `the third read that covered nothing new says the log is set aside, not that it will be asked again`
   `nothing to review does not promise another try for a log set aside`
-- Which call and which session is the plugin's own follows the three rules above, decided
-  once. A session a person types into is never taken for ours by anything short of the
-  prescribed line; an after-hook whose start was never seen is decided by what it says.
+- A reader's session is not logged; a session a person types into is never taken for one by
+  anything short of the prescribed line, and what a reader starts is ours with it.
   `talking about work orders does not stop a session being logged`
   `a person who names an open order's path in a new session is still logged`
-  `a reworded delegation of a work order stays out of the person's log`
   `a fresh session given the prescribed line is recognised as the plugin's own reader`
-  `a reworded delegation's reader stays out of the person's log, in the order the events arrive`
-  `a person's own delegation stays logged even if an order naming its path is issued while it runs`
-  `a fresh session quoting a delegation of ours is the person's, whatever is in flight`
-  `an own delegation whose after-hook outlives its turn is still ours`
-  `an own call run through Code Mode's execute is ours in both of its hook pairs`
-  `a reader whose prompt reads nothing like the delegation is still recognised by its parent`
-  `a reworded reader is not folded into the person's log while its delegation runs`
-  `a report about a session that turns out to be ours goes back to the last that ended, rather than stay`
-  `a deferred child's turn is a step, not a session`
-  `a child nobody names by its parent's turn end is ours, even beside a delegation of the person's`
-  `a child nobody names, after every delegation of ours named its own, is the person's`
-  `a reader of a delegation of ours that errored naming nothing is still ours`
-  `a reader created after its delegation already errored is still ours`
-  `a reader's deferred helper is ours, however its own delegation ended`
-  `a delegation of ours that named its child is accounted for before its wrapper ends`
-  `a child left deferred with only our delegation beside it is taken for ours`
-  `a deferred child keeps everything but its start and end`
-  `a deferred child interrupted mid-call is adopted with the call, and the tool hook is not called dead`
-  `a delegation of the person's that already named its child does not make a deferred reader theirs`
-  `a person's call interrupted in an earlier turn does not make a later reader theirs`
-  `under Code Mode a delegation that named its child is not counted as unsaid`
-  `a deferred child is not counted as waiting while /retro would not ask about it`
-  `a child already adopted is not deferred by its creation arriving late`
-  `a person's call is not taken for ours because one of ours elsewhere has the same id`
-  `an own delegation interrupted with its turn recognises nothing afterwards`
-  `an interrupted call of the person's does not stop a later reader being recognised by its parent`
-  `a Code Mode wrapper reported ahead of an own call leaves nothing unpaired in the person's log`
-  `a reader delegating part of its reading does not make the report about itself`
   `a reader's helper is ours however it was told what to do`
-  `a reader already recognised is not claimed again when its delegation ends`
-  `a child is not taken for a reader while anything of the person's runs beside our delegation`
+- A round is logged and marked, and is not new material: a log that grew by nothing but a
+  round takes no order, and the order tells the reader to leave rounds out.
+  `a round of the plugin's own is logged, and a log grown by nothing else takes no order`
+  `the order tells the reader where the plugin's own work is and to leave it out`
+  `a reworded reader is folded into the person's log inside the round`
 - One command issues at most `extractLimit` orders; the rest stay owed and are named. A
   skipped log takes no order.
   `extractLimit caps what one command analyses and leaves the rest owed`
@@ -237,8 +212,6 @@ interleaving; this rule asks only whether one of ours is unaccounted for.)
 - `retro_propose` hands over what the records made, after they are in.
   `retro_propose hands over the top lesson once the records are in`
   `retro_propose for all delivers the plan`
-- The plugin's own subagents and tool calls are not written to any log.
-  `the plugin's own analysis is not logged as the user's work`
 - A skip covers nothing: a session skipped as one exchange is read from its start once it
   does real work.
   `a session skipped as one exchange is read from its start once it does real work`
