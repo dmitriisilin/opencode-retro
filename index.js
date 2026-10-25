@@ -614,8 +614,9 @@ export default {
         await ctx.session.synthetic({ sessionID, text, description: "opencode-retro", resume })
       } catch (err) {
         onError("session.synthetic", err)
-        // Logged first, so the log says it was never delivered — and a notice ends the round
-        // the hand-over would have opened (thirty-second review).
+        // Logged, naming the hand-over by its step, so the log says that one was never
+        // delivered: it opens no round and starts no reply, and the notice, written to nobody
+        // but the log, ends nothing either (rounds 6 and 7 of 10).
         noteHandover(sessionID, `_opencode-retro: the hand-over above could not be delivered: ${err?.message ?? err}_`, "notice", {
           undelivered: true,
           of: written,
