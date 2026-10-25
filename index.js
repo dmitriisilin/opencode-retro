@@ -181,6 +181,8 @@ export default {
     // parent -> { ours, theirs }: delegations of this turn that ended without naming a child
     // (an errored call may). Read with what is still in flight when the turn ends.
     const unsaid = new Map()
+    // Children a turn end decided for want of a delegation that said: final, whatever arrives.
+    const settled = new Set()
     const MAX_CALLS = 1000
 
     /**
@@ -403,9 +405,13 @@ export default {
       const key = callKey(p)
       const known = key ? calls.get(key) : undefined
       if (known && --known.open <= 0) calls.delete(key)
+      if (known && child) known.named = true
       // A delegation that ends naming no child still started one, perhaps: the turn's end
-      // must count it among those that never said (thirteenth review).
-      if (known?.tool === "subagent" && !child && known.open <= 0) {
+      // must count it among those that never said (thirteenth review). Once both halves of a
+      // Code Mode pair are in — the wrapper's names nothing even when the inner call did — and
+      // only for this turn: a stale call's late after-hook belongs to a turn already decided
+      // (fourteenth review).
+      if (known?.tool === "subagent" && !known.named && !known.stale && known.open <= 0) {
         const n = unsaid.get(p.sessionID) ?? { ours: 0, theirs: 0 }
         n[known.ours ? "ours" : "theirs"]++
         unsaid.set(p.sessionID, n)
@@ -417,7 +423,7 @@ export default {
       // person's adopted — whatever either was told.
       if (child) deferred.delete(child)
       // Decided once: a child its parent's turn end has already settled stays settled.
-      if (child && !internal.has(child) && !parents.has(child)) (ours ? claimReader : adopt)(child, p.sessionID)
+      if (child && !internal.has(child) && !settled.has(child)) (ours ? claimReader : adopt)(child, p.sessionID)
       if (ours) return
       ingest.toolAfter(p)
       // Measured on the parent, never on the child: the child's records are written into
@@ -604,6 +610,7 @@ export default {
         for (const [child, parent] of deferred) {
           if (parent !== sessionID) continue
           deferred.delete(child)
+          settled.add(child)
           ;(ours ? claimReader : adopt)(child, parent)
         }
         for (const call of calls.values()) if (call.session === sessionID) call.stale = true
@@ -1108,16 +1115,16 @@ export default {
       return typeof text === "string" && text.trimStart().startsWith(`${WORK_MARK}: read `)
     }
 
-    /**
-     * The end of a turn. session.idle never fires outside the TUI (AGENTS.md Gotcha 2), so the
-     * end of work is session.execution.*.
-     */
     /** A turn seen to start, kept in order of the latest start (`handBack`). */
     function sawTurn(sessionID) {
       turnSeen.delete(sessionID)
       turnSeen.add(sessionID)
     }
 
+    /**
+     * The end of a turn. session.idle never fires outside the TUI (AGENTS.md Gotcha 2), so the
+     * end of work is session.execution.*.
+     */
     function isTurnEnd(event) {
       return (
         event?.type === "session.execution.succeeded" ||
@@ -1163,10 +1170,12 @@ export default {
       const last = [...lastVerified.keys()].reverse().find((s) => s !== sessionID && standsAlone(s) && ended.has(s))
       if (last) {
         // A log grown since its last analysis is waiting, as the end of its turn put it; a failed
-        // or partial read says so itself (thirteenth review).
+        // or partial read says so itself (thirteenth review). Owed first: it settles the mark
+        // against the file, which may void one describing a log since replaced (fourteenth).
+        const owed = isOwed(last)
         const mark = state.looked(last)
-        const grown = isOwed(last) && !mark.failed && !mark.open
-        const extraction = grown ? { owed: true } : (lastExtraction.get(last) ?? state.extractionOf(last) ?? (isOwed(last) ? { owed: true } : null))
+        const grown = owed && !mark.failed && !mark.open
+        const extraction = grown ? { owed: true } : (lastExtraction.get(last) ?? state.extractionOf(last) ?? (owed ? { owed: true } : null))
         check.replay({ ...lastVerified.get(last), extraction })
       } else check.clear()
       writeSelfCheck()

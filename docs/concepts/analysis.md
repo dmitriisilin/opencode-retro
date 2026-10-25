@@ -214,6 +214,7 @@ AGENTS.md, "Known".)
   `a delegation of the person's that already named its child does not make a deferred reader theirs`
   `a person's delegation that errors without naming its child keeps that child theirs`
   `a person's call interrupted in an earlier turn does not make a later reader theirs`
+  `under Code Mode a delegation that named its child is not counted as unsaid`
   `a deferred child is not counted as waiting while /retro would not ask about it`
   `a child already adopted is not deferred by its creation arriving late`
   `a person's call is not taken for ours because one of ours elsewhere has the same id`
