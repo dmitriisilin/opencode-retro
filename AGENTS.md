@@ -1038,11 +1038,13 @@ Known, listed so nobody discovers them as surprises:
   — from prompts, from what else was in flight, from which delegations never said — and each
   round found the last one's interleaving; the fifteenth asked for decision 21's model instead,
   and this is its price.
-- **A reader adopted before it is recognised keeps what was adopted.** After a reload in the
-  middle of a delegation, nothing of ours is known to be in flight, so a reworded reader is
-  adopted by `session.created`; its delegation's end still claims it, and nothing more of it is
-  logged, but what was absorbed by then stays in the person's log. A reload mid-delegation and
-  a reworded line at once.
+- **A reload in the middle of a delegation forgets what was in flight.** Which calls are ours
+  and which children are deferred is held in memory, so a plugin reloaded mid-delegation (an
+  edit to `opencode.json`, a service restart) knows of none: a reworded reader is adopted by
+  `session.created`, and what it absorbed stays in the person's log though the delegation's
+  end still claims it; a child deferred before the reload is left a log of its own and read
+  like a session by a later `/retro`. A reload mid-delegation and a reworded line, or a reload
+  while a child waits.
 - **The self-check's extraction line can describe a replaced log's last analysis.** A log
   pruned after its week of silence and written again under the same session id starts owed,
   but the outcome recorded for the old file stays in `state.json` until the new one is

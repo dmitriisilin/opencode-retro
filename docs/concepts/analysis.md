@@ -210,6 +210,8 @@ interleaving; this rule asks only whether one of ours is unaccounted for.)
   `a child nobody names, after every delegation of ours named its own, is the person's`
   `a reader of a delegation of ours that errored naming nothing is still ours`
   `a reader created after its delegation already errored is still ours`
+  `a reader's deferred helper is ours, however its own delegation ended`
+  `a delegation of ours that named its child is accounted for before its wrapper ends`
   `a child left deferred with only our delegation beside it is taken for ours`
   `a deferred child keeps everything but its start and end`
   `a deferred child interrupted mid-call is adopted with the call, and the tool hook is not called dead`

@@ -79,7 +79,8 @@ export function createSelfCheck({ versions, repo, loadedAt = Date.now() }) {
       state.session = null
       state.sessionEnded = null
       state.checks = []
-      state.verified = null
+      // `verified` is kept: when the checks were last evaluated is still true, and a missing one
+      // reads, by this file's own key, as hooks that never fire (nineteenth review).
     },
     render: () => render(state),
   }

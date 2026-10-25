@@ -285,6 +285,7 @@ export default {
         now,
       )
       writeSelfCheck()
+      return true
     }
 
     /**
@@ -391,7 +392,7 @@ export default {
       if (known && child) known.named = true
       // Both halves of a Code Mode pair in. A delegation of ours that named no child stays, as
       // unaccounted for, until its turn ends (rule 2).
-      if (known && --known.open <= 0 && !(known.ours && known.tool === "subagent" && !known.named)) calls.delete(key)
+      if (known && --known.open <= 0 && !unaccounted(known)) calls.delete(key)
       // Everything a session of ours does is ours, including a call that started before the
       // session was known to be (ninth review).
       const ours = internal.has(p?.sessionID) || (known ? known.ours : ownWork(p))
@@ -573,7 +574,8 @@ export default {
         // session was named by nobody: ours if one of ours never named a child, theirs if every
         // one of ours named its own (rule 2) — never a session of its own, which a delegation
         // must not become.
-        const ours = oursInFlight(sessionID)
+        // A session of ours starts nothing of the person's (rule 3).
+        const ours = internal.has(sessionID) || oursInFlight(sessionID)
         for (const [child, parent] of deferred) {
           if (parent !== sessionID) continue
           deferred.delete(child)
@@ -1106,8 +1108,10 @@ export default {
       turnSeen.delete(child)
       ended.delete(child)
       deferred.delete(child)
-      // What it started before it was known to be ours went its parent's way (ninth review).
+      // What it started before it was known to be ours went its parent's way (ninth review), or
+      // is waiting to be told whose it is (rule 3, nineteenth).
       for (const [grandchild, of] of parents) if (of === child && !internal.has(grandchild)) claimReader(grandchild)
+      for (const [grandchild, of] of deferred) if (of === child && !internal.has(grandchild)) claimReader(grandchild)
       if (parent) observe(rootOf(parent), { force: true })
       handBack(child)
     }
@@ -1139,9 +1143,17 @@ export default {
       writeSelfCheck()
     }
 
-    /** Whether `parent` has a delegation of ours running, or ended unaccounted for (rule 2). */
+    /**
+     * A delegation of ours that has not named its child — running, or ended naming none. One that
+     * named it is accounted for even while its Code Mode wrapper is still to finish (nineteenth).
+     */
+    function unaccounted(call) {
+      return call.ours && call.tool === "subagent" && !call.named
+    }
+
+    /** Whether `parent` has a delegation of ours unaccounted for (rule 2). */
     function oursInFlight(parent) {
-      for (const call of calls.values()) if (call.session === parent && call.ours && call.tool === "subagent") return true
+      for (const call of calls.values()) if (call.session === parent && unaccounted(call)) return true
       return false
     }
 
@@ -1331,10 +1343,16 @@ export default {
      * every log either way.
      */
     function reportOutcome(sessionID, result) {
-      if (check.describing() !== sessionID) return
-      if (!ended.has(sessionID)) return observe(sessionID, { force: true })
-      const verified = lastVerified.get(sessionID)
-      if (verified) check.verify({ ...verified, extraction: result })
+      if (check.describing() === sessionID) {
+        if (!ended.has(sessionID)) {
+          if (observe(sessionID, { force: true })) return
+        } else {
+          const verified = lastVerified.get(sessionID)
+          if (verified) check.verify({ ...verified, extraction: result })
+        }
+      }
+      // Once per record: observing writes the report itself (nineteenth review).
+      writeSelfCheck()
     }
 
     function removeWork(sessionID) {
@@ -1402,18 +1420,15 @@ export default {
           (failed.setAside
             ? `the log is now ${SET_ASIDE}, and is not asked about again unless it grows.`
             : "the log will be asked about again.")
-        // The session's own line in the report too, which still said the log was waiting (third
-        // pre-release review).
-        reportOutcome(session, failed)
         // Closed as `empty`, not `unanswered`: an answer came back, it just covered nothing new.
         // As "unanswered" the self-check reported no record about a log whose reader had
         // answered, while counting the same read as failed (second pre-release review).
         state.close(session, "empty")
         removeWork(session)
-        // The report is rewritten here too. Returning before it, as this branch did, left
-        // selfcheck.md describing the state from before the read — found by the test for the
-        // read itself.
-        writeSelfCheck()
+        // The report is rewritten here too, the session's own line with it, which still said the
+        // log was waiting (third pre-release review) — after the order is closed, so it never
+        // shows the order as still open (nineteenth).
+        reportOutcome(session, failed)
         return { ok: false, detail }
       }
       const partial = claimed < order.lastN
@@ -1451,7 +1466,6 @@ export default {
       removeWork(session)
       lastExtraction.set(session, result)
       reportOutcome(session, result)
-      writeSelfCheck()
       return result
     }
   },
