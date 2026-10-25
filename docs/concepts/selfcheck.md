@@ -68,6 +68,12 @@ last analysis of the session whichever path ran it.
   `a log asked about with no answer is named as that, not as not analysed yet`
   `a successful read clears the failed-read flag the mark was carrying`
   `a log given up on and then grown is not reported as beyond reading`
+- An analysis's outcome reaches the session's own line only while the report is about that
+  session; it never replaces the session somebody is working in. A log set aside is not told
+  the next `/retro` will ask again.
+  `an analysis does not take over a report that describes another session`
+  `a reader that reported reading nothing new is not reported as no answer`
+  `a session whose log was set aside is not told the next /retro asks again`
 - A call the turn ended in the middle of accounts for its event: an interrupted turn with a
   subagent still running is not a dead tool hook.
   `an interrupted turn with a subagent still running is not a dead tool hook`

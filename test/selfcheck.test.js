@@ -3,7 +3,7 @@ import assert from "node:assert/strict"
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { assess, activeCheck, createSelfCheck, STATUS } from "../src/selfcheck.js"
+import { SET_ASIDE, assess, activeCheck, createSelfCheck, STATUS } from "../src/selfcheck.js"
 import { createPrompts } from "../src/prompts.js"
 import { createStore } from "../src/lessons.js"
 import { createState } from "../src/state.js"
@@ -294,4 +294,14 @@ test("a log read in part is named as such, not as not analysed yet", () => {
   const text = check.render()
   assert.match(text, /1 log read in part — too long for one call/)
   assert.doesNotMatch(text, /not analysed yet/)
+})
+
+test("a session whose log was set aside is not told the next /retro asks again", () => {
+  // Fourth pre-release review: the extraction line explained every failure as one the next
+  // command retries, including a log nothing will read again unless it grows.
+  const x = assess({ ...healthy, extraction: { ok: false, detail: `${SET_ASIDE}: the analysis reported reading nothing new` } })
+  const line = x.find((c) => c.name === "extraction")
+  assert.equal(line.status, STATUS.DEGRADED)
+  assert.doesNotMatch(line.meaning, /asks again/)
+  assert.match(line.meaning, /unless it grows/)
 })

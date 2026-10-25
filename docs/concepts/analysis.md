@@ -172,10 +172,12 @@ the plugin's bookkeeping never turns into a lesson about the plugin.
   `a reader that reported reading nothing new is not reported as no answer`
   `a log set aside is described in the same words everywhere it is reported`
 - What decides that a call or a session is the plugin's own is decided when it starts, and
-  never again when it ends. A session a person types into is never taken for ours by anything
-  short of the prescribed line — or, for a fresh session, the very prompt one of our own
-  delegations is handing its reader at that moment, however the agent worded it. An own call
-  interrupted with its turn is forgotten with it.
+  never again when it ends — per session and call id, and for a Code Mode wrapper the same as
+  for what it wraps. A session a person types into is never taken for ours by anything short
+  of the prescribed line — or, for a fresh session, the very prompt one of our own delegations
+  is handing its reader at that moment, or a parent whose only delegations in flight are ours.
+  A turn's calls are forgotten with it; an after-hook that outlives its turn is decided by
+  what it says.
   `talking about work orders does not stop a session being logged`
   `a person who names an open order's path in a new session is still logged`
   `a reworded delegation of a work order stays out of the person's log`
@@ -183,6 +185,10 @@ the plugin's bookkeeping never turns into a lesson about the plugin.
   `a reworded delegation's reader stays out of the person's log, in the order the events arrive`
   `a person's own delegation stays logged even if an order naming its path is issued while it runs`
   `an own delegation interrupted with its turn is forgotten, so a later session quoting it is still logged`
+  `an own delegation whose after-hook outlives its turn is still ours`
+  `an own call run through Code Mode's execute is ours in both of its hook pairs`
+  `a reader whose prompt reads nothing like the delegation is still recognised by its parent`
+  `a person's call is not taken for ours because one of ours elsewhere has the same id`
 - One command issues at most `extractLimit` orders; the rest stay owed and are named. A
   skipped log takes no order.
   `extractLimit caps what one command analyses and leaves the rest owed`

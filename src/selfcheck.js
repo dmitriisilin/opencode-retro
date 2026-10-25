@@ -58,6 +58,8 @@ export function createSelfCheck({ versions, repo, loadedAt = Date.now() }) {
       state.checks = assess(session)
       return state
     },
+    /** The session the report currently describes. */
+    describing: () => state.session ?? null,
     render: () => render(state),
   }
 }
@@ -225,6 +227,15 @@ export function assess(session) {
     checks.push({ status: SKIPPED, name: "extraction", detail: x.detail })
   } else if (x.ok) {
     checks.push({ status: OK, name: "extraction", detail: x.detail })
+  } else if (String(x.detail ?? "").startsWith(SET_ASIDE)) {
+    checks.push({
+      status: DEGRADED,
+      name: "extraction",
+      detail: x.detail,
+      meaning:
+        "nothing will read this log again unless it grows. `plugin.log` says why each read " +
+        `failed: ${READ_FAILURES}.`,
+    })
   } else {
     checks.push({
       status: DEGRADED,
