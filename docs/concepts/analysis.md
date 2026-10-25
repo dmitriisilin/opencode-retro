@@ -123,9 +123,11 @@ its first prompt by the exact line or by the prompt of a delegation of ours stil
 anything a reader of ours starts is ours by its parent; and any other child of a session with
 a delegation of ours in flight is **deferred** — neither adopted nor claimed, its records
 waiting in its own log — until a delegation ends and its result names the child it started.
-Then ours is claimed and the person's adopted, whatever either was told. (A limit: a
-delegation that never ends — its turn interrupted — leaves its child deferred, and its log is
-then a session of its own. AGENTS.md, "Known".)
+Then ours is claimed and the person's adopted, whatever either was told. A deferred child's
+records are kept — its text, its steps, its calls — and only its start and end are dropped, as
+a step's. (A limit: a delegation that never ends — its turn interrupted — names no child, so
+whatever is still deferred when the parent's turn ends is decided the only way left: ours if
+nothing of the person's was delegated beside ours, theirs otherwise. AGENTS.md, "Known".)
 
 ## Invariants
 
@@ -203,7 +205,9 @@ then a session of its own. AGENTS.md, "Known".)
   `a reworded reader is not folded into the person's log while its delegation runs`
   `a report about a session that turns out to be ours goes back to the last that ended, rather than stay`
   `a deferred child's turn is a step, not a session`
-  `a child left deferred by a delegation that never ended becomes a session of its own`
+  `a child left deferred by a delegation that never ended is decided when its parent's turn is`
+  `a child left deferred with only our delegation beside it is taken for ours`
+  `a deferred child keeps everything but its start and end`
   `a deferred child is not counted as waiting while /retro would not ask about it`
   `a child already adopted is not deferred by its creation arriving late`
   `a person's call is not taken for ours because one of ours elsewhere has the same id`

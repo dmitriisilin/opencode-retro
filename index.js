@@ -172,11 +172,14 @@ export default {
      * them are ours is decided when a delegation ends, because its result names the child it
      * started — the one moment that is known exactly, whatever the delegation was told. Until
      * then a child is neither adopted nor claimed: its records wait in its own log, which
-     * adoption already knows how to absorb, and it is neither reported on nor analysed.
+     * adoption already knows how to absorb, its start and end are a step's (`isStep`), and it
+     * is neither reported on nor analysed.
      * Recognising it any earlier — by its prompt, or by what else its parent had in flight —
      * took four review rounds of interleavings to get wrong (sixth to ninth).
      */
-    const deferred = new Map() // child -> the parent it appeared under
+    // child -> { parent, theirs }: the parent it appeared under, and whether a delegation of the
+    // person's was in flight there beside ours at the time.
+    const deferred = new Map()
     const MAX_CALLS = 1000
 
     /**
@@ -308,6 +311,7 @@ export default {
       maxOutput: config.maxOutput,
       emit: (sessionID, record) => log.write(sessionID, record),
       parentOf: (sessionID) => parents.get(sessionID) ?? null,
+      isStep: (sessionID) => deferred.has(sessionID),
       startAt: (sessionID) => log.lastN(sessionID),
     })
 
@@ -567,7 +571,7 @@ export default {
           return
         }
         if (event.data?.parentID && !parents.has(sessionID) && oursInFlight(event.data.parentID)) {
-          deferred.set(sessionID, event.data.parentID)
+          deferred.set(sessionID, { parent: event.data.parentID, theirs: theirsInFlight(event.data.parentID) })
           handBack(sessionID)
           return
         }
@@ -578,17 +582,20 @@ export default {
       if (sessionID && isTurnEnd(event)) {
         for (const call of calls.values()) if (call.session === sessionID) call.stale = true
         // A delegation cannot outlive the turn it runs in, so whatever is still deferred under
-        // this session was started by one that will never say so: interrupted. It becomes a
-        // session of its own (AGENTS.md, "Known"), rather than wait for the life of the process
-        // (tenth review).
-        for (const [child, parent] of deferred) if (parent === sessionID) deferred.delete(child)
+        // this session was started by one that will never say so: interrupted. Decided now the
+        // only way left — ours if nothing of the person's was delegated beside ours, theirs
+        // otherwise — and never left as a session of its own, which a delegation must not
+        // become (tenth and eleventh reviews; AGENTS.md, "Known").
+        for (const [child, { parent, theirs }] of deferred) {
+          if (parent !== sessionID) continue
+          deferred.delete(child)
+          ;(theirs ? adopt : claimReader)(child, parent)
+        }
       }
 
-      // A deferred session's events are dropped like ours: its start and end are a delegation's
-      // steps, not a session's, and recorded as one they put a `session end` into the middle of
-      // the parent's turn when it was adopted, counted it towards freshness, and pointed the
-      // report at it (tenth review).
-      if (sessionID && (foreign.has(sessionID) || internal.has(sessionID) || deferred.has(sessionID))) return
+      // Whose events are taken in at all. A deferred session's are — its text, its steps, the
+      // seq of its calls — and only its start and end are dropped, as a step's (`isStep`).
+      if (sessionID && (foreign.has(sessionID) || internal.has(sessionID))) return
       ingest.event(event)
 
       if (event.type === "session.execution.started" && sessionID) {
@@ -612,7 +619,7 @@ export default {
 
       if (ended.has(sessionID)) return
       // A subagent finishing is a step in its parent's task, not a session to analyse.
-      if (parents.has(sessionID)) return
+      if (parents.has(sessionID) || deferred.has(sessionID)) return
       ended.add(sessionID)
       observedSessions.delete(sessionID)
 
@@ -1125,12 +1132,16 @@ export default {
      */
     function handBack(sessionID) {
       if (check.describing() !== sessionID) return
-      const person = [...observedSessions].reverse().find((s) => s !== sessionID && standsAlone(s) && !ended.has(s))
+      // Working: observed most recently, or with a turn started and not yet observed.
+      const working = (s) => s !== sessionID && standsAlone(s) && !ended.has(s)
+      const person = [...observedSessions].reverse().find(working) ?? [...turnSeen].reverse().find(working)
       if (person) return observe(person, { force: true })
-      // None working: the last one that ended, as it was measured then (tenth review).
-      const last = [...lastVerified.keys()].reverse().find((s) => s !== sessionID && standsAlone(s))
-      if (last) check.verify({ ...lastVerified.get(last), extraction: lastExtraction.get(last) ?? null })
-      else check.clear()
+      // None working: the last one that ended, as it was measured then (tenth and eleventh).
+      const last = [...lastVerified.keys()].reverse().find((s) => s !== sessionID && standsAlone(s) && ended.has(s))
+      if (last) {
+        const extraction = lastExtraction.get(last) ?? state.extractionOf(last) ?? (isOwed(last) ? { owed: true } : null)
+        check.replay({ ...lastVerified.get(last), extraction })
+      } else check.clear()
       writeSelfCheck()
     }
 
@@ -1154,6 +1165,12 @@ export default {
     /** Whether `parent` has a delegation of ours in flight. */
     function oursInFlight(parent) {
       for (const call of calls.values()) if (call.session === parent && call.ours && !call.stale && call.tool === "subagent") return true
+      return false
+    }
+
+    /** Whether `parent` has a delegation of the person's in flight. */
+    function theirsInFlight(parent) {
+      for (const call of calls.values()) if (call.session === parent && !call.ours && !call.stale && call.tool === "subagent") return true
       return false
     }
 

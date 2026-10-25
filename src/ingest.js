@@ -25,6 +25,9 @@ export function createIngest({
   maxOutput,
   now = () => Date.now(),
   parentOf = () => null,
+  // A session whose start and end are a delegation's steps although no parent is known yet —
+  // a child deferred until the delegation that started it says so (analysis.md).
+  isStep = () => false,
   // Where this session's numbering left off. The counter is in memory, so without this a new
   // process appending to an existing log starts again at 1 and a lesson's step range stops
   // resolving to one record. Measured on real logs: three and four such blocks in one file.
@@ -289,14 +292,14 @@ export function createIngest({
           return
 
         case "session.execution.started":
-          if (parentOf(sessionID)) return // a delegation is a step, not a session
+          if (parentOf(sessionID) || isStep(sessionID)) return // a delegation is a step, not a session
           append(sessionID, { k: "session", seq, event: "start" })
           return
 
         case "session.execution.succeeded":
         case "session.execution.failed":
         case "session.execution.interrupted":
-          if (parentOf(sessionID)) return // the parent is still working
+          if (parentOf(sessionID) || isStep(sessionID)) return // the parent is still working
           for (const call of s.pending.values()) {
             // Counted, because it is the one honest reason an event has no after-hook: the turn
             // ended (an interrupt, usually) while the call was still running.

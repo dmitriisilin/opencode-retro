@@ -1230,6 +1230,8 @@ test("a report about a session that turns out to be ours goes back to the last t
   // Tenth review: not an empty "nothing measured yet" under a fresh timestamp, but the last
   // session that ended, as it was measured then.
   assert.match(report, /measured on session\s+`ses_a`, which ended at/)
+  // Eleventh: replayed with what is known about its log, not as "not run".
+  assert.match(report, /this session's log is waiting/)
   await cleanup?.()
 })
 
@@ -1266,15 +1268,56 @@ test("a deferred child's turn is a step, not a session", async () => {
   await cleanup?.()
 })
 
-test("a child left deferred by a delegation that never ended becomes a session of its own", async () => {
+test("a child left deferred by a delegation that never ended is decided when its parent's turn is", async () => {
+  // Eleventh pre-release review: released as a session of its own, it was analysed apart from
+  // the delegation that started it — which a delegation must never be. With the person's own
+  // delegation in flight beside ours, it is taken for theirs.
   const dir = sandbox()
   const fake = fakeOpenCode({ directory: dir, agent: false })
   const cleanup = await plugin.setup(fake.ctx)
   await deferHelper(fake, dir)
   fake.emit({ type: "session.execution.interrupted", durable: { seq: 95 }, data: { sessionID: "ses_review" } })
   await new Promise((r) => setImmediate(r))
+  assert.ok(kindsIn(dir, "ses_review").some((r) => r.id === "hx"), "adopted into the person's log")
+  assert.equal(existsSync(logOf(dir, "ses_helper")), false)
   const { paths } = await retro(fake, { invoker: "ses_other" })
-  assert.ok(paths.some((path) => path.includes("ses_helper")), "a later /retro asks about it")
+  assert.ok(!paths.some((path) => path.includes("ses_helper")), "and never asked about on its own")
+  await cleanup?.()
+})
+
+test("a child left deferred with only our delegation beside it is taken for ours", async () => {
+  const dir = sandbox()
+  const fake = fakeOpenCode({ directory: dir, agent: false })
+  const cleanup = await plugin.setup(fake.ctx)
+  await work(fake, "ses_a")
+  const { paths } = await retro(fake)
+  await fake.hooks.get("session.prompt")({ sessionID: "ses_review", messageID: "rv", prompt: { text: "go on" } })
+  await fake.hooks.get("tool.execute.before")({ sessionID: "ses_review", id: "d1", tool: "subagent", input: { agent: "general", prompt: `Have a look at ${paths[0]}` } })
+  await fake.hooks.get("session.prompt")({ sessionID: "ses_reader", messageID: "r1", prompt: { text: "See the file." } })
+  fake.emit({ type: "session.created", durable: { seq: 90 }, data: { sessionID: "ses_reader", parentID: "ses_review", location: { directory: dir } } })
+  await new Promise((r) => setImmediate(r))
+  await fake.hooks.get("tool.execute.before")({ sessionID: "ses_reader", id: "rr", tool: "read", input: { path: paths[0] } })
+  await fake.hooks.get("tool.execute.after")({ sessionID: "ses_reader", id: "rr", tool: "read", input: { path: paths[0] }, status: "completed", result: { output: "x" } })
+  fake.emit({ type: "session.execution.interrupted", durable: { seq: 95 }, data: { sessionID: "ses_review" } })
+  await new Promise((r) => setImmediate(r))
+  assert.ok(!kindsIn(dir, "ses_review").some((r) => r.id === "rr" || /See the file/.test(r.text ?? "")), "nothing of it in the person's log")
+  assert.equal(existsSync(logOf(dir, "ses_reader")), false, "nor a log of its own")
+  await cleanup?.()
+})
+
+test("a deferred child keeps everything but its start and end", async () => {
+  // Eleventh pre-release review: all its events were dropped — its answer, its steps, the seq
+  // of its calls — when only its start and end are a step's.
+  const dir = sandbox()
+  const fake = fakeOpenCode({ directory: dir, agent: false })
+  const cleanup = await plugin.setup(fake.ctx)
+  await deferHelper(fake, dir)
+  fake.emit({ type: "session.text.ended", durable: { seq: 93 }, data: { sessionID: "ses_helper", text: "there are two files" } })
+  await new Promise((r) => setImmediate(r))
+  await fake.hooks.get("tool.execute.after")({ sessionID: "ses_review", id: "p1", tool: "subagent", input: { agent: "explore", prompt: "explore the repo" }, status: "completed", result: { output: "done", metadata: { sessionID: "ses_helper" } } })
+  const theirs = kindsIn(dir, "ses_review")
+  assert.ok(theirs.some((r) => r.k === "text" && /two files/.test(r.text)), "its answer came with it")
+  assert.ok(!theirs.some((r) => r.k === "session"), "its start and end did not")
   await cleanup?.()
 })
 

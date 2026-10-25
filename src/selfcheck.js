@@ -58,6 +58,17 @@ export function createSelfCheck({ versions, repo, loadedAt = Date.now() }) {
       state.checks = assess(session)
       return state
     },
+    /**
+     * Show a session as it was measured when its turn ended. Nothing is measured now, so the
+     * heartbeat does not move and `verified` says when the checks really were (eleventh review).
+     */
+    replay(session) {
+      state.verified = session.endedAt ?? state.verified
+      state.session = session.id
+      state.sessionEnded = session.endedAt ?? null
+      state.checks = assess(session)
+      return state
+    },
     /** The session the report currently describes. */
     describing: () => state.session ?? null,
     /** Describe no session: the one described turned out to be none of the person's. */

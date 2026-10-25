@@ -1028,13 +1028,13 @@ Known, listed so nobody discovers them as surprises:
   it. A provider that numbered calls per message would lose a call's record when an id came
   round again. Not guarded against: no provider OpenCode drives has been seen doing it, and a
   finer key risks splitting a Code Mode wrapper from what it wraps.
-- **A delegation of ours that never ends leaves its child deferred.** A child of a session
-  with a delegation of ours in flight is decided when a delegation ends and names it — the one
-  moment that is known exactly, which ended four review rounds of guessing earlier from
-  prompts and from what else was in flight. Interrupt that turn and no after-hook comes
-  (measured: an interrupted call has none), so the child's log stays a session of its own,
-  read like one by a later `/retro`: a reader's log read as a session. Rare, visible, and
-  cheaper than any guess.
+- **A delegation that never ends is guessed at.** A child of a session with a delegation of
+  ours in flight is decided when a delegation ends and names it — the one moment that is
+  known exactly, which ended four review rounds of guessing earlier from prompts and from what
+  else was in flight. Interrupt that turn and no after-hook comes (measured: an interrupted
+  call has none), so at the parent's turn end whatever is still deferred is decided by what
+  was in flight beside it: ours if nothing of the person's was delegated too, theirs
+  otherwise. Wrong only for an interrupted turn that ran both kinds of delegation at once.
 - **A turn's end is taken to arrive before the next turn's hooks.** The event stream lags the
   hooks by milliseconds, and the next turn starts after a model has answered; an end delivered
   later than that would close the new turn's bookkeeping. Raised in the sixth pre-release
