@@ -86,6 +86,7 @@ last analysis of the session whichever path ran it.
   `an analysis does not take over a report that describes another session`
   `an analysis of the session being worked in does not report it as ended`
   `a reader recognised by its parent takes the report back to the person's session`
+  `a report about a child goes back to the session that delegated it, not to another one open`
   `a report with no session of the person's to describe does not say no hook has fired`
   `a report with no session to describe keeps when its checks were last evaluated`
   `a reader that reported reading nothing new is not reported as no answer`

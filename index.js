@@ -187,7 +187,7 @@ export default {
      * What is waiting, as the marks say it is. A log whose last read failed is named as a
      * failure, not as something nobody has looked at; everything else owed is waiting.
      */
-    function stockFacts() {
+    function stockFacts(ids = log.list()) {
       let queued = 0
       let failing = 0
       let partial = 0
@@ -195,7 +195,7 @@ export default {
       // instead of a verdict: the plugin does not know whether anybody came (analysis.md).
       let asked = 0
       let unanswered = 0
-      for (const id of log.list()) {
+      for (const id of ids) {
         if (!standsAlone(id) || !isOwed(id)) continue
         const mark = state.looked(id)
         // How many askings have actually gone unanswered — not counting one issued a moment ago
@@ -227,12 +227,12 @@ export default {
       try {
         const lessons = store.list()
         const ids = log.list()
-        const cited = citedSessions() // once, not once per log (twenty-seventh review)
+        const cited = citedSessions(lessons) // once, from the lessons already read
         check.stock({
           lessons: lessons.length,
           top: lessons[0]?.id ?? null,
           topScore: lessons.length ? store.score(lessons[0]) : null,
-          ...stockFacts(),
+          ...stockFacts(ids),
           cited: ids.filter((id) => cited.has(id)).length,
           decided: store.listArchive().length,
           unreadable: store.unreadable(),
@@ -578,7 +578,7 @@ export default {
         }
         if (event.data?.parentID && !parents.has(sessionID) && unaccountedUnder(event.data.parentID)) {
           deferred.set(sessionID, event.data.parentID)
-          handBack(sessionID)
+          handBack(sessionID, personBehind(event.data.parentID))
           return
         }
         if (event.data?.parentID) adopt(sessionID, event.data.parentID)
@@ -861,10 +861,9 @@ export default {
       // old count cannot put it back.
       state.uncountSession(child)
       // The self-check may have been measuring the child's log, which no longer exists: the
-      // report goes back, and the parent is measured afresh by the next hook's `pulse` — the
-      // one place a hook measures (twenty-eighth review).
-      observedSessions.delete(rootOf(parent))
-      handBack(child)
+      // report goes to the person's session behind it, the delegating one (twenty-ninth
+      // review: picking from the sessions seen most recently handed it to an unrelated one).
+      handBack(child, personBehind(parent))
     }
 
     /**
@@ -905,9 +904,9 @@ export default {
     }
 
     /** Sessions an open lesson points at. The reason a log is still on disk. */
-    function citedSessions() {
+    function citedSessions(lessons = store.list()) {
       const cited = new Set()
-      for (const lesson of store.list()) {
+      for (const lesson of lessons) {
         const evidence = Array.isArray(lesson.evidence) ? lesson.evidence : [lesson.evidence].filter(Boolean)
         for (const e of evidence) if (e?.session) cited.add(e.session)
       }
@@ -1117,7 +1116,13 @@ export default {
       // (a hook of one of ours, a session already ended), the session the report describes. A
       // session seen for the first time is measured at once; after that, once a minute, and
       // never a fresh heartbeat written over checks a minute stale.
-      if (!sessionID) return // a hook that names no session measures nothing
+      // A hook that names no session measures nothing, but it fired: its beat is written once a
+      // minute like any other, or a payload that lost its session id would read as a dead
+      // plugin — the drift this file exists to show (twenty-ninth review).
+      if (!sessionID) {
+        if (Date.now() - lastWrite >= config.heartbeatMs) writeSelfCheck()
+        return
+      }
       const behind = personBehind(sessionID)
       if (behind && observe(behind)) return
       const shown = check.describing()
@@ -1162,8 +1167,7 @@ export default {
       // is waiting to be told whose it is (rule 3, nineteenth).
       for (const [grandchild, of] of parents) if (of === child && !internal.has(grandchild)) claimReader(grandchild)
       for (const [grandchild, of] of deferred) if (of === child && !internal.has(grandchild)) claimReader(grandchild)
-      if (parent) observedSessions.delete(rootOf(parent))
-      handBack(child)
+      handBack(child, parent ? personBehind(parent) : null)
     }
 
     /**
@@ -1171,8 +1175,10 @@ export default {
      * person's session observed most recently — or to no session at all, rather than stay
      * about one of ours (eighth and ninth reviews).
      */
-    function handBack(sessionID) {
+    function handBack(sessionID, behind = null) {
       if (check.describing() !== sessionID) return
+      // The person's session behind it first: a delegation's report belongs to its parent.
+      if (behind && behind !== sessionID && standsAlone(behind) && !ended.has(behind) && observe(behind, { force: true })) return
       // Working: observed most recently, or — a session resumed by a hand-over, which fires no
       // prompt hook — with a turn started and not observed yet. Only sessions we own.
       const working = (s) => s !== sessionID && standsAlone(s) && !ended.has(s) && ingest.owned(s)

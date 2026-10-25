@@ -1746,3 +1746,20 @@ test("a deferred child's hooks keep its parent measured", async () => {
     Date.now = real
   }
 })
+
+test("a report about a child goes back to the session that delegated it, not to another one open", async () => {
+  // Twenty-ninth pre-release review, reproduced: marking the parent to be measured afresh took
+  // it out of the sessions the report could go back to, and the report went to an unrelated one.
+  const dir = sandbox()
+  const fake = fakeOpenCode({ directory: dir, agent: false })
+  const cleanup = await plugin.setup(fake.ctx)
+  await fake.hooks.get("session.prompt")({ sessionID: "ses_b", messageID: "b1", prompt: { text: "other work" } })
+  await fake.hooks.get("session.prompt")({ sessionID: "ses_p", messageID: "p1", prompt: { text: "delegate" } })
+  await fake.hooks.get("tool.execute.before")({ sessionID: "ses_p", id: "s1", tool: "subagent", input: { agent: "explore", prompt: "look" } })
+  await fake.hooks.get("session.prompt")({ sessionID: "ses_c", messageID: "c1", prompt: { text: "look" } })
+  assert.match(readFileSync(join(dir, ".retro", "selfcheck.md"), "utf8"), /ses_c/, "the child's first prompt made it about the child")
+  fake.emit({ type: "session.created", durable: { seq: 90 }, data: { sessionID: "ses_c", parentID: "ses_p", location: { directory: dir } } })
+  await new Promise((r) => setImmediate(r))
+  assert.match(readFileSync(join(dir, ".retro", "selfcheck.md"), "utf8"), /measured on session\s+`ses_p`/)
+  await cleanup?.()
+})
