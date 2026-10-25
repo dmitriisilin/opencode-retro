@@ -582,7 +582,7 @@ test("every report of how many times a log was asked names the same number", asy
  * back. Each record is `[n, minutes from the decision]`: negative is before the fix, positive
  * after it.
  */
-async function citeAgainstDecision(records, steps) {
+async function citeAgainstDecision(records, steps, { after = [] } = {}) {
   const dir = sandbox()
   const fake = fakeOpenCode({ directory: dir, agent: false })
   const cleanup = await plugin.setup(fake.ctx)
@@ -604,6 +604,11 @@ async function citeAgainstDecision(records, steps) {
       .join("\n") + "\n",
   )
   await retro(fake)
+  // Written after the order was: the session went on working while its reader read.
+  for (const [n, minutes] of after) {
+    const line = { v: 1, n, t: decided + minutes * 60_000, k: "tool", id: `c${n}`, tool: "read", input: { path: "x" }, status: "completed" }
+    writeFileSync(logOf(dir, "ses_later"), JSON.stringify(line) + "\n", { flag: "a" })
+  }
   const result = await record(fake, "ses_later", [{ ...LESSON, steps }], { dir })
   const reopened = existsSync(join(dir, ".retro", "lessons", `${LESSON.id}.md`))
   await cleanup?.()
@@ -726,12 +731,16 @@ test("a reader that reported reading nothing new is not reported as no answer", 
   await record(fake, "ses_a", [], { dir })
   const mark = state(dir).looked.ses_a.n
   await work(fake, "ses_a") // it grows, so it is asked about again
+  fake.emit({ type: "session.execution.succeeded", durable: { seq: 50 }, data: { sessionID: "ses_a" } })
+  await new Promise((r) => setImmediate(r))
   await retro(fake)
   await record(fake, "ses_a", [], { dir, through: mark }) // and the reader got no further
 
   const report = readFileSync(join(dir, ".retro", "selfcheck.md"), "utf8")
   assert.doesNotMatch(report, /asked about with no answer/, "an answer came back")
   assert.match(report, /a reader that reported reading nothing new/, "and the cause it does name is the real one")
+  // Third pre-release review: the session's own extraction line kept saying the log was waiting.
+  assert.match(report, /extraction\s+the analysis reported reading nothing new/, "the session's line says what happened")
   await cleanup?.()
 })
 
@@ -752,4 +761,81 @@ test("a log set aside is described in the same words everywhere it is reported",
   assert.ok(handed.includes(SET_ASIDE), "the hand-over")
   assert.ok(readFileSync(join(dir, ".retro", "selfcheck.md"), "utf8").includes(SET_ASIDE), "the self-check")
   await cleanup?.()
+})
+
+test("a reworded delegation's reader stays out of the person's log, in the order the events arrive", async () => {
+  // Third pre-release review, reproduced: the hooks arrive as before-hook, the reader's prompt,
+  // `session.created` naming the parent, the reader's own tool calls, then the after-hook. With
+  // the reader recognised only by the exact prescribed line, a reworded delegation left it
+  // unrecognised at its first prompt — `session.created` then folded it into the person's log,
+  // and the after-hook could not take those records back out.
+  const dir = sandbox()
+  const fake = fakeOpenCode({ directory: dir, agent: false })
+  const cleanup = await plugin.setup(fake.ctx)
+
+  await work(fake, "ses_a")
+  const { paths } = await retro(fake)
+  const delegation = { sessionID: "ses_review", id: "d1", tool: "subagent", input: { agent: "general", prompt: `Please read ${paths[0]} and follow it.` } }
+  await fake.hooks.get("tool.execute.before")(delegation)
+  await fake.hooks.get("session.prompt")({ sessionID: "ses_reader", messageID: "r1", prompt: { text: delegation.input.prompt } })
+  fake.emit({ type: "session.created", durable: { seq: 90 }, data: { sessionID: "ses_reader", parentID: "ses_review", location: { directory: dir } } })
+  await new Promise((r) => setImmediate(r))
+  await fake.hooks.get("tool.execute.before")({ sessionID: "ses_reader", id: "rr1", tool: "read", input: { path: paths[0] } })
+  await fake.hooks.get("tool.execute.after")({ sessionID: "ses_reader", id: "rr1", tool: "read", input: { path: paths[0] }, status: "completed", result: { output: "the order" } })
+  await record(fake, "ses_a", [LESSON], { dir })
+  await fake.hooks.get("tool.execute.after")({ ...delegation, status: "completed", result: { output: "done", metadata: { sessionID: "ses_reader" } } })
+
+  const kinds = readFileSync(logOf(dir, "ses_review"), "utf8").trim().split("\n").map((l) => JSON.parse(l)).map((r) => r.k)
+  assert.deepEqual(kinds.filter((k) => k !== "handover"), [], "nothing of the reader's — no prompt, no read — in the person's log")
+  await cleanup?.()
+})
+
+test("a person's own delegation stays logged even if an order naming its path is issued while it runs", async () => {
+  // Third pre-release review: which call is ours was said to be decided once, when it starts —
+  // but the after-hook still asked again at the end, so a person's subagent that started before
+  // an order existed could become "ours" when it finished, losing its result from their log.
+  const dir = sandbox()
+  const fake = fakeOpenCode({ directory: dir, agent: false })
+  const cleanup = await plugin.setup(fake.ctx)
+
+  await work(fake, "ses_a")
+  const future = join(dir, ".retro", "work", "ses_a.md")
+  const mine = { sessionID: "ses_person", id: "p1", tool: "subagent", input: { agent: "explore", prompt: `look at ${future}` } }
+  await fake.hooks.get("session.prompt")({ sessionID: "ses_person", messageID: "pm", prompt: { text: "explore for me" } })
+  await fake.hooks.get("tool.execute.before")(mine)
+  await retro(fake) // now an order with that exact path is open
+  await fake.hooks.get("tool.execute.after")({ ...mine, status: "completed", result: { output: "found it", metadata: { sessionID: "ses_helper" } } })
+
+  const records = readFileSync(logOf(dir, "ses_person"), "utf8").trim().split("\n").map((l) => JSON.parse(l))
+  const call = records.find((r) => r.k === "tool" && r.id === "p1")
+  assert.ok(call, "the person's delegation is in their log")
+  assert.equal(call.status, "completed", "with its result, not left unpaired")
+  await cleanup?.()
+})
+
+test("an own delegation interrupted with its turn is forgotten, so a later session quoting it is still logged", async () => {
+  // Third pre-release review: an own call that never reached its after-hook stayed remembered
+  // for the life of the process — and with it the prompt a fresh session is recognised by.
+  const dir = sandbox()
+  const fake = fakeOpenCode({ directory: dir, agent: false })
+  const cleanup = await plugin.setup(fake.ctx)
+
+  await work(fake, "ses_a")
+  const { paths } = await retro(fake)
+  const prompt = `Please read ${paths[0]} and follow it.`
+  await fake.hooks.get("tool.execute.before")({ sessionID: "ses_review", id: "d1", tool: "subagent", input: { agent: "general", prompt } })
+  fake.emit({ type: "session.execution.interrupted", durable: { seq: 91 }, data: { sessionID: "ses_review" } })
+  await new Promise((r) => setImmediate(r))
+  await fake.hooks.get("session.prompt")({ sessionID: "ses_later", messageID: "l1", prompt: { text: prompt } })
+
+  assert.ok(existsSync(logOf(dir, "ses_later")), "a session typed long after the call was interrupted is the person's")
+  await cleanup?.()
+})
+
+test("evidence that cites no steps is dated by what the reader read, not by what came after the order", async () => {
+  // Third pre-release review: "the whole log" included records written after the order, which
+  // the reader never saw — a session still working after the fix dated pre-fix evidence as new.
+  const { detail, reopened } = await citeAgainstDecision([[1, -60], [2, -50]], [], { after: [[3, 30]] })
+  assert.match(detail, /already fixed before this session ran/)
+  assert.equal(reopened, false)
 })

@@ -231,9 +231,9 @@ export function assess(session) {
       name: "extraction",
       detail: x.detail,
       meaning:
-        "no lessons from this session yet, and nothing is held against the log for it; the " +
-        "next `/retro` asks again. `plugin.log` says why. The usual reason is an order nobody " +
-        "answered — a hand-over waiting in the inbox of a session that is still working, or " +
+        "no lessons from this session yet; the next `/retro` asks again, and `plugin.log` says " +
+        "why. The usual reason is an order nobody answered, which is never held against the " +
+        "log — a hand-over waiting in the inbox of a session that is still working, or " +
         "subagents that had not called `retro_record` before `retro_propose` was called.",
     })
   }
@@ -369,7 +369,7 @@ function renderStock({
     // and why it did not work.
     lines.push(
       `- ${failing} log${failing === 1 ? "" : "s"} whose last read failed — tried again on the next ` +
-        `\`/retro\`, and ${SET_ASIDE.replace(" after three failed reads", "")} after three. \`plugin.log\` ` +
+        `\`/retro\`, and ${SET_ASIDE_VERB} after three. \`plugin.log\` ` +
         `says why: ${READ_FAILURES}.`,
     )
   }
@@ -414,6 +414,38 @@ export const STATUS = { OK, DEGRADED, BROKEN, SKIPPED }
 /* ------------------------------------------------------- the active check */
 
 /**
+ * What a log set aside after three failed reads is called, wherever it is reported — state.json,
+ * the hand-over and this file. One phrase in one place, because three of them drifted apart:
+ * "given up after three failed analyses" in two, "could not read three times" in the third, for
+ * the same state (second pre-release review). The verb is its own constant so a line that needs
+ * it alone takes it from here rather than cutting it out of the phrase.
+ */
+export const SET_ASIDE_VERB = "set aside"
+export const SET_ASIDE = `${SET_ASIDE_VERB} after three failed reads`
+
+/** What can make a read fail, said the same way wherever a failed read is explained. */
+export const READ_FAILURES =
+  "a log that could not be opened or parsed, a work order that could not be written — no " +
+  "`extract.md` resolving is one way — or a reader that reported reading nothing new"
+
+/**
+ * The `ctx` members the plugin calls, which is what makes checking them worth anything: a
+ * member we do not use proves nothing when it is present, and says nothing about the one
+ * that moved. This list used to name `generate.text`, which `index.js` now mentions only to
+ * explain why it is *not* used, and to omit the session calls every analysis runs through —
+ * so a renamed `session.generate` would have passed the check and broken all of it.
+ * `test/consistency.test.js` holds the list to what `index.js` actually does.
+ */
+export const REQUIRED_SURFACE = [
+  ["tool", "hook"],
+  ["tool", "transform"],
+  ["session", "hook"],
+  ["session", "synthetic"],
+  ["command", "transform"],
+  ["event", "subscribe"],
+]
+
+/**
  * The checks a passing session cannot make (AGENTS.md decision 19).
  *
  * Free, so it runs on every `/retro`. It used to also ask the model whether it answers and
@@ -425,36 +457,6 @@ export const STATUS = { OK, DEGRADED, BROKEN, SKIPPED }
  * which prompt layer is in force and whether a newer default is waiting, and how much is
  * stocked up — so that "is it doing anything" is answered in the same place.
  */
-/**
- * The `ctx` members the plugin calls, which is what makes checking them worth anything: a
- * member we do not use proves nothing when it is present, and says nothing about the one
- * that moved. This list used to name `generate.text`, which `index.js` now mentions only to
- * explain why it is *not* used, and to omit the session calls every analysis runs through —
- * so a renamed `session.generate` would have passed the check and broken all of it.
- * `test/consistency.test.js` holds the list to what `index.js` actually does.
- */
-/**
- * What a log set aside after three failed reads is called, wherever it is reported — state.json,
- * the hand-over and this file. One phrase in one place, because three of them drifted apart:
- * "given up after three failed analyses" in two, "could not read three times" in the third, for
- * the same state (second pre-release review).
- */
-export const SET_ASIDE = "set aside after three failed reads"
-
-/** What can make a read fail, said the same way wherever a failed read is explained. */
-export const READ_FAILURES =
-  "a file that could not be opened or parsed, a work order that could not be written, or a " +
-  "reader that reported reading nothing new"
-
-export const REQUIRED_SURFACE = [
-  ["tool", "hook"],
-  ["tool", "transform"],
-  ["session", "hook"],
-  ["session", "synthetic"],
-  ["command", "transform"],
-  ["event", "subscribe"],
-]
-
 export async function activeCheck({ ctx, config, prompts, store }) {
   const checks = []
   const notes = []

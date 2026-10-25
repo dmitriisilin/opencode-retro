@@ -142,12 +142,15 @@ export default {
      */
     const rounds = new Map()
     /**
-     * Ids of tool calls that are the plugin's own, decided when the call starts. Which call is
-     * ours used to be re-decided when it finished — by then the reader has recorded and its
-     * order is closed, so a delegation recognised by the order's path no longer matched, and the
-     * plugin's own `subagent` call was written into the person's log (second pre-release review).
+     * Tool calls that are the plugin's own, decided when the call starts: id -> the session it
+     * runs in, and for a delegation the prompt it hands its reader. Which call is ours used to be
+     * re-decided when it finished — by then the reader has recorded and its order is closed, so a
+     * delegation recognised by the order's path no longer matched, and the plugin's own
+     * `subagent` call was written into the person's log (second pre-release review). The prompt
+     * is kept because the reader's own session starts before the call ends, and is recognised by
+     * it (`delegatedByUs`). Dropped when the call ends, or when its session's turn does.
      */
-    const ownCalls = new Set()
+    const ownCalls = new Map()
 
     /**
      * What is waiting, as the marks say it is. A log whose last read failed is named as a
@@ -288,8 +291,8 @@ export default {
       // A subagent reading one of our work orders is the plugin's own work, not the user's. Only
       // ever a fresh session: one that already has a log is somebody's work, and is never
       // reclassified by what they happen to type.
-      if (p?.sessionID && !log.probe(p.sessionID) && isWorkLine(p?.prompt?.text)) {
-        if (p?.sessionID) internal.add(p.sessionID)
+      if (p?.sessionID && !log.probe(p.sessionID) && (isWorkLine(p?.prompt?.text) || delegatedByUs(p?.prompt?.text))) {
+        internal.add(p.sessionID)
         return
       }
       if (internal.has(p?.sessionID)) return
@@ -315,7 +318,10 @@ export default {
 
     await hook("tool", "execute.before", (p) => {
       if (ownWork(p)) {
-        if (p?.id != null) ownCalls.add(p.id)
+        if (p?.id != null) {
+          const prompt = p?.tool === "subagent" && typeof p?.input?.prompt === "string" ? p.input.prompt.trim() : null
+          ownCalls.set(p.id, { session: p?.sessionID, prompt })
+        }
         // Not logged, but counted: the event stream sees this call like any other, and the
         // self-check compares the two sides. See `ingest.ownCall`. Not for a call made *inside*
         // one of our own sessions, though: `handleEvent` drops those sessions' events, so
@@ -328,7 +334,12 @@ export default {
     })
     await hook("tool", "execute.after", (p) => {
       const child = p.tool === "subagent" ? p.result?.metadata?.sessionID : null
-      const ours = (p?.id != null && ownCalls.delete(p.id)) || ownWork(p)
+      // Decided once, at the start. Asking again here took a person's subagent for ours when an
+      // order naming the same path was issued while it ran (third pre-release review). Only a
+      // call whose start this process never saw is decided now, and only by what cannot change:
+      // the session it runs in, or which tool it is.
+      const ours =
+        p?.id != null && ownCalls.has(p.id) ? ownCalls.delete(p.id) : p?.tool === "subagent" ? internal.has(p?.sessionID) : ownWork(p)
       if (child && (ours || internal.has(child))) {
         // One of ours. If its own prompt did not carry the mark (the agent may have worded the
         // delegation its own way), whatever it wrote before the link was known goes now.
@@ -484,6 +495,12 @@ export default {
 
     function handleEvent(event) {
       const sessionID = event?.data?.sessionID
+
+      // A call interrupted with its turn never reaches its after-hook. Without this, its entry
+      // stayed for the life of the process (third pre-release review).
+      if (sessionID && /^session\.execution\.(succeeded|failed|interrupted)$/.test(event.type ?? "")) {
+        for (const [id, call] of ownCalls) if (call.session === sessionID) ownCalls.delete(id)
+      }
 
       if (event.type === "session.created" && sessionID) {
         // A directory that names the same place two ways is still ours. Comparing raw
@@ -765,14 +782,15 @@ export default {
      * before the fix?" are different questions, and only the log can answer the second.
      *
      * The date is the latest record **inside the cited range** `[first, last]`, or inside the
-     * whole log when the lesson cites no steps. Both halves were found by review, from opposite
+     * whole log when the lesson cites no steps — in both cases no further than the reader read
+     * (`upTo`). Both halves were found by review, from opposite
      * sides: dating by the newest record reached past the cited stretch into work done after a
      * fix and reopened accepted lessons on pre-fix evidence; reading `steps` as two separate
      * numbers then missed a recurrence inside the range, and left step-less evidence undated.
      * Nothing inside the range — or a log that cannot be read — is no date at all, and the
      * store reopens undated evidence, because that is the cheaper way to be wrong.
      */
-    function datesIn(sessionID) {
+    function datesIn(sessionID, upTo = Infinity) {
       let records = null
       return (steps) => {
         if (records === null) {
@@ -785,7 +803,9 @@ export default {
         if (!records.length) return null
         const cited = Array.isArray(steps) ? steps.map(Number).filter(Number.isFinite) : []
         const first = cited.length ? Math.min(...cited) : -Infinity
-        const last = cited.length ? Math.max(...cited) : Infinity
+        // Never past what the reader read: records written after its order — the session working
+        // on while it was read — would date old evidence as new (third pre-release review).
+        const last = Math.min(cited.length ? Math.max(...cited) : Infinity, upTo)
         const at = records.filter((r) => r.n >= first && r.n <= last && Number.isFinite(r.t)).map((r) => r.t)
         return at.length ? Math.max(...at) : null
       }
@@ -987,6 +1007,20 @@ export default {
      */
     function isWorkLine(text) {
       return typeof text === "string" && text.trimStart().startsWith(`${WORK_MARK}: read `)
+    }
+
+    /**
+     * Whether a fresh session's first prompt is the one one of our own delegations, still
+     * running, handed its reader — however the agent worded it. The reader's session starts,
+     * and announces its parent, before the delegating call ends; recognised only by the exact
+     * line, a reworded delegation's reader was folded into the person's log by
+     * `session.created`, and nothing could take those records back (third pre-release review).
+     * OpenCode may put a line of its own ahead of the prompt, hence `includes`.
+     */
+    function delegatedByUs(text) {
+      if (typeof text !== "string") return false
+      for (const call of ownCalls.values()) if (call.prompt && text.includes(call.prompt)) return true
+      return false
     }
 
     /**
@@ -1224,7 +1258,11 @@ export default {
         const detail =
           `\`${session}\` was read only as far as step ${claimed}, which is no further than the ` +
           `${order.n} already analysed. Nothing was recorded; the log will be asked about again.`
-        fail(session, order, "the analysis reported reading nothing new")
+        const failed = fail(session, order, "the analysis reported reading nothing new")
+        // The session's own line in the report too, which still said the log was waiting (third
+        // pre-release review).
+        const verified = lastVerified.get(session)
+        if (verified) check.verify({ ...verified, extraction: failed })
         // Closed as `empty`, not `unanswered`: an answer came back, it just covered nothing new.
         // As "unanswered" the self-check reported no record about a log whose reader had
         // answered, while counting the same read as failed (second pre-release review).
@@ -1245,7 +1283,9 @@ export default {
         fingerprint,
         partial,
         unreported: !reported,
-        dateOf: datesIn(session),
+        // Unreported, `claimed` is the old mark, which says nothing about what was read; the
+        // order's own range is the most the reader could have seen.
+        dateOf: datesIn(session, reported ? claimed : order.lastN),
       })
       // `open` is what makes a partial read useful: the next command reads on from the mark
       // without waiting for the log to grow.

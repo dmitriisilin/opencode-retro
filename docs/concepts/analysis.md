@@ -171,12 +171,18 @@ the plugin's bookkeeping never turns into a lesson about the plugin.
   `a session is given up on after three attempts, not billed forever`
   `a reader that reported reading nothing new is not reported as no answer`
   `a log set aside is described in the same words everywhere it is reported`
-- What decides that a call or a session is the plugin's own is decided when it starts, and a
-  session a person types into is never taken for ours by anything short of the prescribed line.
+- What decides that a call or a session is the plugin's own is decided when it starts, and
+  never again when it ends. A session a person types into is never taken for ours by anything
+  short of the prescribed line — or, for a fresh session, the very prompt one of our own
+  delegations is handing its reader at that moment, however the agent worded it. An own call
+  interrupted with its turn is forgotten with it.
   `talking about work orders does not stop a session being logged`
   `a person who names an open order's path in a new session is still logged`
   `a reworded delegation of a work order stays out of the person's log`
   `a fresh session given the prescribed line is recognised as the plugin's own reader`
+  `a reworded delegation's reader stays out of the person's log, in the order the events arrive`
+  `a person's own delegation stays logged even if an order naming its path is issued while it runs`
+  `an own delegation interrupted with its turn is forgotten, so a later session quoting it is still logged`
 - One command issues at most `extractLimit` orders; the rest stay owed and are named. A
   skipped log takes no order.
   `extractLimit caps what one command analyses and leaves the rest owed`

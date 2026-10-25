@@ -61,15 +61,16 @@ with whatever follows.
 permanent: a session prompted again grows past its mark and is owed again.
 
 **Retired.** A log with three failed reads at the same size — a file that could not be opened
-or parsed, a work order that could not be written, or a reader that reported reading nothing
-new. Not owed; its failure is recorded and named, in every report, as "set aside after three
-failed reads" (`SET_ASIDE` in `src/selfcheck.js`, so the words cannot drift apart again). It is
+or parsed, a work order that could not be written (no `extract.md` resolving is one way), or a
+reader that reported reading nothing new (`READ_FAILURES`, worded once). Not owed; its failure
+is recorded and named, in every report, as "set aside after three failed reads" (`SET_ASIDE` in
+`src/selfcheck.js`, so the words cannot drift apart again). It is
 owed again if it grows. An order nobody answered is not one of these (analysis.md): it says
 nothing about the log, so it is reported and asked again instead.
 
-**Why the cause is not distinguished.** Only one of those three is about the log; the others
-are about the machine or about prompt files the user deleted, and they fail every owed log at
-once. Counting them anyway is deliberate. Not counting them would leave such a log owed for
+**Why the cause is not distinguished.** A work order that could not be written is not about
+the log at all: it is the disk, or a prompt file the user deleted, and it fails every owed log
+at once. A file that could not be opened can be either. Counting them anyway is deliberate. Not counting them would leave such a log owed for
 ever, and a log that is always owed is never pruned (above) — so the choice is between losing
 a log that stopped growing while something was broken, and keeping a file nothing will ever
 read. The first is the cheaper loss on the horizon this plugin works on: the fix is in place

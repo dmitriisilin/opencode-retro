@@ -540,8 +540,9 @@ re-read all of it, pay for all of it, and re-derive the lessons that were alread
 answer two questions: `n`, the last step actually turned into lessons, which only moves when
 an analysis succeeded and is where the next one starts; and `size`, the largest log already
 sent, success or not, so nothing is paid for twice. **`n` is how far the analysis says it
-read.** The order asks for the whole log, so a record with no `through` moves `n` to the last
-step there was; a reader that got part way reports `through` and the rest stays owed.
+read.** The order asks for the whole log and `retro_record` requires `through`: a reader that
+got part way says so and the rest stays owed, and a record without it keeps its lessons and
+leaves the log unread.
 *This used to be measured rather than reported: the projection kept a head and a tail with a
 gap between them, so marking the last step* seen *would have jumped the elided middle, and
 `projected()` reported the last step of its unbroken prefix instead. With the log read by the
@@ -691,10 +692,10 @@ What stays, because the reader genuinely cannot know it:
   in the log for ever.
 
 What changed hands: **coverage is now reported, not inferred.** The order asks for the whole
-log, so a record with no `through` means it was read; a reader that got part way says
-`through: n` and the rest stays owed. That is the same mark semantics as before, decided by
-the only party that knows, and it is one optional schema field instead of a projection that
-had to be measured.
+log, and the reader says how far it got with `through: n`; the rest stays owed. That is the
+same mark semantics as before, decided by the only party that knows, and it is one schema
+field instead of a projection that had to be measured. *It was optional at first, with silence
+read as "all of it"; it is required now, and silence means unread — see M5.*
 
 What was given up, and it is a real loss: **the plugin no longer knows what was read.** The
 model test's strongest invariant used to parse `[n]` markers out of the projection to assert

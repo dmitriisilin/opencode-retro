@@ -44,7 +44,8 @@ integrate, and the next command analyses the logs that were waiting behind it, w
 the fix and into the same trap — so without this, one fix is reported as having failed once
 per waiting log. When the friction happened is read from the log itself (`seenAt`): the
 latest record inside the cited range `[first, last]`, or inside the whole log when nothing is
-cited. Nothing inside the range is no date, and evidence with no date reopens, because nothing says it is
+cited — never past the step the reader says it read, since what the session wrote after its
+order was not what the reader saw. Nothing inside the range is no date, and evidence with no date reopens, because nothing says it is
 old and putting a lesson to a human twice costs less than dropping one.
 
 **Restore.** An evicted lesson whose problem returns comes back as the open question it
@@ -87,6 +88,7 @@ told to the extractor and filters its answer, and the store refuses to reopen an
   `evidence is dated by the range it cites, not by whatever came after it in the log`
   `a recurrence after the fix inside the cited range reopens the lesson`
   `evidence that cites no steps is dated by the whole log`
+  `evidence that cites no steps is dated by what the reader read, not by what came after the order`
   `evidence citing only steps the log does not have is undated, and reopens`
 - What a human has already fixed is named in the order, with the date, so the reading is not
   spent re-deriving an answered problem.
