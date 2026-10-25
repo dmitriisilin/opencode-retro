@@ -96,12 +96,13 @@ last analysis of the session whichever path ran it.
   `an outcome for a session still working leaves the heartbeat, and a reader's own hooks move it`
   `a report written while a hook runs carries that hook's beat`
 - A hook measures in one place, after its handler: the person's session behind it — through a
-  delegation, or one still deferred — or, for a hook of the plugin's own, the session the
-  report describes. A session seen for the first time is measured at once, then at most once
+  delegation, or one still deferred — or, when that cannot be measured (a hook of the plugin's
+  own, a session already ended), the session the report describes. A session seen for the first time is measured at once, then at most once
   a minute; while a session of the person's works, the heartbeat is never written alone over
   checks a minute stale, whoever's hooks are firing.
   `while a session works, its checks are evaluated again once a minute, not only the heartbeat`
-  `a /retro round's readers keep the session that started them measured`
+  `a /retro round's readers keep the session the report describes measured`
+  `a deferred child's hooks keep its parent measured`
 - A call the turn ended in the middle of accounts for its event: an interrupted turn with a
   subagent still running is not a dead tool hook.
   `an interrupted turn with a subagent still running is not a dead tool hook`

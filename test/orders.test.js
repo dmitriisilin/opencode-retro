@@ -1694,7 +1694,7 @@ test("while a session works, its checks are evaluated again once a minute, not o
   }
 })
 
-test("a /retro round's readers keep the session that started them measured", async () => {
+test("a /retro round's readers keep the session the report describes measured", async () => {
   // Twenty-seventh pre-release review: a reader's hook wrote the heartbeat alone and reset the
   // clock, so the session the report described stayed at its last measurement for the whole
   // round while the heartbeat moved.
@@ -1716,6 +1716,31 @@ test("a /retro round's readers keep the session that started them measured", asy
     const report = readFileSync(join(dir, ".retro", "selfcheck.md"), "utf8")
     assert.match(report, /measured on session\s+`ses_p`/)
     assert.match(report, /verified\s+2026-10-25 10:04/, "measured again, not only the heartbeat")
+    await cleanup?.()
+  } finally {
+    Date.now = real
+  }
+})
+
+test("a deferred child's hooks keep its parent measured", async () => {
+  // Twenty-eighth pre-release review: the "one still deferred" path had no test.
+  const real = Date.now
+  let now = Date.parse("2026-10-25T10:00:00Z")
+  Date.now = () => now
+  try {
+    const dir = sandbox()
+    const fake = fakeOpenCode({ directory: dir, agent: false })
+    const cleanup = await plugin.setup(fake.ctx)
+    await deferHelper(fake, dir)
+    for (let i = 0; i < 3; i++) {
+      now += 61_000
+      const call = { sessionID: "ses_helper", id: `k${i}`, tool: "read", input: { path: "x" } }
+      await fake.hooks.get("tool.execute.before")(call)
+      await fake.hooks.get("tool.execute.after")({ ...call, status: "completed", result: { output: "y" } })
+    }
+    const report = readFileSync(join(dir, ".retro", "selfcheck.md"), "utf8")
+    assert.match(report, /measured on session\s+`ses_review`/)
+    assert.match(report, /verified\s+2026-10-25 10:03/)
     await cleanup?.()
   } finally {
     Date.now = real

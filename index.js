@@ -226,22 +226,21 @@ export default {
       lastWrite = Date.now()
       try {
         const lessons = store.list()
+        const ids = log.list()
+        const cited = citedSessions() // once, not once per log (twenty-seventh review)
         check.stock({
           lessons: lessons.length,
           top: lessons[0]?.id ?? null,
           topScore: lessons.length ? store.score(lessons[0]) : null,
           ...stockFacts(),
-          cited: (() => {
-            const cited = citedSessions() // once, not once per log (twenty-seventh review)
-            return log.list().filter((id) => cited.has(id)).length
-          })(),
+          cited: ids.filter((id) => cited.has(id)).length,
           decided: store.listArchive().length,
           unreadable: store.unreadable(),
           // Logs that failed three analyses: still on disk until they are quiet, and nothing
           // will read them — but only while nothing owes them. A log that grows is owed afresh;
           // announcing it as beyond reading next to the line saying it will be tried again is
           // two contradictory claims in one report.
-          setAside: log.list().filter((id) => !isOwed(id) && state.extractionOf(id)?.setAside).length,
+          setAside: ids.filter((id) => !isOwed(id) && state.extractionOf(id)?.setAside).length,
         })
         mkdirSync(config.dir, { recursive: true })
         writeFileSync(config.selfcheck, check.render())
@@ -861,9 +860,10 @@ export default {
       // work that is never a session. `uncountSession` keeps the id, so a writer holding the
       // old count cannot put it back.
       state.uncountSession(child)
-      // The self-check may have been measuring the child's log, which no longer exists — and
-      // when the root is not measured (one deferred, or one of ours) the report goes back.
-      observe(rootOf(parent), { force: true })
+      // The self-check may have been measuring the child's log, which no longer exists: the
+      // report goes back, and the parent is measured afresh by the next hook's `pulse` — the
+      // one place a hook measures (twenty-eighth review).
+      observedSessions.delete(rootOf(parent))
       handBack(child)
     }
 
@@ -1113,14 +1113,16 @@ export default {
     function pulse(sessionID) {
       // The one place a hook measures (twenty-seventh review, after three rounds of writers on
       // one clock starving each other). What it measures is the person's session behind the
-      // hook — through a delegation, or one still deferred — or, for a hook of one of ours, the
-      // session the report describes: a /retro round's readers keep the session that started
-      // them measured. A session seen for the first time is measured at once; after that, once
-      // a minute, and never a fresh heartbeat written over checks a minute stale.
-      const target = personBehind(sessionID) ?? check.describing()
-      const due = Date.now() - lastWrite >= config.heartbeatMs
-      if (target && (due || !observedSessions.has(target)) && observe(target, { force: true })) return
-      if (due) writeSelfCheck()
+      // hook — through a delegation, or one still deferred — or, when that cannot be measured
+      // (a hook of one of ours, a session already ended), the session the report describes. A
+      // session seen for the first time is measured at once; after that, once a minute, and
+      // never a fresh heartbeat written over checks a minute stale.
+      if (!sessionID) return // a hook that names no session measures nothing
+      const behind = personBehind(sessionID)
+      if (behind && observe(behind)) return
+      const shown = check.describing()
+      if (shown && shown !== behind && observe(shown)) return
+      if (Date.now() - lastWrite >= config.heartbeatMs) writeSelfCheck()
     }
 
     /** The person's session a hook belongs to, or null for one of ours. */
@@ -1160,7 +1162,7 @@ export default {
       // is waiting to be told whose it is (rule 3, nineteenth).
       for (const [grandchild, of] of parents) if (of === child && !internal.has(grandchild)) claimReader(grandchild)
       for (const [grandchild, of] of deferred) if (of === child && !internal.has(grandchild)) claimReader(grandchild)
-      if (parent) observe(rootOf(parent), { force: true })
+      if (parent) observedSessions.delete(rootOf(parent))
       handBack(child)
     }
 
