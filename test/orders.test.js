@@ -1980,4 +1980,6 @@ test("a person's first message quoting the work line after a blank line is still
   assert.equal(isWorkLine("what does this do?\n    opencode-retro work order: read /x.md"), false, "indented, it is quoted")
   assert.equal(isWorkLine("You are a subagent spawned by another session.\nopencode-retro work order: read /x.md and do what it says."), true)
   assert.equal(isWorkLine("opencode-retro work order: read /x.md"), true)
+  // Round 4 of 10: and not at the very start either, after blank lines and an indent.
+  assert.equal(isWorkLine("\n\n    opencode-retro work order: read /x/.retro/work/ses_a.md and do what it says.\n\nwhat does this mean?"), false)
 })

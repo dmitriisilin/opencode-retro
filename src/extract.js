@@ -43,7 +43,10 @@ export function isWorkLine(text) {
 // At the start, or right after one non-empty line before it — OpenCode's — at the start of its
 // own line, and no further: a person pasting the hand-over, where the line sits indented and
 // after a blank line, is not a reader (thirty-third review; round 3 of 10).
-const WORK_LINE = new RegExp(`^\\s*(?:[^\\n]*\\S[^\\n]*\\n)?${WORK_MARK}: read `)
+// Nothing before it at all, not even blank lines or spaces: a prompt that opens with the
+// indented line pasted from the hand-over is a person's (round 4 of 10). Measured: OpenCode
+// joins its own line and the delegation with exactly one newline.
+const WORK_LINE = new RegExp(`^(?:[^\\n]*\\S[^\\n]*\\n)?${WORK_MARK}: read `)
 
 /**
  * The plugin's own rounds in a log, as step ranges (analysis.md, "The plugin's own work").
