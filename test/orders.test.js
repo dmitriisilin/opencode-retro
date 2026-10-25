@@ -1511,17 +1511,3 @@ test("a reader created after its delegation already errored is still ours", asyn
   assert.ok(!kindsIn(dir, "ses_review").some((r) => /See the file/.test(r.text ?? "")), "the reader is not the person's")
   await cleanup?.()
 })
-
-test("a completed delegation that names no child session is reported as a moved result shape", async () => {
-  // Rule 2 reads the child from `result.metadata.sessionID`; if that moves, it would quietly
-  // take the person's children for ours. Gotcha 8's kind of drift, so it is said in plugin.log.
-  const dir = sandbox()
-  const fake = fakeOpenCode({ directory: dir, agent: false })
-  const cleanup = await plugin.setup(fake.ctx)
-  await fake.hooks.get("session.prompt")({ sessionID: "ses_person", messageID: "pm", prompt: { text: "explore" } })
-  const call = { sessionID: "ses_person", id: "p1", tool: "subagent", input: { agent: "explore", prompt: "look" } }
-  await fake.hooks.get("tool.execute.before")(call)
-  await fake.hooks.get("tool.execute.after")({ ...call, status: "completed", result: { output: "done", metadata: { child: "ses_x" } } })
-  assert.match(readFileSync(join(dir, ".retro", "plugin.log"), "utf8"), /named no child session/)
-  await cleanup?.()
-})

@@ -1048,6 +1048,12 @@ Known, listed so nobody discovers them as surprises:
   but the outcome recorded for the old file stays in `state.json` until the new one is
   analysed, and the session's line shows it. Forgetting it would need tombstones in a file
   that merges by union; a diagnostic line wrong until the next `/retro` does not earn them.
+- **Rule 2 reads a delegation's child from `result.metadata.sessionID`**, as measured. If that
+  moves, every delegation of ours looks unaccounted for, and a person's child deferred beside
+  one and never named is taken for ours — silently, the kind of drift Gotcha 8 is about. A
+  warning was tried in the eighteenth review and removed in the nineteenth: it could not see a
+  Code Mode delegation, would have fired on legitimate results, and reached only `plugin.log`.
+  What does catch it is the bench, whose review session would stop showing the person's work.
 - **Events are taken to arrive in step with the hooks around them.** The event stream lags the
   hooks by milliseconds, and what it would have to overtake takes a model's answer: a turn's
   end is taken to arrive before the next turn's hooks, and a child's creation before the end of

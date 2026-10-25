@@ -361,7 +361,11 @@ export default {
         const tool = known?.tool === "subagent" ? "subagent" : (p?.tool ?? known?.tool)
         calls.delete(key) // re-inserted last, so the oldest is first to go
         calls.set(key, { session: p?.sessionID, tool, ours, open: (known?.open ?? 0) + 1, named: Boolean(known?.named) })
-        if (calls.size > MAX_CALLS) calls.delete(calls.keys().next().value)
+        // Past the cap, the oldest call still open goes; never one kept as unaccounted for,
+        // which rule 2 still needs and its turn's end removes (nineteenth review).
+        if (calls.size > MAX_CALLS) {
+          for (const [k, call] of calls) if (call.open > 0) { calls.delete(k); break }
+        }
       }
       // Its first half was taken for the person's; it is ours, so that start is taken back.
       if (ours && known && !known.ours) ingest.unstart(p?.sessionID, p?.id)
@@ -391,16 +395,6 @@ export default {
       // Everything a session of ours does is ours, including a call that started before the
       // session was known to be (ninth review).
       const ours = internal.has(p?.sessionID) || (known ? known.ours : ownWork(p))
-      // One whose start was never seen is unaccounted for in the same way.
-      if (!known && key && ours && p?.tool === "subagent" && !child && !internal.has(p?.sessionID)) {
-        calls.set(key, { session: p?.sessionID, tool: "subagent", ours: true, open: 0, named: false })
-      }
-      // A delegation that completed and names no session is not an interrupted or errored one:
-      // the result's shape has moved, and rule 2 would quietly take the person's children for
-      // ours. Said where a broken plugin says things (AGENTS.md Gotcha 8; eighteenth review).
-      if (p?.tool === "subagent" && p?.status === "completed" && !child && known?.open === 0 && !known.named) {
-        onError("hook.subagent", "a completed subagent call named no child session (result.metadata.sessionID) — the result shape may have changed")
-      }
       // The moment a child is known exactly: this call started it. Ours is claimed, the
       // person's adopted — whatever either was told (rule 2).
       if (child) deferred.delete(child)
