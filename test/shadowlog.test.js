@@ -53,18 +53,18 @@ test("stat is the self-check's evidence that writing works", () => {
   assert.ok(got.size > 0)
 })
 
-test("count reports the file's records, not the counters of the current turn", () => {
+test("read reports the file's records, not the counters of the current turn", () => {
   const s = sandbox()
   const log = createShadowLog({ dir: s.dir })
 
-  assert.equal(log.count("ses_a"), 0)
+  assert.equal(log.read("ses_a").length, 0)
   log.write("ses_a", { n: 1, k: "prompt", text: "first" })
   log.write("ses_a", { n: 2, k: "text", text: "second" })
-  assert.equal(log.count("ses_a"), 2)
+  assert.equal(log.read("ses_a").length, 2)
 
   // A new process, or a second turn, appends more: the file is what the self-check reports.
   log.write("ses_a", { n: 3, k: "prompt", text: "again" })
-  assert.equal(log.count("ses_a"), 3)
+  assert.equal(log.read("ses_a").length, 3)
 })
 
 test("remove is idempotent and silent when the file is already gone", () => {

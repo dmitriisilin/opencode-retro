@@ -1444,7 +1444,9 @@ test("a delegation of ours written after an early retro_propose is still ours", 
     { n: 2, k: "session", event: "start" },
     { n: 3, k: "handover", about: "lesson", text: "a lesson" },
     { n: 4, k: "tool", tool: "retro_propose", input: {} },
-    { n: 5, k: "tool", tool: "subagent", input: { prompt: "You are a subagent.\nopencode-retro work order: read /x.md and do what it says." }, output: "the reader's report" },
+    // As measured in twelve live delegations: the call carries the line as the agent wrote it,
+    // with none of OpenCode's own text, which is added to the child's prompt only.
+    { n: 5, k: "tool", tool: "subagent", input: { prompt: "opencode-retro work order: read /x.md and do what it says." }, output: "the reader's report" },
     { n: 6, k: "tool", tool: "subagent", input: { prompt: "explore the repo" } },
   ]
   const { steps } = ownRounds(records)
@@ -2148,4 +2150,44 @@ test("the askings add up in the session /retro runs in, which its own rounds len
   assert.equal(last.paths.length, 1, "still asked about")
   assert.match(state(dir).extracted.ses_a.detail, /asked 3 times and no record came back/)
   await cleanup?.()
+})
+
+/* After the ten rounds: the self-check reads a hand-over's turn as rounds and replies do. */
+
+test("the self-check reads which turn a hand-over started as rounds and replies do", async () => {
+  const { turnHandovers } = await import("../src/extract.js")
+  const turn = (extra) => [
+    { n: 1, k: "prompt", text: "fix bug" },
+    { n: 2, k: "session", event: "start" },
+    { n: 3, k: "handover", about: "lesson", sent: true, text: "a lesson" },
+    { n: 4, k: "text", text: "fixed" },
+    { n: 5, k: "session", event: "end" },
+    ...extra,
+    { n: 9, k: "session", event: "start" },
+  ]
+  assert.equal(turnHandovers(turn([])), 1, "waiting in the inbox, it is the next turn's input")
+  assert.equal(turnHandovers(turn([{ n: 6, k: "prompt", text: "no, do X" }])), 0, "the person spoke first: their turn")
+  assert.equal(
+    turnHandovers([
+      { n: 1, k: "prompt", text: "fix bug" },
+      { n: 2, k: "session", event: "start" },
+      { n: 3, k: "session", event: "end" },
+      { n: 4, k: "handover", about: "work", sent: true, text: "the logs come first" },
+      { n: 5, k: "handover", about: "notice", undelivered: true, text: "could not be delivered" },
+      { n: 6, k: "session", event: "start" },
+    ]),
+    0,
+    "one never delivered started nothing",
+  )
+  assert.equal(
+    turnHandovers([
+      { n: 1, k: "prompt", text: "fix bug" },
+      { n: 2, k: "session", event: "start" },
+      { n: 3, k: "handover", about: "lesson", text: "a lesson" },
+      { n: 4, k: "session", event: "end" },
+      { n: 5, k: "session", event: "start" },
+    ]),
+    0,
+    "one handed back as a tool result answered the turn it was in",
+  )
 })

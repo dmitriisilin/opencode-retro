@@ -53,7 +53,8 @@ export function isWorkLine(text) {
   if (nl < 0 || !text.startsWith(OPENCODE_SUBAGENT)) return false
   return isIndentedWorkLine(text.slice(nl + 1))
 }
-const WORK_LINE = `${WORK_MARK}: read `
+/** How a reader's prompt begins: the hand-over writes it from this, so the two cannot drift. */
+export const WORK_LINE = `${WORK_MARK}: read `
 const OPENCODE_SUBAGENT = "You are a subagent"
 /** The line, after spaces or tabs: as an agent writes a delegation, never a person's prompt. */
 function isIndentedWorkLine(text) {
@@ -112,6 +113,29 @@ function answerStarts(sorted) {
 }
 
 /**
+ * How many of the plugin's hand-overs the latest turn of the person's session began with: sent
+ * ones whose answer is that turn — sent between turns just before it, or waiting in the inbox
+ * while the turn before it ran. Read from `answerStarts`, the same reading rounds and replies
+ * take, so the self-check cannot disagree with them about which turn a hand-over started (a
+ * third copy of the rule, kept beside the self-check, had already drifted from them). One
+ * never delivered started nothing, and one still waiting when the person spoke was answered by
+ * the person's turn. With no turn start logged yet, the latest turn is the one still to start.
+ */
+export function turnHandovers(records) {
+  const sorted = [...records].sort((a, b) => (a.n ?? 0) - (b.n ?? 0))
+  const at = answerStarts(sorted)
+  const starts = []
+  sorted.forEach((r, i) => {
+    if (r.k === "session" && r.event === "start" && !r.from) starts.push(i)
+  })
+  const turnOf = (j) => starts.find((s) => s >= j) ?? Infinity
+  const latest = starts.length ? starts.at(-1) : Infinity
+  let count = 0
+  for (const [h, j] of at) if (j !== null && sorted[h].sent && turnOf(j) === latest) count++
+  return count
+}
+
+/**
  * The plugin's own rounds in a log, as step ranges (analysis.md, "The plugin's own work").
  *
  * A round is answered by the turn its `handover` with `about: "work"` starts, and runs to the
@@ -167,8 +191,9 @@ export function ownRounds(records) {
     if (r.k !== "tool") continue
     // Ours wherever they land: a delegation's after-hook is written when its reader is done,
     // which an early `retro_propose` puts after the round has closed (thirty-second review).
-    // A delegation's own text is the agent's, never the person's, so an indent is allowed.
-    if (OWN_TOOLS.has(r.tool) || (r.tool === "subagent" && typeof r.input?.prompt === "string" && (isWorkLine(r.input.prompt) || isIndentedWorkLine(r.input.prompt)))) steps.add(r.n)
+    // A delegation's own text is the agent's, never the person's, so an indent is allowed — and
+    // OpenCode's own line is never in it: that is added to the child's prompt, not the call's.
+    if (OWN_TOOLS.has(r.tool) || (r.tool === "subagent" && typeof r.input?.prompt === "string" && isIndentedWorkLine(r.input.prompt))) steps.add(r.n)
   }
   // The ranges the order names are the steps themselves, run by run, so a reader is told about
   // everything that is ours — a reworded reader's records after its round included, and a
@@ -188,8 +213,7 @@ export function ownRounds(records) {
  * The last step an analysis could read something in: not the plugin's own, not a step that holds
  * nothing. Reading up to it is reading all of it, whatever trails after (thirty-third review).
  */
-export function lastReadable(records, own = ownRounds(records).steps) {
-  const plugin = repliesToPlugin(records)
+export function lastReadable(records, own = ownRounds(records).steps, plugin = repliesToPlugin(records)) {
   let last = 0
   for (const r of records) if (readable(r, plugin) && !own.has(r.n) && (r.n ?? 0) > last) last = r.n
   return last

@@ -162,22 +162,6 @@ export function createShadowLog({ dir, onError }) {
         return { exists: false, size: 0 }
       }
     },
-
-    /**
-     * The records actually in the file, for the self-check's own claim about it.
-     *
-     * The ingest counters are per turn — `ingest.endTurn` resets them when an execution
-     * ends — so using them here made a session prompted again report `3 entries` about a
-     * log with 79 lines in it. The report may claim only what the file proves, and that
-     * has to survive the next turn.
-     */
-    count(sessionID) {
-      try {
-        return parseShadowLog(readFileSync(join(dir, `${sessionID}.jsonl`), "utf8")).length
-      } catch {
-        return 0
-      }
-    },
   }
 }
 

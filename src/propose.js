@@ -1,6 +1,7 @@
 import { score, staleSessions } from "./lessons.js"
 import { DEFAULTS } from "./config.js"
 import { SET_ASIDE } from "./selfcheck.js"
+import { WORK_LINE } from "./extract.js"
 
 /**
  * `/retro` (AGENTS.md decision 9, as amended).
@@ -260,7 +261,7 @@ export function renderWorkOrders(orders, { all = false, failures = [], left = 0 
       "only needs to read a file and call a tool. Give each exactly this prompt, with its own " +
       "path filled in, and nothing else:",
     "",
-    `    opencode-retro work order: read <path> and do what it says.`,
+    `    ${WORK_LINE}<path> and do what it says.`,
     "",
     ...(n > 1
       ? [

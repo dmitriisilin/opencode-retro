@@ -7,7 +7,7 @@ import { createShadowLog, identityOf, isReplacedLog, parseShadowLog } from "./sr
 import { createState } from "./src/state.js"
 import { concludedIn, createStore, score } from "./src/lessons.js"
 import { assessCurrency, fingerprintOf } from "./src/currency.js"
-import { composeOrder, isWorkLine, lastReadable, nothingNew, ownRounds, recordAnswer, repliesToPlugin } from "./src/extract.js"
+import { composeOrder, isWorkLine, lastReadable, nothingNew, ownRounds, recordAnswer, repliesToPlugin, turnHandovers } from "./src/extract.js"
 import { RECORD_INPUT } from "./src/contract.js"
 import {
   PROPOSE_INPUT,
@@ -254,15 +254,16 @@ export default {
       // Re-inserted, so the set is in order of the latest observation (`handBack`).
       observedSessions.delete(sessionID)
       observedSessions.add(sessionID)
+      const measured = measure(sessionID)
       check.verify(
         {
           id: sessionID,
-          counts: { ...ingest.counts(sessionID), ...turnInput(sessionID), startSeen: turnSeen.has(sessionID) },
-          log: logFacts(sessionID),
+          counts: { ...ingest.counts(sessionID), ...measured.input, startSeen: turnSeen.has(sessionID) },
+          log: measured.log,
           triggered: null,
           ended: false,
           // From disk when this process ran none: a reload must not unsay an analysis.
-          extraction: extractionFor(sessionID),
+          extraction: extractionFor(sessionID, { records: measured.records }),
         },
         now,
       )
@@ -552,10 +553,11 @@ export default {
       ended.add(sessionID)
       observedSessions.delete(sessionID)
 
+      const measured = measure(sessionID)
       const verified = {
         id: sessionID,
-        counts: { ...ingest.counts(sessionID), ...turnInput(sessionID), startSeen: turnSeen.has(sessionID) },
-        log: logFacts(sessionID),
+        counts: { ...ingest.counts(sessionID), ...measured.input, startSeen: turnSeen.has(sessionID) },
+        log: measured.log,
         triggered: event.type,
         extraction: null,
         // Kept with the snapshot, so a report replayed from it later says when it really ended.
@@ -573,7 +575,7 @@ export default {
       // One write for the end of a turn (thirty-sixth review), and as the stock has it: a turn
       // that added nothing to read — a round of the plugin's own — leaves the log not owed, and
       // the line says what is known instead (thirty-fifth review).
-      check.verify({ ...verified, extraction: extractionFor(sessionID, { owedIfUnknown: true }) })
+      check.verify({ ...verified, extraction: extractionFor(sessionID, { owedIfUnknown: true, records: measured.records }) })
       writeSelfCheck()
     }
 
@@ -660,10 +662,10 @@ export default {
      * at a gap, or it failed with attempts left (log.md, "Owed"). Computed from the file and
      * the mark every time, so there is nothing to fall out of step with them.
      */
-    function isOwed(id) {
+    function isOwed(id, records) {
       const mark = markOf(id)
       const size = log.stat(id).size
-      if (size > mark.size && !grewByNothing(id, mark.size, size)) return true
+      if (size > mark.size && !grewByNothing(id, mark.size, size, records)) return true
       if (mark.open) return true
       return Boolean(mark.failed && (mark.attempts ?? 0) < 3)
     }
@@ -673,7 +675,7 @@ export default {
      * round, a hand-over, a turn's end (`nothingNew`). Remembered by size, because the report
      * asks about every log each time it is written.
      */
-    function grewByNothing(id, from, size) {
+    function grewByNothing(id, from, size, records) {
       // Keyed by the file's identity too: a log pruned and written again under the same id can
       // reach the same size as the one that was cached (thirty-fourth review).
       const file = log.probe(id)?.id ?? null
@@ -698,7 +700,10 @@ export default {
             return buf.subarray(0, got).toString("utf8")
           }
           const added = parseShadowLog(readAt(Math.min(from, total)))
-          nothing = added.length > 0 && nothingNew(() => parseShadowLog(readAt(0)), added)
+          // The whole log as the caller already read it, when it did: a report measures it
+          // once, inside a hook. Read a moment earlier, it may lack the last of the tail, and a
+          // step it lacks is counted as something to read — owed, the side that loses nothing.
+          nothing = added.length > 0 && nothingNew(records ?? (() => parseShadowLog(readAt(0))), added)
         } finally {
           closeSync(fd)
         }
@@ -713,15 +718,6 @@ export default {
     function isQuiet(id) {
       const file = log.probe(id)
       return Boolean(file) && Date.now() - file.mtimeMs >= QUIET_MS
-    }
-
-    /**
-     * What the self-check is allowed to say about the log: it exists, how big it is, and how
-     * many records are really in it. The ingest counters reset at every turn end, so they
-     * cannot answer the last question for a session that was prompted again.
-     */
-    function logFacts(id) {
-      return { ...log.stat(id), entries: log.count(id) }
     }
 
     /**
@@ -1129,42 +1125,25 @@ export default {
     }
 
     /**
-     * The hand-overs behind the current turn, read from the log: every one of the person's
-     * session's since the previous turn started. A prompt or a hand-over is the input
-     * of the first turn that starts after it — so one sent into a turn still running counts
-     * for the next, one sent between turns for its own, and the person's turn after that has
-     * nothing of the plugin's to excuse it. Decided from the order of the log, not from when
-     * async completions happen to arrive: three review rounds of a flag kept in memory each
-     * found a new race (forty-fourth to forty-seventh). Empty when the log cannot be read, and
-     * the per-turn counts stand.
+     * What a report measures of a session in its log, from one read of it: what the file proves
+     * — it exists, how big it is, how many records are really in it, which the ingest counters
+     * reset at every turn end cannot say for a session prompted again — and the hand-overs the current turn began with (`turnHandovers`), whose
+     * reading of the log is the one rounds and replies take. Decided from the order of the log,
+     * not from when async completions happen to arrive: three review rounds of a flag kept in
+     * memory each found a new race (forty-fourth to forty-seventh). One read, not one per fact:
+     * this runs inside hooks, on a log a session left open for weeks may have made large. When
+     * the log cannot be read the per-turn counts stand. Only the hand-overs: prompts are what
+     * this process saw this turn, which a log pruned or rewritten under the session may no
+     * longer show (forty-seventh review, by the model).
      */
-    function turnInput(sessionID) {
-      let records
-      try {
-        records = parseShadowLog(readFileSync(log.path(sessionID), "utf8"))
-      } catch {
-        return {}
+    function measure(sessionID) {
+      const stat = log.stat(sessionID)
+      const records = stat.exists ? log.read(sessionID) : []
+      return {
+        input: stat.exists ? { handovers: turnHandovers(records) } : {},
+        log: { ...stat, entries: records.length },
+        records: stat.exists ? records : undefined,
       }
-      const starts = []
-      records.forEach((r, i) => {
-        if (r.k === "session" && r.event === "start" && !r.from) starts.push(i)
-      })
-      // The current turn's input lies between the previous turn's start and its own: one that
-      // came after its start belongs to the next turn (round 2 of 10).
-      const since = starts.length >= 2 ? starts.at(-2) : -1
-      const until = starts.length >= 1 ? starts.at(-1) : records.length
-      let handovers = 0
-      for (let i = since + 1; i < until; i++) {
-        const r = records[i]
-        if (r.from || r.k !== "handover") continue
-        // Only a hand-over sent to start a turn: `retro_propose`'s is a tool result inside the
-        // turn it answers (round 1 of 10), and one that never arrived started nothing (round 2).
-        if (r.sent) handovers++
-        else if (r.undelivered && handovers > 0) handovers--
-      }
-      // Only the hand-overs: prompts are what this process saw this turn, which a log pruned
-      // or rewritten under the session may no longer show (forty-seventh review, by the model).
-      return { handovers }
     }
 
     /** A turn seen to start, kept in order of the latest start (`handBack`). */
@@ -1235,8 +1214,8 @@ export default {
      * since its last analysis is waiting; a failed or partial read says so itself. Owed first: it
      * settles the mark against the file, which may void one describing a log since replaced.
      */
-    function extractionFor(sessionID, { owedIfUnknown = false } = {}) {
-      const owed = isOwed(sessionID)
+    function extractionFor(sessionID, { owedIfUnknown = false, records } = {}) {
+      const owed = isOwed(sessionID, records)
       const mark = state.looked(sessionID)
       if (owed && !mark.failed && !mark.open && (mark.size > 0 || owedIfUnknown)) return { owed: true }
       return lastExtraction.get(sessionID) ?? state.extractionOf(sessionID) ?? (owed && owedIfUnknown ? { owed: true } : null)
@@ -1296,13 +1275,14 @@ export default {
       // The plugin's own rounds are not new material: a log that grew by nothing but a round
       // takes no order (analysis.md, "The plugin's own work").
       const own = ownRounds(records)
+      const replies = repliesToPlugin(records)
       const fresh = (mark.n > 0 ? records.filter((r) => r.n > mark.n || r.k === "prompt") : records).filter(
         (r) => !own.steps.has(r.n),
       )
       const composed = composeOrder({
         records: fresh,
         rounds: own.ranges,
-        replies: repliesToPlugin(records),
+        replies,
         analysedUpTo: mark.n,
         concluded: concludedFrom(sessionID),
         session: sessionID,
@@ -1351,7 +1331,7 @@ export default {
       // `lastReal`: the last step anything could be read in — not the plugin's own, not a turn's
       // end. A reader leaves a trailing round out as it is told to, and reading up to here is
       // reading all of it (thirty-second and thirty-third reviews).
-      const lastReal = Math.max(mark.n, lastReadable(records, own.steps))
+      const lastReal = Math.max(mark.n, lastReadable(records, own.steps, replies))
       const order = { id: identity, size: readSize, lastN, lastReal, n: mark.n, asked }
       state.issue(sessionID, order)
       return { ok: true, order: { session: sessionID, ...order } }
