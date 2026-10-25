@@ -2381,3 +2381,35 @@ test("the session's line reports an asking nobody answered, not just that the lo
   assert.match(report, /extraction\s+asked 1 time and no record came back/, report)
   await cleanup?.()
 })
+
+test("a log with no turn start at all is not excused by hand-overs from turns long gone", async () => {
+  const { turnHandovers } = await import("../src/extract.js")
+  const records = [
+    // Every start dropped: the prompt hook dead, so a session owned only from its first tool call.
+    { n: 1, k: "tool", tool: "read", input: { path: "a.js" } },
+    { n: 2, k: "session", event: "end" },
+    { n: 3, k: "handover", about: "lesson", sent: true, text: "a lesson" },
+    { n: 4, k: "text", text: "the lesson says…" },
+    { n: 5, k: "session", event: "end" },
+    { n: 6, k: "tool", tool: "read", input: { path: "b.js" } },
+  ]
+  assert.equal(turnHandovers(records), 0)
+  assert.equal(turnHandovers(records.slice(0, 4)), 1, "while its own turn runs, the hand-over is its input")
+})
+
+test("a /retro sent between the person's prompt and the turn it opens takes nothing of that turn", async () => {
+  const { ownRounds } = await import("../src/extract.js")
+  const records = [
+    { n: 1, k: "prompt", text: "fix bug" },
+    { n: 2, k: "session", event: "start" },
+    { n: 3, k: "session", event: "end" },
+    { n: 4, k: "prompt", text: "now fix the build" },
+    { n: 5, k: "handover", about: "work", sent: true, text: "the logs come first" },
+    { n: 6, k: "session", event: "start" },
+    { n: 7, k: "tool", tool: "shell", input: { command: "npm run build" }, exit: 1 },
+    { n: 8, k: "text", text: "the build fails because…" },
+    { n: 9, k: "session", event: "end" },
+  ]
+  const { steps } = ownRounds(records)
+  assert.ok(!steps.has(7) && !steps.has(8), "the person's turn is theirs")
+})

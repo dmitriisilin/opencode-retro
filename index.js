@@ -1236,7 +1236,7 @@ export default {
       const last = lastExtraction.get(sessionID) ?? state.extractionOf(sessionID)
       if (owed && last?.unanswered) return last
       if (owed && !mark.failed && !mark.open && (mark.size > 0 || owedIfUnknown)) return { owed: true }
-      return lastExtraction.get(sessionID) ?? state.extractionOf(sessionID) ?? (owed && owedIfUnknown ? { owed: true } : null)
+      return last ?? (owed && owedIfUnknown ? { owed: true } : null)
     }
 
     /**

@@ -268,6 +268,7 @@ rare, since the hand-over asks it to start readers and nothing else — is left 
   `the contract describes a round as the code reads it, and defers to the order's list`
   `the person steering into the running turn leaves a waiting /retro its round`
   `prompts posted into a running turn, queued or steered, are answered in that turn`
+  `a /retro sent between the person's prompt and the turn it opens takes nothing of that turn`
   `a prompt that opens the next turn, after a turn whose end was lost, is the person's turn`
   `an undelivered notice cancels the hand-over it names, not the latest one`
   `a notice of a failed send names the hand-over by its step`

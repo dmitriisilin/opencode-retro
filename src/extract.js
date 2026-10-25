@@ -112,7 +112,12 @@ function answerStarts(sorted) {
     }
     last = i
     // A `work` hand-over is only ever sent — `/retro` is its one writer, never a tool result.
-    if ((r.sent || isWorkHandover(r)) && inTurn) {
+    const sent = r.sent || isWorkHandover(r)
+    // Sent after the person has spoken and before the turn they opened is logged as started —
+    // the moment between a prompt and its turn's start: that turn answers them (checks after
+    // the ten rounds).
+    if (sent && !inTurn && spoke) continue
+    if (sent && inTurn) {
       at.set(i, null)
       waiting.push(i)
     } else at.set(i, i)
@@ -137,23 +142,26 @@ export function turnHandovers(records) {
     if (r.k === "session" && r.event === "start" && !r.from) starts.push(i)
   })
   const turnOf = (j) => starts.find((s) => s >= j) ?? Infinity
-  let latest = starts.length ? starts.at(-1) : Infinity
-  // Unless the turn after it went unlogged: work of the person's session after the end that
-  // followed it — a start dropped by a process that did not own the session yet. Counting the
-  // hand-over that began the turn before would excuse a prompt hook dead in this one (checks
-  // after the ten rounds).
-  let ended = false
-  for (let i = latest + 1; i < sorted.length; i++) {
+  const latest = starts.length ? starts.at(-1) : Infinity
+  // Unless the current turn went unlogged: its start dropped by a process that did not own the
+  // session yet. Then the current turn is what follows the last end the person's session went
+  // on working after, and its input is what was sent after that end, or is still waiting —
+  // never a hand-over that began a turn before it, which would excuse a prompt hook dead in
+  // this one (checks after the ten rounds).
+  let end = -1
+  let lastEnd = -1
+  for (let i = 0; i < sorted.length; i++) {
     const r = sorted[i]
     if (r.from) continue
-    if (r.k === "session" && r.event === "end") ended = true
-    else if (ended && (r.k === "prompt" || r.k === "tool" || r.k === "text")) {
-      latest = Infinity
-      break
-    }
+    if (r.k === "session" && r.event === "end") end = i
+    else if (end >= 0 && (r.k === "prompt" || r.k === "tool" || r.k === "text")) lastEnd = end
   }
+  const unlogged = !starts.length || lastEnd > latest
   let count = 0
-  for (const [h, j] of at) if (j !== null && sorted[h].sent && turnOf(j) === latest) count++
+  for (const [h, j] of at) {
+    if (!sorted[h].sent) continue
+    if (unlogged ? h > lastEnd || j === null : j !== null && turnOf(j) === latest) count++
+  }
   return count
 }
 
