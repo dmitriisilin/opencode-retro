@@ -35,8 +35,8 @@ traffic proved.** A session without tool calls proves nothing about the tool hoo
 whose input is a hand-over proves nothing about the prompt hook — the counters are per
 turn, so a session prompted earlier and handed a lesson later was not "started by a
 hand-over"; which turn a hand-over started is read from the log — one sent to start a turn
-(`sent`; not `retro_propose`'s, which is a tool result) is the input of the first turn that
-starts after it, so one sent into a running turn counts for the next, and the
+(`sent`; not `retro_propose`'s, which is a tool result, and not one that was never
+delivered) is the input of the first turn that starts after it, so one sent into a running turn counts for the next, and the
 person's turn after that has nothing of the plugin's to excuse it; a shortfall of hook calls against events is not evidence while calls are in
 flight; the trigger cannot be judged before the session ends.
 
@@ -116,6 +116,7 @@ last analysis of the session whichever path ran it.
   `a review session driven by a hand-over is not reported as a dead prompt hook`
   `a hand-over is the input of the first turn that starts after it`
   `a proposal handed back by retro_propose does not excuse the person's next turn`
+  `a hand-over that never arrived, or arrived during the turn, excuses nothing of it`
 - The surface check names exactly the `ctx` members the plugin calls.
   `the self-check requires exactly the ctx surface the plugin calls`
 - A command that throws reaches the log and the session, never a bare 500.

@@ -1942,3 +1942,32 @@ test("a proposal handed back by retro_propose does not excuse the person's next 
   assert.match(readFileSync(join(dir, ".retro", "selfcheck.md"), "utf8"), /BROKEN\s+prompt hook/)
   await cleanup?.()
 })
+
+test("a hand-over that never arrived, or arrived during the turn, excuses nothing of it", async () => {
+  // Round 2 of 10: a failed send left the hand-over counted as sent, and one landing inside the
+  // running turn was counted for that turn rather than the next.
+  const tick = () => new Promise((r) => setImmediate(r))
+  for (const scene of ["undelivered", "during"]) {
+    const dir = sandbox()
+    const fake = fakeOpenCode({ directory: dir, agent: false })
+    if (scene === "undelivered") fake.ctx.session.synthetic = async () => { throw new Error("gone") }
+    const cleanup = await plugin.setup(fake.ctx)
+    const start = (seq) => fake.emit({ type: "session.execution.started", durable: { seq }, data: { sessionID: "ses_p" } })
+    const end = (seq) => fake.emit({ type: "session.execution.succeeded", durable: { seq }, data: { sessionID: "ses_p" } })
+    await work(fake, "ses_a")
+    await fake.hooks.get("session.prompt")({ sessionID: "ses_p", messageID: "p1", prompt: { text: "earlier" } })
+    start(1)
+    await tick()
+    end(2)
+    await tick()
+    if (scene === "undelivered") await fake.commands.get("retro").execute({ sessionID: "ses_p", prompt: { text: "" } })
+    // The person's turn, with the prompt hook dead.
+    start(3)
+    await tick()
+    if (scene === "during") await fake.commands.get("retro").execute({ sessionID: "ses_p", prompt: { text: "" } })
+    end(4)
+    await tick()
+    assert.match(readFileSync(join(dir, ".retro", "selfcheck.md"), "utf8"), /BROKEN\s+prompt hook/, scene)
+    await cleanup?.()
+  }
+})

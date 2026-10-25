@@ -607,7 +607,9 @@ export default {
         onError("session.synthetic", err)
         // Logged first, so the log says it was never delivered — and a notice ends the round
         // the hand-over would have opened (thirty-second review).
-        noteHandover(sessionID, `_opencode-retro: the hand-over above could not be delivered: ${err?.message ?? err}_`, "notice")
+        noteHandover(sessionID, `_opencode-retro: the hand-over above could not be delivered: ${err?.message ?? err}_`, "notice", {
+          undelivered: true,
+        })
         // Its orders were never put to anybody: voided, not counted as asked and unanswered,
         // which would blame an inbox for what the plugin knows was a failed send (thirty-fourth).
         if (about === "work") {
@@ -639,7 +641,7 @@ export default {
      * other end, when the review added a session and 19 steps of cost to the lesson it was
      * checking.
      */
-    function noteHandover(sessionID, text, about = "lesson", { sent = false } = {}) {
+    function noteHandover(sessionID, text, about = "lesson", { sent = false, undelivered = false } = {}) {
       // Never for a delegated session: a reader's is not logged at all, and no hand-over of the
       // plugin's is that session's — a layer under the gates in `retro_propose` and `/retro`,
       // for whatever reaches here another way (fortieth and forty-first reviews).
@@ -647,7 +649,7 @@ export default {
       try {
         // Our own text is not material, so it does not make the log owed — `isOwed` says so
         // through `nothingNew`, in one place, for every kind of growth that holds nothing to read.
-        ingest.handover(sessionID, text, about, { sent })
+        ingest.handover(sessionID, text, about, { sent, undelivered })
       } catch (err) {
         onError("handover.log", err)
       }
@@ -1147,12 +1149,19 @@ export default {
       records.forEach((r, i) => {
         if (r.k === "session" && r.event === "start" && !r.from) starts.push(i)
       })
+      // The current turn's input lies between the previous turn's start and its own: one that
+      // came after its start belongs to the next turn (round 2 of 10).
       const since = starts.length >= 2 ? starts.at(-2) : -1
+      const until = starts.length >= 1 ? starts.at(-1) : records.length
       let handovers = 0
-      // Only a hand-over sent to start a turn: `retro_propose`'s is a tool result inside the turn
-      // it answers, and counted, it excused the person's next turn — a dead prompt hook hidden
-      // after every review (forty-eighth review).
-      for (let i = since + 1; i < records.length; i++) if (!records[i].from && records[i].k === "handover" && records[i].sent) handovers++
+      for (let i = since + 1; i < until; i++) {
+        const r = records[i]
+        if (r.from || r.k !== "handover") continue
+        // Only a hand-over sent to start a turn: `retro_propose`'s is a tool result inside the
+        // turn it answers (round 1 of 10), and one that never arrived started nothing (round 2).
+        if (r.sent) handovers++
+        else if (r.undelivered && handovers > 0) handovers--
+      }
       // Only the hand-overs: prompts are what this process saw this turn, which a log pruned
       // or rewritten under the session may no longer show (forty-seventh review, by the model).
       return { handovers }
