@@ -34,8 +34,9 @@ written down.)
 traffic proved.** A session without tool calls proves nothing about the tool hook; a turn
 whose input is a hand-over proves nothing about the prompt hook — the counters are per
 turn, so a session prompted earlier and handed a lesson later was not "started by a
-hand-over"; a hand-over still waiting when a turn ends is counted for the turn it starts,
-once, and no turn after that; a shortfall of hook calls against events is not evidence while calls are in
+hand-over"; a hand-over sent into a turn still running — it waits for that turn's end — is
+counted for the turn it starts, once, and a tool result or a notice never sent counts for
+none; a shortfall of hook calls against events is not evidence while calls are in
 flight; the trigger cannot be judged before the session ends.
 
 **Stock.** What is waiting for the human: open lessons, logs owed an analysis, logs read in

@@ -250,9 +250,10 @@ export function composeOrder({
   // out; the other hand-overs' replies — a subagent delegated in answer included — are the
   // plugin talking to itself (forty-fifth review).
   const plugin = replies ?? repliesToPlugin(records)
-  const asked = records.filter((r) => r.k === "prompt" && !plugin.has(r.n) && (!reread || r.n > analysedUpTo)).length
+  // On `readable`, the one rule `nothingNew` and `lastReadable` use too (forty-sixth review).
+  const asked = records.filter((r) => r.k === "prompt" && readable(r, plugin) && (!reread || r.n > analysedUpTo)).length
   const toolCalls = records.filter((r) => r.k === "tool").length
-  const newReply = records.some((r) => r.k === "text" && !plugin.has(r.n))
+  const newReply = records.some((r) => r.k === "text" && readable(r, plugin))
   if (reread ? asked === 0 && toolCalls === 0 && !newReply : asked <= 1 && toolCalls === 0) {
     return { ok: true, skipped: true, detail: "nothing to extract (one exchange, nothing done)" }
   }

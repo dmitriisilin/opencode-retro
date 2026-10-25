@@ -1882,13 +1882,32 @@ test("a log pruned between turns starts its numbering again", async () => {
 })
 
 test("a waiting hand-over excuses the turn it starts and no turn after it", async () => {
-  // Forty-fifth pre-release review: with the prompt hook dead, the marker never cleared, and
-  // every later turn was excused instead of reported.
+  // Forty-fifth and forty-sixth pre-release reviews: with the prompt hook dead, a marker that
+  // outlived its turn excused the turns after it instead of reporting them.
   const { createIngest } = await import("../src/ingest.js")
-  const ingest = createIngest({ emit: () => {}, maxOutput: 100 })
-  ingest.handover("s", "the logs come first", "work")
-  ingest.endTurn("s")
-  assert.equal(ingest.counts("s").handovers, 1, "the turn it starts")
-  ingest.endTurn("s")
-  assert.equal(ingest.counts("s").handovers, 0, "and not the next")
+  const start = { type: "session.execution.started", durable: { seq: 1 }, data: { sessionID: "s" } }
+  // Sent into a running turn: the turn after that one is the hand-over's.
+  const busy = createIngest({ emit: () => {}, maxOutput: 100 })
+  busy.prompt({ sessionID: "s", prompt: { text: "work" } })
+  busy.handover("s", "the logs come first", "work")
+  busy.awaitTurn("s")
+  busy.endTurn("s")
+  assert.equal(busy.counts("s").handovers, 1, "the turn it starts")
+  busy.event(start)
+  busy.endTurn("s")
+  assert.equal(busy.counts("s").handovers, 0, "and not the next")
+  // Sent into an idle session: it starts its own turn at once, and the person's next is theirs.
+  const idle = createIngest({ emit: () => {}, maxOutput: 100 })
+  idle.prompt({ sessionID: "s", prompt: { text: "earlier" } })
+  idle.handover("s", "the logs come first", "work")
+  idle.awaitTurn("s")
+  idle.event(start)
+  idle.endTurn("s")
+  assert.equal(idle.counts("s").handovers, 0, "the person's next turn is not excused")
+  // A hand-over logged but never sent — a tool result, a failed send — waits for nothing.
+  const unsent = createIngest({ emit: () => {}, maxOutput: 100 })
+  unsent.prompt({ sessionID: "s", prompt: { text: "earlier" } })
+  unsent.handover("s", "a lesson", "lesson")
+  unsent.endTurn("s")
+  assert.equal(unsent.counts("s").handovers, 0)
 })

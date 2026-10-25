@@ -61,8 +61,10 @@ export function createIngest({
         completed: new Set(),
         seq: new Map(),
         counts: freshCounts(),
-        // A hand-over noted since the turn's last prompt: it starts the next turn, if this one
-        // ends first, and that turn has no prompt of its own (forty-fourth review).
+        // A hand-over sent whose turn has not begun yet — sent into a turn still running. It
+        // starts the next turn, which has no prompt of its own (forty-fourth and forty-sixth
+        // reviews). Set only by a hand-over actually sent (`awaitTurn`), cleared when a turn
+        // starts.
         awaiting: false,
       }
       sessions.set(id, s)
@@ -159,6 +161,12 @@ export function createIngest({
      * and the session stays the plugin's, or the next turn's start would be dropped (forty-
      * fourth and forty-fifth reviews).
      */
+    /** A hand-over was sent: it will start a turn, the next if one is running now. */
+    awaitTurn(sessionID) {
+      const s = sessions.get(owner(sessionID))
+      if (s) s.awaiting = true
+    },
+
     restartNumbering(sessionID) {
       const s = sessions.get(owner(sessionID))
       if (s) s.n = 0
@@ -192,7 +200,6 @@ export function createIngest({
       const s = session(owner(p.sessionID))
       s.owned = true
       s.counts.prompts++
-      if (owner(p.sessionID) === p.sessionID) s.awaiting = false
       append(p.sessionID, {
         k: "prompt",
         message: p.messageID ?? null,
@@ -262,7 +269,6 @@ export function createIngest({
       // reads `prompts` to decide whether the prompt hook worked, and a `/retro` review
       // session has none — see `assess`, which must not call that a dead hook.
       s.counts.handovers++
-      s.awaiting = true
       // `about` separates the two hand-overs the plugin writes: a lesson put to the human,
       // and a request for the analyses that have to run first. They read identically in a
       // log and mean different things — the extraction contract discounts work that reviews
@@ -322,6 +328,8 @@ export function createIngest({
 
         case "session.execution.started":
           if (parentOf(sessionID)) return // a delegation is a step, not a session
+          // A hand-over waiting for a turn has one now, and its count is already this turn's.
+          s.awaiting = false
           append(sessionID, { k: "session", seq, event: "start" })
           return
 

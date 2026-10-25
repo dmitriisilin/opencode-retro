@@ -603,6 +603,9 @@ export default {
         // The synthetic goes to the session's inbox; without `resume` it sits there until
         // the user happens to type something, and they never see what they asked for.
         await ctx.session.synthetic({ sessionID, text, description: "opencode-retro", resume })
+        // Sent, so it will start a turn — the next one, if this session is working now. A tool
+        // result or a notice that was never sent starts none (forty-sixth review).
+        if (resume) ingest.awaitTurn(sessionID)
       } catch (err) {
         onError("session.synthetic", err)
         // Logged first, so the log says it was never delivered — and a notice ends the round
