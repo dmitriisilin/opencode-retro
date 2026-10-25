@@ -2339,3 +2339,45 @@ test("the contract explains the field a round's start is read from", async () =>
   const { OUTPUT_CONTRACT } = await import("../src/contract.js")
   assert.match(OUTPUT_CONTRACT, /A hand-over with `"sent": true` was sent\s+to the session to start a turn/)
 })
+
+test("a turn whose start went unlogged is not excused by the hand-over that began the one before", async () => {
+  const { turnHandovers } = await import("../src/extract.js")
+  const records = [
+    { n: 1, k: "prompt", text: "fix bug" },
+    { n: 2, k: "session", event: "start" },
+    { n: 3, k: "session", event: "end" },
+    { n: 4, k: "handover", about: "lesson", sent: true, text: "a lesson" },
+    { n: 5, k: "session", event: "start" },
+    { n: 6, k: "text", text: "the lesson says…" },
+    { n: 7, k: "session", event: "end" },
+    // A new process, which did not own the session when its turn started: no start record.
+    { n: 8, k: "tool", tool: "read", input: { path: "a.js" } },
+    { n: 9, k: "session", event: "end" },
+  ]
+  assert.equal(turnHandovers(records), 0)
+})
+
+test("the session's line reports an asking nobody answered, not just that the log waits", async () => {
+  const dir = sandbox()
+  const fake = fakeOpenCode({ directory: dir, agent: false })
+  const cleanup = await plugin.setup(fake.ctx)
+  await work(fake, "ses_a")
+  await fake.hooks.get("session.prompt")({ sessionID: "ses_review", messageID: "rv", prompt: { text: "go" } })
+  await retro(fake)
+  await record(fake, "ses_a", [], { dir })
+  await work(fake, "ses_a")
+  await retro(fake)
+  await retro(fake)
+  // ses_a working again a minute later, measured afresh.
+  const real = Date.now
+  Date.now = () => real() + 61_000
+  try {
+    await fake.hooks.get("session.prompt")({ sessionID: "ses_a", messageID: "m9", prompt: { text: "and now" } })
+  } finally {
+    Date.now = real
+  }
+  const report = readFileSync(join(dir, ".retro", "selfcheck.md"), "utf8")
+  assert.match(report, /measured on session\s+`ses_a`/)
+  assert.match(report, /extraction\s+asked 1 time and no record came back/, report)
+  await cleanup?.()
+})

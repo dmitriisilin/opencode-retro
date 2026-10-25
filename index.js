@@ -1230,6 +1230,11 @@ export default {
     function extractionFor(sessionID, { owedIfUnknown = false, records } = {}) {
       const owed = isOwed(sessionID, records)
       const mark = state.looked(sessionID)
+      // An asking nobody answered is the news about an owed log, as the stock has it: "waiting"
+      // on the session's line beside "asked N times and no record came back" below it was two
+      // accounts of one log (checks after the ten rounds).
+      const last = lastExtraction.get(sessionID) ?? state.extractionOf(sessionID)
+      if (owed && last?.unanswered) return last
       if (owed && !mark.failed && !mark.open && (mark.size > 0 || owedIfUnknown)) return { owed: true }
       return lastExtraction.get(sessionID) ?? state.extractionOf(sessionID) ?? (owed && owedIfUnknown ? { owed: true } : null)
     }
@@ -1418,8 +1423,10 @@ export default {
           "`/retro` in a session that is not will be picked up."
         state.close(order.session, "unanswered")
         removeWork(order.session)
-        state.markExtracted(order.session, { ok: false, detail })
-        lastExtraction.set(order.session, { ok: false, detail })
+        // Said as such, so the session's own line reports the asking rather than "waiting" (the
+        // log is owed either way, which is why it would otherwise say so).
+        state.markExtracted(order.session, { ok: false, detail, unanswered: true })
+        lastExtraction.set(order.session, { ok: false, detail, unanswered: true })
         onError(`extract.${order.session}`, detail)
         failures.push({ session: order.session, detail, asked })
       }

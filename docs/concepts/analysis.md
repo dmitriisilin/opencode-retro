@@ -206,13 +206,14 @@ rare, since the hand-over asks it to start readers and nothing else — is left 
   `a record that arrives after its round was closed is still recorded`
   `a record is refused once its log was replaced, even if its round is still closeable`
 - An order not answered by the next `/retro` is reported with how many times the log has been
-  asked about, and asked again. It never retires the log: the plugin does not know whether
+  asked about, and asked again — on the session's own line as in the stock, not as "waiting". It never retires the log: the plugin does not know whether
   anybody came. The count starts again only when the log grew by something to read — not by
   the plugin's own hand-overs and rounds, which lengthen the session `/retro` runs in every
   time — or is another file: a log pruned and written again under the same id was never asked
   about, whatever its size. And only askings nobody answered add up: one a record came back
   for — whole, partial or covering nothing — starts the count again.
   `an order nobody answered is reported and asked again, not held against the log`
+  `the session's line reports an asking nobody answered, not just that the log waits`
   `a log asked about many times is never given up on for it, and says how many`
   `the askings add up in the session /retro runs in, which its own rounds lengthen`
   `the askings start again for a log replaced under the same id`

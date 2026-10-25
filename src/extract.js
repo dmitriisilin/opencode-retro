@@ -137,7 +137,21 @@ export function turnHandovers(records) {
     if (r.k === "session" && r.event === "start" && !r.from) starts.push(i)
   })
   const turnOf = (j) => starts.find((s) => s >= j) ?? Infinity
-  const latest = starts.length ? starts.at(-1) : Infinity
+  let latest = starts.length ? starts.at(-1) : Infinity
+  // Unless the turn after it went unlogged: work of the person's session after the end that
+  // followed it — a start dropped by a process that did not own the session yet. Counting the
+  // hand-over that began the turn before would excuse a prompt hook dead in this one (checks
+  // after the ten rounds).
+  let ended = false
+  for (let i = latest + 1; i < sorted.length; i++) {
+    const r = sorted[i]
+    if (r.from) continue
+    if (r.k === "session" && r.event === "end") ended = true
+    else if (ended && (r.k === "prompt" || r.k === "tool" || r.k === "text")) {
+      latest = Infinity
+      break
+    }
+  }
   let count = 0
   for (const [h, j] of at) if (j !== null && sorted[h].sent && turnOf(j) === latest) count++
   return count

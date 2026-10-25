@@ -122,6 +122,7 @@ last analysis of the session whichever path ran it.
   `a proposal handed back by retro_propose does not excuse the person's next turn`
   `a hand-over that never arrived, or arrived during the turn, excuses nothing of it`
   `the self-check reads which turn a hand-over started as rounds and replies do`
+  `a turn whose start went unlogged is not excused by the hand-over that began the one before`
 - The surface check names exactly the `ctx` members the plugin calls.
   `the self-check requires exactly the ctx surface the plugin calls`
 - A command that throws reaches the log and the session, never a bare 500.
