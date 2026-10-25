@@ -2124,3 +2124,12 @@ test("a /retro waiting behind a round keeps its own round when the first one end
   assert.ok(!steps.has(11), "the review of the lesson is not a round")
   assert.ok(repliesToPlugin(records).has(11))
 })
+
+/* Round 9 of 10. */
+
+test("the contract describes a round as the code reads it, and defers to the order's list", async () => {
+  const { OUTPUT_CONTRACT } = await import("../src/contract.js")
+  assert.match(OUTPUT_CONTRACT, /at the hand-over itself when it came between turns/)
+  assert.match(OUTPUT_CONTRACT, /A prompt of the person's before the round's\s+turn starts makes that turn theirs/)
+  assert.match(OUTPUT_CONTRACT, /go by the list/)
+})

@@ -89,12 +89,15 @@ Rules:
 - **The plugin's own work is not the session's — leave it out.** A \`handover\` with
   \`"about": "work"\` asks for a round of this plugin's own: the agent starting readers like
   you, their records coming back, \`retro_propose\`. The round is the turn that hand-over
-  starts — from the next \`session\` start after it; work before that is the person's turn
-  still finishing — to the next \`prompt\` or the next \`handover\` of another kind, whichever
-  comes first; one with \`"sent": true\` that landed while the round's turn was running waits
-  for it, and ends the round at the next \`session\` start instead. A hand-over followed by a
-  notice with \`"undelivered": true\` never arrived, and neither ends anything. Only steps without \`from\` start or end a round: a hand-over or prompt with
-  \`from\` is a subagent's, and inside whatever round it falls in. A call to \`retro_record\` or
+  starts: at the hand-over itself when it came between turns, and from the next \`session\`
+  start when it landed in a turn still running — work before that is the person's turn still
+  finishing. It runs to the person's next \`prompt\`, or to where another hand-over of the
+  plugin's is answered, whichever comes first. A prompt of the person's before the round's
+  turn starts makes that turn theirs, and a hand-over followed by a notice with
+  \`"undelivered": true\` never arrived and does nothing. The order lists the steps; where this
+  description and that list differ, go by the list. Only steps without \`from\` start or end
+  a round: a hand-over or prompt with \`from\` is a subagent's, and inside whatever round it
+  falls in. A call to \`retro_record\` or
   \`retro_propose\`, and a \`subagent\` call whose prompt is a work order's line, is the
   plugin's own wherever it is. Take no lesson from any of it, count none of its steps as cost,
   and read nothing in it as a recurrence: a reader in there

@@ -252,6 +252,7 @@ rare, since the hand-over asks it to start readers and nothing else — is left 
   `the person speaking before a waiting hand-over's turn makes that turn theirs`
   `the contract says the agent's text answering a notice is not the session's`
   `a /retro waiting behind a round keeps its own round when the first one ends first`
+  `the contract describes a round as the code reads it, and defers to the order's list`
 - `retro_propose` is not a delegated session's to call: a reader — known by its line or worded
   its own way — or any other subagent calling it is told so, with nothing recorded, nothing
   closed and no order removed; and `/retro` itself issues nothing in a delegated session, whose
