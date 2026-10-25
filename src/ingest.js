@@ -149,6 +149,21 @@ export function createIngest({
     sessions: () => [...sessions.keys()],
     forget: (sessionID) => sessions.delete(sessionID),
 
+    /**
+     * A turn ended: what was counted for it is reset, and the session stays ours. Forgetting
+     * it outright, as the end of a turn used to, dropped the next turn's start whenever that
+     * turn began with no hook — a hand-over's resumed turn — so its round could not be found
+     * (forty-third review).
+     */
+    endTurn(sessionID) {
+      const s = sessions.get(owner(sessionID))
+      if (!s) return
+      s.pending.clear()
+      s.completed.clear()
+      s.seq.clear()
+      s.counts = { prompts: 0, handovers: 0, toolHook: 0, toolEvents: 0, unfinished: 0, steps: 0, texts: 0, records: 0 }
+    },
+
     /** Unpaired calls, flushed when a session ends so an interrupt leaves no silent gap. */
     pending: (sessionID) => [...session(sessionID).pending.values()],
 

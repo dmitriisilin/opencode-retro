@@ -1732,9 +1732,10 @@ test("a reader's call to retro_propose writes nothing into any log", async () =>
 
 /* Whole-series review over 4112915..85657f4. */
 
-test("a /retro posted into a running turn has its round recognised though the next turn's start is never logged", async () => {
-  // Reproduced by the review against the entry point: the plugin stops owning a session when
-  // its turn ends, so the resumed turn's start is not logged, and the round came out empty.
+test("a /retro posted into a running turn has its round begin at the turn it resumes", async () => {
+  // Reproduced by the forty-second review against the entry point: the plugin stopped owning a
+  // session when its turn ended, so the resumed turn's start was not logged, and the round came
+  // out empty. A session stays the plugin's across turns now, and the start is there.
   const dir = sandbox()
   const fake = fakeOpenCode({ directory: dir, agent: false })
   const cleanup = await plugin.setup(fake.ctx)
@@ -1782,5 +1783,34 @@ test("a subagent's prompt does not end a reply to the plugin's hand-over", async
     { n: 4, k: "text", text: "ok, nothing to do then" },
   ]
   // The reply at 4 still answers the notice; the subagent's prompt in between changes nothing.
+  assert.equal(nothingNew(all, [all[3]]), true)
+})
+
+test("a session stays the plugin's across turns, so a turn resumed by a hand-over is logged from its start", async () => {
+  // Forty-third pre-release review: forgetting a session at its turn's end dropped the next
+  // turn's start, and anything before its first hook, whenever that turn began with no hook.
+  const dir = sandbox()
+  const fake = fakeOpenCode({ directory: dir, agent: false })
+  const cleanup = await plugin.setup(fake.ctx)
+  await work(fake, "ses_p")
+  fake.emit({ type: "session.execution.succeeded", durable: { seq: 5 }, data: { sessionID: "ses_p" } })
+  fake.emit({ type: "session.execution.started", durable: { seq: 6 }, data: { sessionID: "ses_p" } })
+  fake.emit({ type: "session.text.ended", durable: { seq: 7 }, data: { sessionID: "ses_p", text: "picking it up" } })
+  await new Promise((r) => setImmediate(r))
+  const records = readFileSync(logOf(dir, "ses_p"), "utf8").trim().split("\n").map((l) => JSON.parse(l))
+  const after = records.slice(records.findIndex((r) => r.k === "session" && r.event === "end") + 1)
+  assert.ok(after.some((r) => r.k === "session" && r.event === "start"), "the resumed turn's start")
+  assert.ok(after.some((r) => r.k === "text" && r.text === "picking it up"), "and what came before its first hook")
+  await cleanup?.()
+})
+
+test("a subagent's text, delegated in answer to a plugin notice, is part of that reply", async () => {
+  const { nothingNew } = await import("../src/extract.js")
+  const all = [
+    { n: 1, k: "prompt", text: "go" },
+    { n: 2, k: "handover", about: "notice", text: "nothing to review" },
+    { n: 3, k: "prompt", from: "ses_x", text: "You are a subagent.\nexplore" },
+    { n: 4, k: "text", from: "ses_x", text: "there is nothing here" },
+  ]
   assert.equal(nothingNew(all, [all[3]]), true)
 })

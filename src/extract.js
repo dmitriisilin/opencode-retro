@@ -80,20 +80,14 @@ export function ownRounds(records) {
       inTurn = r.event === "start"
       break
     }
-    // Starts at the next turn start — or, landing in a running turn, after that turn's end:
-    // the turn that follows may not be logged as starting at all, since the plugin stops
-    // owning a session when its turn ends and a hand-over's resumed turn fires no hook first
-    // (forty-second review, reproduced against the entry point).
+    // Starts at the next turn start; landing in a running turn with none after it, it is
+    // empty. Every turn start is logged — a session stays the plugin's across turns — so there
+    // is no end record to start from instead (forty-second and forty-third reviews).
     let from = inTurn ? end : i
     for (let j = i + 1; j < end; j++) {
       const r = sorted[j]
-      if (r.from || r.k !== "session") continue
-      if (r.event === "start") {
+      if (!r.from && r.k === "session" && r.event === "start") {
         from = j
-        break
-      }
-      if (inTurn && r.event === "end") {
-        from = j + 1
         break
       }
     }
@@ -147,10 +141,10 @@ export function repliesToPlugin(records) {
   const out = new Set()
   let answering = null
   for (const r of [...records].sort((a, b) => (a.n ?? 0) - (b.n ?? 0))) {
-    // The person's session's steps only: a subagent's prompt or hand-over neither starts nor
-    // ends a reply to the plugin (forty-second review).
-    if (r.from) continue
-    if (r.k === "prompt" || (r.k === "handover" && !isWorkHandover(r))) answering = r.k
+    // A subagent's prompt or hand-over neither starts nor ends a reply to the plugin (forty-
+    // second review); its text, delegated in answer to one, is still part of that reply
+    // (forty-third).
+    if (!r.from && (r.k === "prompt" || (r.k === "handover" && !isWorkHandover(r)))) answering = r.k
     else if (r.k === "text" && answering === "handover") out.add(r.n)
   }
   return out

@@ -1,4 +1,4 @@
-import { appendFileSync, closeSync, mkdirSync, openSync, readFileSync, readSync, rmSync, writeFileSync } from "node:fs"
+import { appendFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { join, relative as relativePath, resolve as resolvePath, sep } from "node:path"
 import { createIngest, isTurnEnd } from "./src/ingest.js"
 import { createPrompts } from "./src/prompts.js"
@@ -561,7 +561,7 @@ export default {
         // Kept with the snapshot, so a report replayed from it later says when it really ended.
         endedAt: Date.now(),
       }
-      ingest.forget(sessionID)
+      ingest.endTurn(sessionID)
       turnSeen.delete(sessionID)
 
       // No order is written here: nothing is analysed unasked, and there is no session to ask
@@ -679,17 +679,11 @@ export default {
       if (known && known.from === from && known.size === size && known.file === file) return known.nothing
       let nothing = false
       try {
-        // The tail alone first; the whole log only if the tail cannot decide (forty-second review).
-        const fd = openSync(log.path(id), "r")
-        let tail
-        try {
-          tail = Buffer.alloc(Math.max(0, size - from))
-          readSync(fd, tail, 0, tail.length, from)
-        } finally {
-          closeSync(fd)
-        }
-        const added = parseShadowLog(tail.toString("utf8"))
-        nothing = added.length > 0 && nothingNew(() => parseShadowLog(readFileSync(log.path(id), "utf8")), added)
+        // One read, so the tail and the whole log are the same file; the whole is parsed only if
+        // the tail cannot decide (forty-second and forty-third reviews).
+        const bytes = readFileSync(log.path(id))
+        const added = parseShadowLog(bytes.subarray(from).toString("utf8"))
+        nothing = added.length > 0 && nothingNew(() => parseShadowLog(bytes.toString("utf8")), added)
       } catch {
         nothing = false
       }
