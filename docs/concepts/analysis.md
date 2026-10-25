@@ -118,7 +118,12 @@ nothing done, or an end marker, still proves nothing.
 
 **The plugin's own work.** The subagents it asks for and the calls to its own tools are its
 work, not the user's: they are not written to any log, so an analysis is never analysed and
-the plugin's bookkeeping never turns into a lesson about the plugin.
+the plugin's bookkeeping never turns into a lesson about the plugin. A reader is recognised by
+the exact line, by the prompt of a delegation of ours still in flight, or by its parent — one
+with a delegation of ours in flight and nothing of the person's beside it, or one of our own
+readers. (A limit: an agent that rewords the delegation *and* runs work of the person's beside
+it defeats all three until the delegation ends, and what the reader wrote by then has been
+folded into the person's log, which cannot give it back. AGENTS.md, "Known".)
 
 ## Invariants
 
@@ -198,6 +203,8 @@ the plugin's bookkeeping never turns into a lesson about the plugin.
   `an interrupted call of the person's does not stop a later reader being recognised by its parent`
   `a Code Mode wrapper reported ahead of an own call leaves nothing unpaired in the person's log`
   `a reader delegating part of its reading does not make the report about itself`
+  `a reader's helper is ours however it was told what to do`
+  `a reader already recognised is not claimed again when its delegation ends`
   `a turn's end arriving late does not make the next turn's own calls the person's`
   `a child is not taken for a reader while anything of the person's runs beside our delegation`
 - One command issues at most `extractLimit` orders; the rest stay owed and are named. A

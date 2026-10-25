@@ -1110,3 +1110,47 @@ test("a reader delegating part of its reading does not make the report about its
   assert.doesNotMatch(report, /ses_reader|ses_helper/)
   await cleanup?.()
 })
+
+test("a reader's helper is ours however it was told what to do", async () => {
+  // Eighth pre-release review: a helper whose prompt matched nothing was adopted into the
+  // reader, so its calls went into a log under the reader's id; and its short prompt, stored,
+  // could match a person's subagent told the same words.
+  const dir = sandbox()
+  const fake = fakeOpenCode({ directory: dir, agent: false })
+  const cleanup = await plugin.setup(fake.ctx)
+  await work(fake, "ses_a")
+  const { paths } = await retro(fake)
+  await fake.hooks.get("session.prompt")({ sessionID: "ses_reader", messageID: "r1", prompt: { text: `opencode-retro work order: read ${paths[0]} and do what it says.` } })
+  await fake.hooks.get("tool.execute.before")({ sessionID: "ses_reader", id: "h1", tool: "subagent", input: { agent: "explore", prompt: "skim the log" } })
+  // The person, meanwhile, asks their own subagent the same thing.
+  await fake.hooks.get("session.prompt")({ sessionID: "ses_theirs", messageID: "t1", prompt: { text: "skim the log" } })
+  await fake.hooks.get("session.prompt")({ sessionID: "ses_helper", messageID: "x1", prompt: { text: "You are a subagent spawned by another session.\nGo." } })
+  fake.emit({ type: "session.created", durable: { seq: 90 }, data: { sessionID: "ses_helper", parentID: "ses_reader", location: { directory: dir } } })
+  await new Promise((r) => setImmediate(r))
+  await fake.hooks.get("tool.execute.before")({ sessionID: "ses_helper", id: "hr", tool: "read", input: { path: "x" } })
+  await fake.hooks.get("tool.execute.after")({ sessionID: "ses_helper", id: "hr", tool: "read", input: { path: "x" }, status: "completed", result: { output: "y" } })
+
+  assert.equal(existsSync(logOf(dir, "ses_reader")), false, "nothing under the reader's id")
+  assert.equal(existsSync(logOf(dir, "ses_helper")), false, "nor the helper's")
+  assert.ok(existsSync(logOf(dir, "ses_theirs")), "the person's own subagent is logged")
+  const report = readFileSync(join(dir, ".retro", "selfcheck.md"), "utf8")
+  assert.doesNotMatch(report, /ses_reader|ses_helper/, "and the report is about none of ours")
+  await cleanup?.()
+})
+
+test("a reader already recognised is not claimed again when its delegation ends", async () => {
+  // Eighth pre-release review: the after-hook re-claimed it — a state write per reader.
+  const dir = sandbox()
+  const fake = fakeOpenCode({ directory: dir, agent: false })
+  const cleanup = await plugin.setup(fake.ctx)
+  await work(fake, "ses_a")
+  const { paths } = await retro(fake)
+  const line = `opencode-retro work order: read ${paths[0]} and do what it says.`
+  const delegation = { sessionID: "ses_review", id: "d1", tool: "subagent", input: { agent: "general", prompt: line } }
+  await fake.hooks.get("tool.execute.before")(delegation)
+  await fake.hooks.get("session.prompt")({ sessionID: "ses_reader", messageID: "r1", prompt: { text: line } })
+  await record(fake, "ses_a", [LESSON], { dir })
+  await fake.hooks.get("tool.execute.after")({ ...delegation, status: "completed", result: { output: "done", metadata: { sessionID: "ses_reader" } } })
+  assert.ok(!(state(dir).uncounted ?? []).includes("ses_reader"), "a reader never counted is not uncounted")
+  await cleanup?.()
+})

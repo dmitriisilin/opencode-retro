@@ -247,7 +247,9 @@ export default {
      * worth a file write per tool call.
      */
     function observe(sessionID, { force = false } = {}) {
-      if (!sessionID) return
+      // Never about one of ours: a reader, or a reader's helper, has no log to measure, and a
+      // report about it said BROKEN about a healthy plugin (seventh and eighth reviews).
+      if (!sessionID || internal.has(sessionID)) return
       // A hook that arrives after the session's end belongs to that session, and its record is
       // written — but it is not news about liveness. Re-measuring here would recreate the
       // forgotten ingest counts and report `BROKEN prompt hook` about a session that was fine
@@ -339,7 +341,11 @@ export default {
       const known = key ? calls.get(key) : undefined
       const ours = Boolean(known?.ours) || ownWork(p)
       if (key) {
-        const prompt = ours && p?.tool === "subagent" && typeof p?.input?.prompt === "string" ? flat(p.input.prompt) : null
+        // Only a delegation the person's agent makes for us is recognised by its prompt. One a
+        // reader makes for itself is recognised by its parent, and its prompt — "skim the log" —
+        // is too short to compare against what a person's subagent is told (eighth review).
+        const prompt =
+          ours && !internal.has(p?.sessionID) && p?.tool === "subagent" && typeof p?.input?.prompt === "string" ? flat(p.input.prompt) : null
         // Either half naming `subagent` makes it a delegation, whichever arrived first.
         const tool = known?.tool === "subagent" ? "subagent" : (p?.tool ?? known?.tool)
         calls.delete(key) // re-inserted last, so the oldest is first to go
@@ -373,13 +379,9 @@ export default {
       const known = key ? calls.get(key) : undefined
       if (known && --known.open <= 0) calls.delete(key)
       const ours = known ? known.ours : ownWork(p)
-      if (child && (ours || internal.has(child))) {
-        // One of ours. If its own prompt did not carry the mark (the agent may have worded the
-        // delegation its own way), whatever it wrote before the link was known goes now.
-        if (!internal.has(child)) claimReader(child, p.sessionID)
-      } else if (child) {
-        adopt(child, p.sessionID)
-      }
+      // A child already known to be ours needs nothing more. Otherwise one of ours whose prompt
+      // did not give it away is claimed now, and the person's is adopted.
+      if (child && !internal.has(child)) (ours ? claimReader : adopt)(child, p.sessionID)
       if (ours) return
       ingest.toolAfter(p)
       // Measured on the parent, never on the child: the child's records are written into
@@ -534,8 +536,9 @@ export default {
         // is over.
         if (isForeign(event)) return
         if (internal.has(sessionID)) return
-        if (event.data?.parentID && startedByUs(event.data.parentID)) {
-          // One of our readers whose prompt did not give it away.
+        // One of our readers whose prompt did not give it away — or anything a reader of ours
+        // starts, since every call of a session of ours is ours (eighth review).
+        if (event.data?.parentID && (internal.has(event.data.parentID) || startedByUs(event.data.parentID))) {
           claimReader(sessionID, event.data.parentID)
           return
         }
@@ -1063,9 +1066,13 @@ export default {
       observedSessions.delete(child)
       turnSeen.delete(child)
       ended.delete(child)
-      // Not when the parent is a reader itself, delegating part of its reading: the report is
-      // never about one of ours (seventh review).
-      if (parent && !internal.has(parent)) observe(rootOf(parent), { force: true })
+      if (parent) observe(rootOf(parent), { force: true })
+      // A parent of ours is not measured, and the report may still be about the child, which
+      // its first prompt made it about: it goes to the person's session seen most recently.
+      if (check.describing() === child) {
+        const person = [...observedSessions].reverse().find((s) => !internal.has(s) && !ended.has(s))
+        if (person) observe(person, { force: true })
+      }
     }
 
     /**
