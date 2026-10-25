@@ -104,6 +104,7 @@ last analysis of the session whichever path ran it.
   `while a session works, its checks are evaluated again once a minute, not only the heartbeat`
   `a /retro round's readers keep the session the report describes measured`
   `a deferred child's hooks keep its parent measured`
+  `a hook that names no session still keeps the report measured`
 - A call the turn ended in the middle of accounts for its event: an interrupted turn with a
   subagent still running is not a dead tool hook.
   `an interrupted turn with a subagent still running is not a dead tool hook`

@@ -1763,3 +1763,25 @@ test("a report about a child goes back to the session that delegated it, not to 
   assert.match(readFileSync(join(dir, ".retro", "selfcheck.md"), "utf8"), /measured on session\s+`ses_p`/)
   await cleanup?.()
 })
+
+test("a hook that names no session still keeps the report measured", async () => {
+  // Twenty-ninth and thirtieth pre-release reviews: a payload that lost its session id must not
+  // read as a dead plugin, nor write a fresh heartbeat over checks that never move.
+  const real = Date.now
+  let now = Date.parse("2026-10-25T10:00:00Z")
+  Date.now = () => now
+  try {
+    const dir = sandbox()
+    const fake = fakeOpenCode({ directory: dir, agent: false })
+    const cleanup = await plugin.setup(fake.ctx)
+    await fake.hooks.get("session.prompt")({ sessionID: "ses_x", messageID: "m1", prompt: { text: "go" } })
+    now += 61_000
+    await fake.hooks.get("tool.execute.before")({ id: "n1", tool: "read", input: { path: "x" } })
+    const report = readFileSync(join(dir, ".retro", "selfcheck.md"), "utf8")
+    assert.match(report, /heartbeat\s+2026-10-25 10:01/)
+    assert.match(report, /verified\s+2026-10-25 10:01/)
+    await cleanup?.()
+  } finally {
+    Date.now = real
+  }
+})

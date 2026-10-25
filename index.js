@@ -187,7 +187,7 @@ export default {
      * What is waiting, as the marks say it is. A log whose last read failed is named as a
      * failure, not as something nobody has looked at; everything else owed is waiting.
      */
-    function stockFacts(ids = log.list()) {
+    function stockFacts(ids) {
       let queued = 0
       let failing = 0
       let partial = 0
@@ -823,7 +823,7 @@ export default {
      */
     function pruneLogs() {
       if (config.keepSessions) return
-      const cited = citedSessions()
+      const cited = citedSessions(store.list())
       for (const id of log.list()) {
         if (cited.has(id) || isOwed(id) || !isQuiet(id)) continue
         if (log.remove(id)) state.forget(id)
@@ -904,7 +904,7 @@ export default {
     }
 
     /** Sessions an open lesson points at. The reason a log is still on disk. */
-    function citedSessions(lessons = store.list()) {
+    function citedSessions(lessons) {
       const cited = new Set()
       for (const lesson of lessons) {
         const evidence = Array.isArray(lesson.evidence) ? lesson.evidence : [lesson.evidence].filter(Boolean)
@@ -1116,14 +1116,10 @@ export default {
       // (a hook of one of ours, a session already ended), the session the report describes. A
       // session seen for the first time is measured at once; after that, once a minute, and
       // never a fresh heartbeat written over checks a minute stale.
-      // A hook that names no session measures nothing, but it fired: its beat is written once a
-      // minute like any other, or a payload that lost its session id would read as a dead
-      // plugin — the drift this file exists to show (twenty-ninth review).
-      if (!sessionID) {
-        if (Date.now() - lastWrite >= config.heartbeatMs) writeSelfCheck()
-        return
-      }
-      const behind = personBehind(sessionID)
+      // A hook that names no session still fired: it measures what the report describes, like
+      // a hook of ours, or a payload that lost its session id would read as a dead plugin — the
+      // drift this file exists to show (twenty-ninth and thirtieth reviews).
+      const behind = sessionID ? personBehind(sessionID) : null
       if (behind && observe(behind)) return
       const shown = check.describing()
       if (shown && shown !== behind && observe(shown)) return
@@ -1167,18 +1163,24 @@ export default {
       // is waiting to be told whose it is (rule 3, nineteenth).
       for (const [grandchild, of] of parents) if (of === child && !internal.has(grandchild)) claimReader(grandchild)
       for (const [grandchild, of] of deferred) if (of === child && !internal.has(grandchild)) claimReader(grandchild)
-      handBack(child, parent ? personBehind(parent) : null)
+      handBack(child, personBehind(parent))
     }
 
     /**
      * A report about a session that turned out to be none of the person's goes back to the
-     * person's session observed most recently — or to no session at all, rather than stay
-     * about one of ours (eighth and ninth reviews).
+     * person's session behind it — the one that delegated it, working or as its turn ended —
+     * and failing that to the person's session observed most recently, the last that ended, or
+     * no session at all, rather than stay about one of ours (eighth, ninth, twenty-ninth and
+     * thirtieth reviews).
      */
     function handBack(sessionID, behind = null) {
       if (check.describing() !== sessionID) return
-      // The person's session behind it first: a delegation's report belongs to its parent.
-      if (behind && behind !== sessionID && standsAlone(behind) && !ended.has(behind) && observe(behind, { force: true })) return
+      // The delegating session first: a delegation's report belongs to its parent. Only one this
+      // process owns, as below (thirtieth review).
+      if (behind && behind !== sessionID && ingest.owned(behind)) {
+        if (observe(behind, { force: true })) return
+        if (ended.has(behind) && lastVerified.has(behind)) return replayEnded(behind)
+      }
       // Working: observed most recently, or — a session resumed by a hand-over, which fires no
       // prompt hook — with a turn started and not observed yet. Only sessions we own.
       const working = (s) => s !== sessionID && standsAlone(s) && !ended.has(s) && ingest.owned(s)
@@ -1186,16 +1188,23 @@ export default {
       if (person) return observe(person, { force: true })
       // None working: the last one that ended, as it was measured then (tenth and eleventh).
       const last = [...lastVerified.keys()].reverse().find((s) => s !== sessionID && standsAlone(s) && ended.has(s))
-      if (last) {
-        // A log grown since its last analysis is waiting, as the end of its turn put it; a failed
-        // or partial read says so itself (thirteenth review). Owed first: it settles the mark
-        // against the file, which may void one describing a log since replaced (fourteenth).
-        const owed = isOwed(last)
-        const mark = state.looked(last)
-        const grown = owed && !mark.failed && !mark.open
-        const extraction = grown ? { owed: true } : (lastExtraction.get(last) ?? state.extractionOf(last) ?? (owed ? { owed: true } : null))
-        check.replay({ ...lastVerified.get(last), extraction })
-      } else check.clear()
+      if (last) return replayEnded(last)
+      check.clear()
+      writeSelfCheck()
+    }
+
+    /** Show a session whose turn ended as it was measured then, with what is known of its log. */
+    function replayEnded(sessionID) {
+      // A log grown since its last analysis is waiting, as the end of its turn put it; a failed
+      // or partial read says so itself (thirteenth review). Owed first: it settles the mark
+      // against the file, which may void one describing a log since replaced (fourteenth).
+      const owed = isOwed(sessionID)
+      const mark = state.looked(sessionID)
+      const grown = owed && !mark.failed && !mark.open
+      const extraction = grown
+        ? { owed: true }
+        : (lastExtraction.get(sessionID) ?? state.extractionOf(sessionID) ?? (owed ? { owed: true } : null))
+      check.replay({ ...lastVerified.get(sessionID), extraction })
       writeSelfCheck()
     }
 
