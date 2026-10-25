@@ -725,8 +725,10 @@ say so, with numbers, instead of guessing.
 | `verified` | whenever the assertions below are evaluated: the first prompt of a session, then on activity at ≤1 write/min, when a turn ends, when an outcome is recorded | one file write | nothing is being evaluated at all |
 
 The gaps diagnose the halves. All three old → not running. `loaded` fresh and the rest old →
-we load, but no hook ever fires. `verified` fresh and `heartbeat` old → the event stream and
-the plugin's own tools run, and the hooks do not: nothing but a hook moves the heartbeat.
+we load, but no hook ever fires. `verified` fresh and `heartbeat` old → the event stream or
+the plugin's own tools ran since the last hook did: nothing but a hook moves the heartbeat. That
+says the hooks are dead only if something that fires one — a prompt, a tool call — happened in
+between; a hand-over answered in text alone fires none.
 
 **The assertions are evaluated from the first prompt, not only when a session ends.** They
 used to wait for the end, which left the file saying "nothing measured yet" for exactly as
@@ -794,7 +796,7 @@ Decision 20. This is the whole file, not an excerpt — the prose is part of the
 opencode 2.0.32 · opencode-retro 0.1.0 · github.com/dmitriisilin/opencode-retro
 
 loaded     2026-10-19 20:29   (plugin start)
-heartbeat  2026-10-19 20:31   (refreshed while a session is working, at most once a minute)
+heartbeat  2026-10-19 20:31   (moved by every hook that fires, ours included; written at most once a minute)
 verified   2026-10-19 20:31   (when the checks below were last evaluated)
 
 **If you are working right now and `heartbeat` is more than a few minutes old, this plugin

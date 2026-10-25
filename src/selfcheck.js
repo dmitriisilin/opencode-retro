@@ -298,7 +298,7 @@ export function render(state) {
     "",
     "```",
     `loaded     ${stamp(state.loaded)}   (plugin start)`,
-    `heartbeat  ${stamp(state.heartbeat)}   (refreshed while a session works, at most once a minute)`,
+    `heartbeat  ${stamp(state.heartbeat)}   (moved by every hook that fires, ours included; written at most once a minute)`,
     state.checks.length
       ? `verified   ${stamp(state.verified)}   (when the checks below were last evaluated)`
       : `verified   ${stamp(state.verified)}   (when checks were last evaluated; none are shown, see below)`,

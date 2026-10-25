@@ -120,9 +120,10 @@ export default {
     const turnSeen = new Set()
     /** Evidence from each finished session, kept so a later extraction can complete its report. */
     const lastVerified = new Map()
-    let lastBeat = 0
-    // When a hook last had the report written for its heartbeat (`pulse`).
-    let lastPulse = 0
+    // When a session was last observed (`observe`'s throttle), and when the report was last
+    // written, by anyone (`pulse` writes only when nothing has for a minute).
+    let lastObserved = 0
+    let lastWrite = 0
     /**
      * Sessions that are the plugin's own work — the subagents reading work orders. Nothing of
      * theirs is written to any log (analysis.md, "The plugin's own work").
@@ -220,6 +221,7 @@ export default {
     }
 
     const writeSelfCheck = () => {
+      lastWrite = Date.now()
       try {
         const lessons = store.list()
         check.stock({
@@ -269,11 +271,11 @@ export default {
       if (ended.has(sessionID)) return
       const now = Date.now()
       const first = !observedSessions.has(sessionID)
-      if (!first && !force && now - lastBeat < config.heartbeatMs) return
+      if (!first && !force && now - lastObserved < config.heartbeatMs) return
       // Re-inserted, so the set is in order of the latest observation (`handBack`).
       observedSessions.delete(sessionID)
       observedSessions.add(sessionID)
-      lastBeat = now
+      lastObserved = now
       check.verify(
         {
           id: sessionID,
@@ -313,8 +315,14 @@ export default {
       try {
         await ctx[domain].hook(name, (payload) => {
           try {
-            pulse()
             handler(payload)
+          } catch (err) {
+            onError(`${domain}.${name}`, err)
+          }
+          // After the handler, so the file is written with what the hook changed, and only if
+          // nothing wrote it for a minute — one write for one hook (twenty-fourth review).
+          try {
+            pulse()
           } catch (err) {
             onError(`${domain}.${name}`, err)
           }
@@ -1095,14 +1103,12 @@ export default {
      * Any hook fired — the person's, or a reader's of ours. The heartbeat moves, and nothing
      * else may move it: not the event stream, which keeps running when hooks die, nor a tool of
      * ours (selfcheck.md, "Only a hook moves the heartbeat"; twenty-third review). The report is
-     * written for it at most once a minute; observing a session writes it too.
+     * written for it only when nothing else has written it for a minute.
      */
     function pulse() {
       const now = Date.now()
       check.beat(now)
-      if (now - lastPulse < config.heartbeatMs) return
-      lastPulse = now
-      writeSelfCheck()
+      if (now - lastWrite >= config.heartbeatMs) writeSelfCheck()
     }
 
     /** A turn seen to start, kept in order of the latest start (`handBack`). */

@@ -12,9 +12,9 @@ the session it measured on as evidence. It explains itself: its cadence, its sta
 rule, what each failing line means and what to do next, and the versions and repository
 it came from.
 
-**The three timestamps.** `loaded` (setup ran), `heartbeat` (hooks are firing; refreshed
-while a session works, at most once a minute), `verified` (when the assertions were last
-evaluated — from the first prompt of a session onward, not only at its end).
+**The three timestamps.** `loaded` (setup ran), `heartbeat` (hooks are firing; moved by every
+hook that fires, the file written at most once a minute), `verified` (when the assertions were
+last evaluated — from the first prompt of a session onward, not only at its end).
 
 **Only a hook moves the heartbeat.** Its whole meaning is that hooks fire, so it is moved by
 every hook that fires — the person's or a reader's of ours — and by nothing else: not the event
@@ -22,8 +22,9 @@ stream, which keeps running when the hooks die, and not a tool of the plugin's o
 then too (Gotcha 8). So a `/retro` round whose readers work for minutes keeps it fresh, and a
 plugin whose hooks were renamed lets it go stale whatever else still runs. `verified` moves on
 its own, whenever the checks are evaluated — at a turn's end, when an outcome is recorded —
-so a fresh `verified` beside an old `heartbeat` reads exactly as it should: the event stream
-and the plugin's tools are alive, and the hooks are not. (The eleventh, twelfth, twentieth,
+so a fresh `verified` beside an old `heartbeat` reads exactly as it should: no hook has fired
+since, which says the hooks are dead only if something that fires one — a prompt, a tool call —
+happened in between. A hand-over answered in text alone fires none. (The eleventh, twelfth, twentieth,
 twenty-first and twenty-second reviews each moved this one way or the other; this is why it is
 written down.)
 

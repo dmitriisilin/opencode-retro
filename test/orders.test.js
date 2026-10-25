@@ -1635,6 +1635,7 @@ test("an outcome for a session still working leaves the heartbeat, and a reader'
     await record(fake, "ses_b", [LESSON], { dir })
     let report = readFileSync(join(dir, ".retro", "selfcheck.md"), "utf8")
     assert.match(report, /heartbeat\s+2026-10-25 10:00/, "a tool of ours is not a hook firing")
+    assert.match(report, /verified\s+2026-10-25 10:10/, "and the checks were evaluated again")
     now += 10 * 60_000
     await fake.hooks.get("session.prompt")({ sessionID: "ses_reader", messageID: "r1", prompt: { text: "opencode-retro work order: read /x/.retro/work/ses_q.md and do what it says." } })
     await fake.hooks.get("tool.execute.before")({ sessionID: "ses_reader", id: "rr", tool: "read", input: { path: "x" } })
