@@ -1326,7 +1326,7 @@ export default {
       // Grown by something to read, that is: the session `/retro` runs in grows by its own
       // hand-over and round every time, and counted as new material its askings never added up
       // — the one session an unanswered order is likeliest in (round 10 of 10).
-      const grew = readSize > previous.size && !(previous.asked && grewByNothing(sessionID, previous.size, readSize))
+      const grew = readSize > previous.size && !(previous.asked && grewByNothing(sessionID, previous.size, readSize, records))
       const asked = (grew ? 0 : before) + 1
       // `lastReal`: the last step anything could be read in — not the plugin's own, not a turn's
       // end. A reader leaves a trailing round out as it is told to, and reading up to here is

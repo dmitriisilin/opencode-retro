@@ -2132,7 +2132,7 @@ test("a /retro waiting behind a round keeps its own round when the first one end
 test("the contract describes a round as the code reads it, and defers to the order's list", async () => {
   const { OUTPUT_CONTRACT } = await import("../src/contract.js")
   assert.match(OUTPUT_CONTRACT, /at the hand-over itself when it came between turns/)
-  assert.match(OUTPUT_CONTRACT, /A prompt of the person's before the round's\s+turn starts makes that turn theirs/)
+  assert.match(OUTPUT_CONTRACT, /A prompt of the person's that the round's turn\s+start follows makes that turn theirs/)
   assert.match(OUTPUT_CONTRACT, /go by the list/)
 })
 
@@ -2190,4 +2190,36 @@ test("the self-check reads which turn a hand-over started as rounds and replies 
     0,
     "one handed back as a tool result answered the turn it was in",
   )
+})
+
+test("the person steering into the running turn leaves a waiting /retro its round", async () => {
+  const { ownRounds } = await import("../src/extract.js")
+  const records = [
+    { n: 1, k: "prompt", text: "fix bug" },
+    { n: 2, k: "session", event: "start" },
+    { n: 3, k: "handover", about: "work", sent: true, text: "the logs come first" },
+    { n: 4, k: "prompt", text: "and check the tests too", delivery: "steer" },
+    { n: 5, k: "tool", tool: "shell", input: { command: "npm test" }, exit: 0 },
+    { n: 6, k: "session", event: "end" },
+    { n: 7, k: "session", event: "start" },
+    { n: 8, k: "text", text: "starting readers" },
+    { n: 9, k: "session", event: "end" },
+  ]
+  const { steps } = ownRounds(records)
+  assert.ok(steps.has(7) && steps.has(8), "the turn the hand-over waited for is the round")
+  assert.ok(!steps.has(5), "the steered turn is the person's")
+})
+
+test("a prompt that opens the next turn, after a turn whose end was lost, is the person's turn", async () => {
+  const { ownRounds } = await import("../src/extract.js")
+  const records = [
+    { n: 1, k: "prompt", text: "fix bug" },
+    { n: 2, k: "session", event: "start" },
+    { n: 3, k: "tool", tool: "shell", input: { command: "npm test" }, exit: 2 },
+    { n: 4, k: "handover", about: "work", sent: true, text: "the logs come first" },
+    { n: 5, k: "prompt", text: "try again" },
+    { n: 6, k: "session", event: "start" },
+    { n: 7, k: "tool", tool: "shell", input: { command: "npm test" }, exit: 2 },
+  ]
+  assert.ok(!ownRounds(records).steps.has(7), "the person's work is not taken for a round")
 })

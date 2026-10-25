@@ -139,7 +139,9 @@ work, not the person's, and an analysis must never be analysed. Two kinds, handl
    whose notice is written to the log and to nobody else, so it ends nothing and starts no
    reply, nor does the `work` hand-over it is about open a round — a `/retro` run again after
    it has the round. One still waiting when the person speaks is not answered either: that
-   turn answers them. Each round runs from its own beginning, so a `/retro` run again while
+   turn answers them — told by the log, a prompt the next turn start follows having opened that
+   turn, while one steered into the running turn is followed by its end and leaves the
+   hand-over waiting for the turn after. Each round runs from its own beginning, so a `/retro` run again while
    one reads, waiting for that turn to end, has its round even when the first ends before it. Every turn start is logged, since a session stays the plugin's across
    turns. With none to go by, a hand-over that came between turns starts its round itself, and
    one that landed in a running turn opens an empty one. The
@@ -256,6 +258,8 @@ rare, since the hand-over asks it to start readers and nothing else — is left 
   `the contract says the agent's text answering a notice is not the session's`
   `a /retro waiting behind a round keeps its own round when the first one ends first`
   `the contract describes a round as the code reads it, and defers to the order's list`
+  `the person steering into the running turn leaves a waiting /retro its round`
+  `a prompt that opens the next turn, after a turn whose end was lost, is the person's turn`
 - `retro_propose` is not a delegated session's to call: a reader — known by its line or worded
   its own way — or any other subagent calling it is told so, with nothing recorded, nothing
   closed and no order removed; and `/retro` itself issues nothing in a delegated session, whose

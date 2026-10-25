@@ -92,8 +92,8 @@ Rules:
   starts: at the hand-over itself when it came between turns, and from the next \`session\`
   start when it landed in a turn still running — work before that is the person's turn still
   finishing. It runs to the person's next \`prompt\`, or to where another hand-over of the
-  plugin's is answered, whichever comes first. A prompt of the person's before the round's
-  turn starts makes that turn theirs, and a hand-over followed by a notice with
+  plugin's is answered, whichever comes first. A prompt of the person's that the round's turn
+  start follows makes that turn theirs, and a hand-over followed by a notice with
   \`"undelivered": true\` never arrived and does nothing. The order lists the steps; where this
   description and that list differ, go by the list. Only steps without \`from\` start or end
   a round: a hand-over or prompt with \`from\` is a subagent's, and inside whatever round it

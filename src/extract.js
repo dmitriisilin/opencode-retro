@@ -78,21 +78,26 @@ function answerStarts(sorted) {
   const at = new Map()
   let inTurn = false
   let waiting = []
+  let spoke = false
   let last = -1
   for (let i = 0; i < sorted.length; i++) {
     const r = sorted[i]
     if (r.from) continue
     // The person speaking before a waiting hand-over's turn begins makes that turn theirs: it
-    // answers them, and their material is not to be taken for a reply (round 7 of 10).
+    // answers them, and their material is not to be taken for a reply (round 7 of 10). Told by
+    // what comes next in the log, not by whether a turn looked to be running: a prompt the next
+    // turn start follows opened that turn — between turns, or after one whose end was lost to a
+    // restart — while one steered into the running turn is followed by its end, and the
+    // hand-over goes on waiting for the turn after.
     if (r.k === "prompt") {
-      for (const h of waiting) at.delete(h)
-      waiting = []
+      spoke = true
       continue
     }
     if (r.k === "session") {
       inTurn = r.event === "start"
-      if (inTurn) for (const h of waiting) at.set(h, i)
+      if (inTurn) for (const h of waiting) spoke ? at.delete(h) : at.set(h, i)
       if (inTurn) waiting = []
+      spoke = false
       continue
     }
     if (r.k !== "handover") continue
