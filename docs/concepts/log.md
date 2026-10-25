@@ -26,7 +26,7 @@ it the log could not tell the two apart.
 the file. It is the coordinate a lesson's evidence uses, so it must be unique within a
 file and must not restart when a new process appends to an existing log. The plugin is
 the only writer of its logs: the counter is read from the file when a process first
-writes to a session, so a log replaced by hand *while* the plugin is writing to that
+writes to a session, and starts again when the plugin prunes the session's log, so a log replaced by hand *while* the plugin is writing to that
 session can get duplicate numbers until the next restart. Replaced while the plugin is
 down, it is a different log and is read from its own start.
 

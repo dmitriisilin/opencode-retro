@@ -284,7 +284,6 @@ export default {
       emit: (sessionID, record) => log.write(sessionID, record),
       parentOf: (sessionID) => parents.get(sessionID) ?? null,
       startAt: (sessionID) => log.lastN(sessionID),
-      logExists: (sessionID) => log.stat(sessionID).size > 0,
     })
 
     // Hooks. Registration proving nothing is the whole reason the self-check exists:
@@ -808,7 +807,7 @@ export default {
         if (log.remove(id)) {
           state.forget(id)
           grown.delete(id)
-          ingest.forget(id) // its numbering starts again with its next log (forty-fourth review)
+          ingest.restartNumbering(id) // its next log is read from its own start
         }
       }
     }

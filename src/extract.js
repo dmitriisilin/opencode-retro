@@ -246,11 +246,12 @@ export function composeOrder({
   // answered in turn — a call per `/retro`, spent on the plugin talking to itself. Found by a
   // stranger's run. Only replies to a person's prompt count; tool calls always do.
   const reread = analysedUpTo > 0
-  const asked = records.filter((r) => r.k === "prompt" && (!reread || r.n > analysedUpTo)).length
-  const toolCalls = records.filter((r) => r.k === "tool").length
   // One rule with `nothingNew`: the `work` hand-over's replies are its round's, already left
-  // out; the other hand-overs' replies are the plugin talking to itself.
+  // out; the other hand-overs' replies — a subagent delegated in answer included — are the
+  // plugin talking to itself (forty-fifth review).
   const plugin = replies ?? repliesToPlugin(records)
+  const asked = records.filter((r) => r.k === "prompt" && !plugin.has(r.n) && (!reread || r.n > analysedUpTo)).length
+  const toolCalls = records.filter((r) => r.k === "tool").length
   const newReply = records.some((r) => r.k === "text" && !plugin.has(r.n))
   if (reread ? asked === 0 && toolCalls === 0 && !newReply : asked <= 1 && toolCalls === 0) {
     return { ok: true, skipped: true, detail: "nothing to extract (one exchange, nothing done)" }

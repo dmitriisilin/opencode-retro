@@ -36,9 +36,6 @@ export function createIngest({
   // process appending to an existing log starts again at 1 and a lesson's step range stops
   // resolving to one record. Measured on real logs: three and four such blocks in one file.
   startAt = () => 0,
-  // Whether the log a session writes to is on disk: when it is not — pruned, or deleted by
-  // hand — numbering starts again from what is there (forty-fourth review).
-  logExists = () => true,
 }) {
   /**
    * sessionID -> { n, pending: Map<callID, started>, completed: Set<callID>,
@@ -95,7 +92,6 @@ export function createIngest({
   function append(sessionID, record) {
     const target = owner(sessionID)
     const s = session(target)
-    if (s.n > 0 && !logExists(target)) s.n = startAt(target) ?? 0
     s.counts.records++
     // A record of a delegation's own session says so: its prompt is the delegation's
     // instruction, not the person's, and the log alone could not tell the two apart.
@@ -159,6 +155,16 @@ export function createIngest({
     forget: (sessionID) => sessions.delete(sessionID),
 
     /**
+     * Its log was pruned: the next one is read from its own start, so numbering starts again —
+     * and the session stays the plugin's, or the next turn's start would be dropped (forty-
+     * fourth and forty-fifth reviews).
+     */
+    restartNumbering(sessionID) {
+      const s = sessions.get(owner(sessionID))
+      if (s) s.n = 0
+    },
+
+    /**
      * A turn ended: what was counted for it is reset, and the session stays ours. Forgetting
      * it outright, as the end of a turn used to, dropped the next turn's start whenever that
      * turn began with no hook — a hand-over's resumed turn — so its round could not be found
@@ -173,7 +179,10 @@ export function createIngest({
       s.counts = freshCounts()
       // A hand-over still waiting is the next turn's input: counted there, or that turn — with
       // no prompt — read as a dead prompt hook.
+      // Carried once: a hand-over that never gets a prompt after it must not excuse every turn
+      // that follows, or a dead prompt hook would never be reported (forty-fifth review).
       if (s.awaiting) s.counts.handovers = 1
+      s.awaiting = false
     },
 
     /** Unpaired calls, flushed when a session ends so an interrupt leaves no silent gap. */

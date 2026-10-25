@@ -1867,11 +1867,28 @@ test("a log pruned between turns starts its numbering again", async () => {
     utimesSync(logOf(dir, "ses_x"), (now - 8 * 24 * 60 * 60 * 1000) / 1000, (now - 8 * 24 * 60 * 60 * 1000) / 1000)
     await retro(fake, { invoker: "ses_other" })
     assert.equal(existsSync(logOf(dir, "ses_x")), false, "pruned")
+    // Its next turn starts before any hook: still the plugin's, so the start is logged
+    // (forty-fifth review — pruning used to forget the session outright).
+    fake.emit({ type: "session.execution.started", durable: { seq: 99 }, data: { sessionID: "ses_x" } })
+    await new Promise((r) => setImmediate(r))
     await fake.hooks.get("session.prompt")({ sessionID: "ses_x", messageID: "m9", prompt: { text: "back again" } })
-    const first = JSON.parse(readFileSync(logOf(dir, "ses_x"), "utf8").trim().split("\n")[0])
-    assert.equal(first.n, 1, "the new log is read from its own start")
+    const lines = readFileSync(logOf(dir, "ses_x"), "utf8").trim().split("\n").map((l) => JSON.parse(l))
+    assert.equal(lines[0].n, 1, "the new log is read from its own start")
+    assert.ok(lines.some((r) => r.k === "session" && r.event === "start"), "and its turn's start is in it")
     await cleanup?.()
   } finally {
     Date.now = real
   }
+})
+
+test("a waiting hand-over excuses the turn it starts and no turn after it", async () => {
+  // Forty-fifth pre-release review: with the prompt hook dead, the marker never cleared, and
+  // every later turn was excused instead of reported.
+  const { createIngest } = await import("../src/ingest.js")
+  const ingest = createIngest({ emit: () => {}, maxOutput: 100 })
+  ingest.handover("s", "the logs come first", "work")
+  ingest.endTurn("s")
+  assert.equal(ingest.counts("s").handovers, 1, "the turn it starts")
+  ingest.endTurn("s")
+  assert.equal(ingest.counts("s").handovers, 0, "and not the next")
 })
