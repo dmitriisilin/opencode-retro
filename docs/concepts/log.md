@@ -65,9 +65,10 @@ not make a log owed: a hand-over, a turn's start or end, a reply to the plugin's
 hand-over, and the plugin's own rounds (analysis.md, "The plugin's own work"). It stays in the
 log, and the next read carries it along with whatever follows.
 
-**Read to its end.** A log that is not owed: its mark covers it, with neither flag set, but for
-growth that holds nothing to read (see "Owed"). Not permanent: a session prompted again grows
-past its mark by something to read and is owed again.
+**Read to its end.** Its mark covers it, with neither flag set, but for growth that holds
+nothing to read or is the plugin's own for certain — decided without the guess "Owed" may use,
+since pruning is for good. Not permanent: a session prompted again grows past its mark by
+something to read and is owed again.
 
 **Retired.** A log with three failed reads at the same size — a file that could not be opened
 or parsed, a work order that could not be written (no `extract.md` resolving is one way), or a

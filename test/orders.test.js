@@ -2383,3 +2383,47 @@ test("the contract names the certain steps and leaves the round to the reader", 
   assert.match(OUTPUT_CONTRACT, /anything the person's own task needed in\s+that stretch is still theirs/)
   assert.match(OUTPUT_CONTRACT, /what a subagent it started for\s+that answer was told and said/)
 })
+
+test("a log is not pruned on a guess: work after a hand-over that nobody read is kept", async () => {
+  // The guess at the plugin's exchange may decide that a log is not worth an order — a read
+  // delayed — but pruning is for good, and decides without it.
+  const { utimesSync } = await import("node:fs")
+  const dir = sandbox()
+  const fake = fakeOpenCode({ directory: dir, agent: false })
+  const cleanup = await plugin.setup(fake.ctx)
+  await work(fake, "ses_a")
+  await retro(fake)
+  await record(fake, "ses_a", [], { dir }) // read to its end
+  await work(fake, "ses_b")
+  await retro(fake, { invoker: "ses_a" }) // a work hand-over lands in ses_a…
+  const call = { sessionID: "ses_a", id: "k9", tool: "edit", input: { path: "src/app.js" } }
+  await fake.hooks.get("tool.execute.before")(call) // …and the person's agent goes on with their task
+  await fake.hooks.get("tool.execute.after")({ ...call, status: "completed", result: { output: "edited" } })
+  const old = new Date(Date.now() - 9 * 24 * 3600 * 1000)
+  utimesSync(logOf(dir, "ses_a"), old, old)
+  await fake.tools.get("retro_decide").execute({ id: "no-such", status: "rejected" }, { sessionID: "ses_a" }) // runs the pruning
+  assert.equal(existsSync(logOf(dir, "ses_a")), true, "the edit was never read, so the log stays")
+  await cleanup?.()
+})
+
+test("a stretch of the plugin's exchange lasts to the end of the turn it is taken up in", async () => {
+  const { pluginExchange } = await import("../src/extract.js")
+  const records = [
+    { n: 1, k: "prompt", text: "fix bug" },
+    { n: 2, k: "session", event: "start" },
+    { n: 3, k: "session", event: "end" },
+    { n: 4, k: "handover", about: "work", sent: true, text: "the logs come first" },
+    { n: 5, k: "session", event: "start" },
+    { n: 6, k: "text", text: "starting readers" },
+    { n: 7, k: "session", event: "end" },
+    { n: 8, k: "session", event: "start" }, // begun by a form answered, no prompt hook
+    { n: 9, k: "tool", tool: "edit", input: { path: "AGENTS.md" } },
+  ]
+  const x = pluginExchange(records)
+  assert.ok(x.has(6) && !x.has(9))
+})
+
+test("the contract counts the plugin's stretches a reader left out as read", async () => {
+  const { OUTPUT_CONTRACT } = await import("../src/contract.js")
+  assert.match(OUTPUT_CONTRACT, /Steps you went\s+over and left out as the plugin's own count as read/)
+})

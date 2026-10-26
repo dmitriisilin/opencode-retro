@@ -63,7 +63,8 @@ Read it in whatever way suits its size — all at once, or the head and then on.
 
 \`through\` is how far you got, and it is required: nothing else knows. Give the last step
 number the order names when you read all of it, or the last one you actually reached when you
-did not — the rest is then asked about again instead of being counted as read. Do not round
+did not — the rest is then asked about again instead of being counted as read. Steps you went
+over and left out as the plugin's own count as read: they are part of how far you got. Do not round
 it up to make the answer look complete; an honest partial read loses nothing, and a false
 full one loses the part nobody will ever come back to.
 

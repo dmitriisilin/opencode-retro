@@ -149,6 +149,10 @@ export function pluginExchange(records) {
   const lost = undelivered(sorted)
   const out = new Set()
   let mode = null // "work" | "reply" | null
+  // Whether a turn has started since the hand-over: the stretch lasts to the end of that turn
+  // at most — the one the hand-over is taken up in — and never into the turns after it, which
+  // something else began (a form answered, a resume from elsewhere).
+  let started = false
   const with_ = new Set()
   for (const r of sorted) {
     if (r.from) {
@@ -159,8 +163,16 @@ export function pluginExchange(records) {
     if (r.k === "prompt") {
       mode = null
       with_.clear()
-    } else if (r.k === "handover" && !r.undelivered && !lost.has(r.n)) mode = isWorkHandover(r) ? "work" : "reply"
-    else if (mode === "work" && r.k !== "session") out.add(r.n)
+    } else if (r.k === "handover" && !r.undelivered && !lost.has(r.n)) {
+      mode = isWorkHandover(r) ? "work" : "reply"
+      started = false
+    } else if (r.k === "session") {
+      if (r.event === "start") started = true
+      else if (r.event === "end" && started) {
+        mode = null
+        with_.clear()
+      }
+    } else if (mode === "work") out.add(r.n)
     else if (mode === "reply" && r.k === "text") out.add(r.n)
   }
   return out
