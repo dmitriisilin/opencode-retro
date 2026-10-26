@@ -422,7 +422,7 @@ export function composeOrder({
       : null,
     section("Already concluded from this session", renderConcluded(concluded)),
     section("Already fixed", renderFixed(store.listArchive?.() ?? [])),
-    section("Lessons already recorded", renderExisting(existing, lessonsDir)),
+    section("Lessons already recorded", lessonsBlock(existing, lessonsDir)),
     section("Rejected — do not propose these again", renderRejected(state.rejected)),
     OUTPUT_CONTRACT,
   ]
@@ -435,7 +435,11 @@ export function composeOrder({
 /** The lessons an order lists as already recorded: the open set, the rejected aside. */
 const currentLessons = (store) => store.list().filter((l) => l.status !== "rejected")
 
-const LESSONS_HEADING = "## Lessons already recorded\n\n"
+// Around the list, so it is found by marks of the plugin's own: a heading of that name in the
+// person's prompt, which comes first in the order, or a "## " inside a lesson's statement would
+// otherwise be taken for the section's bounds.
+const LESSONS_OPEN = "<!-- lessons recorded -->"
+const LESSONS_CLOSE = "<!-- /lessons recorded -->"
 
 /**
  * A work order still waiting for its reader, with its list of recorded lessons brought up to
@@ -446,13 +450,13 @@ const LESSONS_HEADING = "## Lessons already recorded\n\n"
  * does (checks after the ten rounds). Returns the text unchanged when it has no such section.
  */
 export function refreshLessons(text, { store, lessonsDir }) {
-  const start = text.indexOf(LESSONS_HEADING)
-  if (start < 0) return text
-  const body = start + LESSONS_HEADING.length
-  const next = [text.indexOf("\n\n## ", body), text.indexOf("\n\n---", body)].filter((i) => i >= 0)
-  const end = next.length ? Math.min(...next) : text.length
-  return text.slice(0, body) + renderExisting(currentLessons(store), lessonsDir).trim() + text.slice(end)
+  const start = text.lastIndexOf(LESSONS_OPEN)
+  const end = text.lastIndexOf(LESSONS_CLOSE)
+  if (start < 0 || end < start) return text
+  return text.slice(0, start) + lessonsBlock(currentLessons(store), lessonsDir) + text.slice(end + LESSONS_CLOSE.length)
 }
+
+const lessonsBlock = (lessons, dir) => `${LESSONS_OPEN}\n${renderExisting(lessons, dir).trim()}\n${LESSONS_CLOSE}`
 
 /**
  * A record, folded into the store: the rejected filtered out, the rest recorded by problem.

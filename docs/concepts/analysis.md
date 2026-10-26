@@ -185,6 +185,7 @@ rare, since the hand-over asks it to start readers and nothing else — is left 
   current lessons are, so a problem seen in more than one session is reported as recurring.
   `a round with several orders asks for them one at a time, and says why`
   `an order still waiting lists the lessons a reader before it recorded`
+  `an order's lesson list is found by its own marks, not by a heading the person may write`
   `already-recorded lessons are shown so the reader matches instead of re-stating`
   `an order with nothing recorded yet still says where the lessons will be`
 - The plugin makes no model call: `/retro` issues work orders and hands them to the agent in

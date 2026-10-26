@@ -349,9 +349,18 @@ test("a hand-over is counted, because it is the only input some sessions get", (
   // so a review session with no prompt used to be reported BROKEN — about a working hook,
   // in the session the plugin had just started.
   const { ingest } = collector()
-  ingest.handover("s", "a lesson")
+  ingest.handover("s", "a lesson", "lesson", { sent: true })
   assert.equal(ingest.counts("s").handovers, 1)
   assert.equal(ingest.counts("s").prompts, 0)
+})
+
+test("only a hand-over sent to start a turn is counted as one", () => {
+  // As `turnHandovers` reads the log: a proposal handed back as a tool result, or a send that
+  // failed, started nothing, and must not excuse a turn with no prompt when the log cannot be read.
+  const { ingest } = collector()
+  ingest.handover("s", "a lesson")
+  ingest.handover("s", "could not be delivered", "notice", { undelivered: true })
+  assert.equal(ingest.counts("s").handovers, 0)
 })
 
 test("a paired call with no input of its own takes the one the before hook recorded", () => {

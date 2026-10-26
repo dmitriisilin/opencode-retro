@@ -260,7 +260,9 @@ export function createIngest({
       // Counted because a hand-over is the only input some sessions ever get. The self-check
       // reads `prompts` to decide whether the prompt hook worked, and a `/retro` review
       // session has none — see `assess`, which must not call that a dead hook.
-      s.counts.handovers++
+      // Only one sent to start a turn, and delivered: a tool result, or a notice that a send
+      // failed, started nothing — as `turnHandovers` reads the log, for when it cannot be read.
+      if (sent && !undelivered) s.counts.handovers++
       // `about` separates the two hand-overs the plugin writes: a lesson put to the human,
       // and a request for the analyses that have to run first. They read identically in a
       // log and mean different things — the extraction contract discounts work that reviews

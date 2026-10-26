@@ -378,3 +378,14 @@ test("undated evidence reopens a decision, because nothing says it is old", () =
   const again = recordAnswer({ session: "ses_two", lessons: LESSONS(), ...r })
   assert.deepEqual(again.recorded.reopened, ["lint-skill-no-config"])
 })
+
+test("an order's lesson list is found by its own marks, not by a heading the person may write", async () => {
+  const { refreshLessons } = await import("../src/extract.js")
+  const r = rig()
+  const { order } = analyse(r, { lessonsDir: r.lessonsDir, lessons: [] })
+  const withHeading = order.text.replace("<!-- opencode-retro work order -->", "<!-- opencode-retro work order -->\n## Lessons already recorded\n\nmy own notes")
+  r.store.record([{ id: "a-new-one", statement: "A new problem.", steps: [1, 2], cost: 1, confidence: 0.5, why: "once" }], { session: "ses_x" })
+  const fresh = refreshLessons(withHeading, { store: r.store, lessonsDir: r.lessonsDir })
+  assert.match(fresh, /my own notes/, "the person's text is left as it was")
+  assert.match(fresh, /`a-new-one`/, "and the plugin's list is brought up to date")
+})

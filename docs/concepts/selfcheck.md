@@ -124,6 +124,7 @@ last analysis of the session whichever path ran it.
   `the self-check reads which turn a hand-over started as rounds and replies do`
   `a turn whose start went unlogged is not excused by the hand-over that began the one before`
   `a log with no turn start at all is not excused by hand-overs from turns long gone`
+  `only a hand-over sent to start a turn is counted as one`
 - The surface check names exactly the `ctx` members the plugin calls.
   `the self-check requires exactly the ctx surface the plugin calls`
 - A command that throws reaches the log and the session, never a bare 500.
