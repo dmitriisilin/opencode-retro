@@ -542,7 +542,9 @@ export default {
       // here either. One gate for both, so the log and the report cannot disagree about a turn.
       const logged = ingest.event(event)
 
-      if (event.type === "session.execution.started" && sessionID && logged !== "repeated") {
+      // Not for a delegated child: its turn is a step of its parent's, and kept here it stayed for
+      // the life of the process.
+      if (event.type === "session.execution.started" && sessionID && logged !== "repeated" && !parents.has(sessionID)) {
         // An execution is one turn, not the life of the session: a session left open and
         // prompted again starts another one, and its end must not be dropped as a duplicate of
         // the previous turn's. Before the ownership gate on purpose: the start event arrives
@@ -667,7 +669,9 @@ export default {
       // Never for a delegated session: a reader's is not logged at all, and no hand-over of the
       // plugin's is that session's — a layer under the gates in `retro_propose` and `/retro`,
       // for whatever reaches here another way (fortieth and forty-first reviews).
-      if (sessionID && !standsAlone(sessionID)) return
+      // And never for no session at all: there is no log to write it to, and one named
+      // "undefined" would be counted, described and kept for a week.
+      if (!sessionID || !standsAlone(sessionID)) return
       try {
         // Our own text is not material, so it does not make the log owed — `isOwed` says so
         // through `nothingNew`, in one place, for every kind of growth that holds nothing to read.

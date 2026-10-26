@@ -83,7 +83,9 @@ A new lesson is for a different thing to fix. If one recorded lesson covers part
 found, match it for that part and record only the rest as new.
 
 One session usually contains zero or one lessons. Two is unusual. If the session went
-straight, say so with an empty list — that is the common case and the right answer.
+straight, say so with an empty list — that is the common case and the right answer. But do not
+fold two problems into one to keep the count down: problems that would be fixed in different
+places — a skill and an instruction file, say — are two lessons, each with its own target.
 
 Prefer naming the problem over guessing the fix. A lesson with no proposal is useful; a
 confident proposal aimed at the wrong file is not.
