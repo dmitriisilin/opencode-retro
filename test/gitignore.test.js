@@ -50,3 +50,16 @@ test("a seed that cannot happen is reported, not thrown", () => {
   assert.match(result.error, /ENOTDIR|EEXIST|not a directory/)
   assert.deepEqual(errors, ["gitignore.seed"])
 })
+
+test("the plugin says what its directory is, once, for an agent that opens it", async () => {
+  const { seedReadme } = await import("../src/gitignore.js")
+  const { mkdtempSync, readFileSync, writeFileSync } = await import("node:fs")
+  const { tmpdir } = await import("node:os")
+  const { join } = await import("node:path")
+  const dir = mkdtempSync(join(tmpdir(), "retro-readme-"))
+  assert.equal(seedReadme({ dir }).seeded, true)
+  assert.match(readFileSync(join(dir, "README.md"), "utf8"), /Nothing in this directory describes this project/)
+  writeFileSync(join(dir, "README.md"), "mine")
+  assert.equal(seedReadme({ dir }).seeded, false)
+  assert.equal(readFileSync(join(dir, "README.md"), "utf8"), "mine", "and never rewritten")
+})

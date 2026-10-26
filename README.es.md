@@ -1,4 +1,4 @@
-<!-- translated-from: README.en.md@1d6ac62262fc -->
+<!-- translated-from: README.en.md@f654c69bf54f -->
 # opencode-retro
 
 [Русский](README.md) | [English](README.en.md) | [简体中文](README.zh-CN.md) | **Español** | [日本語](README.ja.md)
@@ -206,6 +206,7 @@ Todo lo que el plugin escribe se queda bajo `.retro/` dentro del proyecto, y en 
   state.json
   plugin.log         errores de hooks, comandos y trabajo en segundo plano
   .gitignore         se siembra una vez y pasa a ser del proyecto
+  README.md          qué es este directorio, para quien lo abra; se siembra una vez
 ```
 
 Un log se elimina cuando se cumplen tres cosas: se ha leído hasta el final, ninguna lección abierta lo cita y nadie ha escrito en él durante siete días. La evidencia de una lección nombra una sesión y un rango de pasos, y durante la revisión la pregunta «¿qué pasó realmente ahí?» tiene que tener una respuesta que no sea un resumen, así que un log citado se queda. Los siete días son lo que hace seguro eliminar sin saber si una sesión sigue en marcha: una sesión que sigue escribiendo conserva su log, y una que se retoma tras una semana en silencio empieza un log nuevo, que se lee desde el principio. Un log que nadie ha leído no se elimina nunca, por antiguo que sea. El crecimiento lo marcan el número de lecciones abiertas, que está acotado, y una semana de sesiones, no la edad del proyecto.

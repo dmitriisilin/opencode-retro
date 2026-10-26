@@ -23,7 +23,7 @@ import {
 import { DECIDE_INPUT, DECIDE_OUTPUT, decide } from "./src/decide.js"
 import { activeCheck } from "./src/selfcheck.js"
 import { resolveConfig } from "./src/config.js"
-import { seedGitignore } from "./src/gitignore.js"
+import { seedGitignore, seedReadme } from "./src/gitignore.js"
 
 const REPO = "github.com/dmitriisilin/opencode-retro"
 
@@ -601,6 +601,8 @@ export default {
     // Decide what git sees from inside our own directory, so the user never has to edit
     // theirs. Seeded once; after that the file is theirs.
     seedGitignore({ dir: config.dir, onError })
+    // And what the directory is, for an agent that opens it (gitignore.js, README).
+    seedReadme({ dir: config.dir, onError })
 
     // Seed the editable prompts, then look for a newer default. Neither touches a file
     // the user owns (AGENTS.md decisions 13 and 15).

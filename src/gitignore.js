@@ -40,3 +40,35 @@ export function seedGitignore({ dir, onError }) {
     return { seeded: false, path, error: String(err?.message ?? err) }
   }
 }
+
+/**
+ * A note at the top of our own directory, for whoever opens it — an agent, mostly. Measured on
+ * the friction bench: an agent working on the project listed `.retro/`, read the self-check
+ * and past sessions' logs as if they were the project's documentation, and spent steps on
+ * them; the plugin then recorded that as friction of its own making. This says what the
+ * directory is in the place an agent looks. It changes nothing in the agent's own harness,
+ * which is the user's. Seeded once and never rewritten, like the `.gitignore`.
+ */
+export const README = `# .retro — opencode-retro's own data
+
+Nothing in this directory describes this project. It belongs to the opencode-retro plugin:
+recordings of past sessions, the plugin's work orders and state, and lessons waiting for a
+person to decide on. An agent working on the project has no reason to read it — the
+project's own instructions are where they always were.
+
+A person can start with \`selfcheck.md\` (is the plugin working) and \`lessons/\` (what it
+has learned).
+`
+
+export function seedReadme({ dir, onError }) {
+  const path = join(dir, "README.md")
+  if (existsSync(path)) return { seeded: false, path }
+  try {
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(path, README)
+    return { seeded: true, path }
+  } catch (err) {
+    onError?.("readme.seed", err)
+    return { seeded: false, path, error: String(err?.message ?? err) }
+  }
+}

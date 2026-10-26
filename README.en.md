@@ -202,6 +202,7 @@ Everything the plugin writes stays under `.retro/` in the project, and nowhere e
   state.json
   plugin.log         errors from hooks, commands and background work
   .gitignore         seeded once, then the project's
+  README.md          what this directory is, for whoever opens it — seeded once
 ```
 
 A log is removed once three things are true: it has been read to the end, no open lesson cites it, and nothing has been written to it for seven days. A lesson's evidence names a session and a range of steps, and during review the question "what actually happened there?" has to have an answer that is not a summary, so a cited log stays. The seven days are what make removal safe without knowing whether a session is still running: a session that keeps writing keeps its log, and one picked up after a quiet week starts a new log, read from its start. A log nobody has read is never removed, however old. Growth is bounded by the number of open lessons, which is capped, and by a week of sessions, rather than by the age of the project.

@@ -33,6 +33,13 @@ tail are kept and a notice says how much of the middle went, unless the notice w
 cost more than it saves. It is the one place the plugin decides what an analysis can see,
 and it decides it once, when the record is written (analysis.md, "Capture clamp").
 
+**What the directory is.** The plugin writes `.retro/README.md` once: a paragraph saying the
+directory is the plugin's data and describes nothing of the project, for an agent that opens
+it. Measured: an agent read `selfcheck.md` and old logs as project documentation, and the
+plugin recorded its own directory as friction. Never rewritten; nothing in the agent's own
+harness is touched.
+  `the plugin says what its directory is, once, for an agent that opens it`
+
 **The project's git.** The plugin writes `.retro/.gitignore` once and never again. Git
 applies it to the directory holding it, so the decision is made inside the one directory
 the plugin owns and the user's own `.gitignore` is never touched. Ignored: sessions,
