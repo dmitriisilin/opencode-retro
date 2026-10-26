@@ -160,7 +160,7 @@ test("with no lessons, nothing claims that lessons are holding logs", () => {
 
 test("the rendered file carries its own cadence, threshold and remedy", () => {
   const check = createSelfCheck({ versions: { opencode: "2.0.32", plugin: "0.0.2" }, repo: "github.com/x/y" })
-  check.note("prompts/extract.md is locally edited (base 2); a newer default is in prompts/updates/extract.v3.md")
+  check.notes(["prompts/extract.md is locally edited (base 2); a newer default is in prompts/updates/extract.v3.md"])
   check.verify(healthy)
   const text = check.render()
 

@@ -343,3 +343,9 @@ test("nothing to review after every lesson was decided says so, not that nothing
   assert.match(text, /Every lesson recorded so far has been decided — 2 in `\.retro\/archive\/`/)
   assert.doesNotMatch(text, /nothing is recorded yet/)
 })
+
+test("nothing to review with logs still unread does not say nothing new has come up", () => {
+  const text = renderNothing({ decided: 3, queued: 2 })
+  assert.doesNotMatch(text, /nothing new has come up/)
+  assert.match(text, /2 logs/)
+})

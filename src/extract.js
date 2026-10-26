@@ -598,15 +598,17 @@ function renderFixed(archived) {
     .slice(0, 10)
   if (!fixed.length) return null
   return [
-    "These were accepted and fixed, at the time given (UTC, as the log's own `t` is). If what",
-    "this session ran into happened *before* that time, friction from them is history and not",
-    "worth reporting — the fix came later. Report one again only if it happened after it, which",
-    "is real news: the fix did not hold, or not all of it.",
+    "These were accepted and fixed, at the time given — and as the log's own `t`, which is",
+    "milliseconds since the epoch, so a step can be compared with it directly. If what this",
+    "session ran into happened *before* that time, friction from them is history and not worth",
+    "reporting — the fix came later. Report one again only if it happened after it, which is",
+    "real news: the fix did not hold, or not all of it.",
     "",
     ...fixed.map((l) => {
       // To the minute: a backlog and its fix are often on the same day, and a date alone left
       // the reader to work out from raw timestamps which side of the fix a session was on.
-      const when = `${String(l.closedAt).slice(0, 16).replace("T", " ")} UTC`
+      const ms = Date.parse(l.closedAt)
+      const when = `${String(l.closedAt).slice(0, 16).replace("T", " ")} UTC${Number.isFinite(ms) ? `, t ${ms}` : ""}`
       const changed = Array.isArray(l.changed) && l.changed.length ? ` — changed ${l.changed.join(", ")}` : ""
       return `- \`${l.id}\` (fixed ${when}): ${l.statement}${changed}`
     }),

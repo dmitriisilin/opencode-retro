@@ -340,7 +340,7 @@ test("problems already fixed are named in the order, with the date they were fix
 
   const { order } = analyse(r, { session: "ses_two" })
   assert.match(order.text, /## Already fixed/)
-  assert.match(order.text, /`lint-skill-no-config` \(fixed \d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC\)/, "to the minute: a fix and its backlog share a day")
+  assert.match(order.text, /`lint-skill-no-config` \(fixed \d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC, t \d{13}\)/, "to the minute: a fix and its backlog share a day")
   assert.match(order.text, /changed \.opencode\/skills\/lint\/SKILL\.md/, "and what was done about it")
   assert.match(order.text, /the fix came later/, "with what that means for an older session")
   assert.doesNotMatch(order.text, /## Lessons already recorded[\s\S]*lint-skill-no-config/, "it is not also listed as open")

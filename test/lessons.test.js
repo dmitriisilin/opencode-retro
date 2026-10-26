@@ -704,6 +704,8 @@ test("a lesson that comes back with no fix named does not bring back the fix alr
   assert.equal(back.proposal, undefined, "the old proposal was the fix that was made")
   assert.equal(back.ask, undefined)
   assert.equal(back.decisions[0].statement, lesson().statement)
+  assert.equal(back.decisions[0].proposal.change, "drop the build line", "the fix that was tried is history, not lost")
+  assert.equal(back.decisions[0].ask, "drop it?")
 })
 
 test("a lesson that comes back aimed at another file is measured against that file", () => {

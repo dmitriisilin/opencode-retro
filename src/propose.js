@@ -221,6 +221,7 @@ function previousLines(lesson) {
     "",
     `- ${d.status ?? "closed"}${d.closedAt ? ` on ${String(d.closedAt).slice(0, 16).replace("T", " ")} UTC` : ""}` +
       `${d.decidedIn ? ` in \`${d.decidedIn}\`` : ""}: ${d.statement ?? ""}`,
+    ...(d.proposal?.change ? [`  Proposed then${d.proposal.target ? ` (${d.proposal.target})` : ""}: ${String(d.proposal.change).trim()}`] : []),
     ...(d.note ? [`  Decided: ${d.note}`] : []),
     ...(Array.isArray(d.changed) && d.changed.length ? [`  Changed: ${d.changed.join(", ")}`] : []),
     ...(d.discovered ? [`  Found on the way: ${String(d.discovered).trim()}`] : []),
@@ -355,7 +356,7 @@ export function renderNothing({ queued = 0, extracted = null, dir = DEFAULTS.dir
   } else {
     lines.push(
       "",
-      decided
+      decided && !queued
         ? `Every lesson recorded so far has been decided — ${decided} in \`${dir}/archive/\` — and nothing new has come up since.`
         : "Either the sessions have been going straight, or nothing is recorded yet.",
       `\`${dir}/selfcheck.md\` says whether the plugin is actually watching.`,

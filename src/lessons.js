@@ -385,13 +385,18 @@ export function createStore({ dir, archive, cap = DEFAULT_CAP, halfLife = DEFAUL
                   status: buried.status ?? "closed",
                   ...(buried.closedAt ? { closedAt: buried.closedAt } : {}),
                   statement: buried.statement,
+                  // What was proposed and asked then, which is what the decision answered.
+                  ...(buried.proposal ? { proposal: buried.proposal } : {}),
+                  ...(buried.ask ? { ask: buried.ask } : {}),
                   ...(note ? { note } : {}),
                   ...(decidedIn ? { decidedIn } : {}),
                   ...(changed ? { changed } : {}),
                   ...(discovered ? { discovered } : {}),
                 },
               ]
-          const now = !evicted && !already
+          // (A re-read of the same session never gets here for a decided lesson: it was
+          // skipped above. So everything not evicted is a new reading.)
+          const now = !evicted
           const back = {
             ...(evicted ? buried : rest),
             ...(now
