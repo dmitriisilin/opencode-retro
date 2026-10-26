@@ -369,3 +369,8 @@ test("nothing open with logs still waiting says neither that nothing is recorded
   assert.match(text, /Nothing is open\. In `\.retro\/archive\/`: 3 decided\./)
   assert.doesNotMatch(text, /nothing is recorded yet|nothing new has come up/i)
 })
+
+test("a decision's time is shown in UTC from the moment, whatever offset the file was written with", () => {
+  const back = lesson({ reopenedFrom: "accepted", decisions: [{ status: "accepted", closedAt: "2026-10-26T13:00+07:00", statement: "s" }] })
+  assert.match(renderProposal(back, { total: 1, remaining: 0 }), /accepted on 2026-10-26 06:00 UTC/)
+})

@@ -136,7 +136,8 @@ work, not the person's, and an analysis must never be analysed. Two kinds, handl
 2. **Everything else is logged, and marked.** A **round** is the turn a `handover` with
    `about: "work"` starts — from the next turn start after it, since a hand-over delivered
    into a turn still running waits for that turn, and what the turn does is the person's —
-   to the next `prompt` of the person's (one without `from`, log.md) or the place the answer
+   to the end of the turn it is answered in, the next `prompt` of the person's (one without
+   `from`, log.md) or the place the answer
    to a `handover` of another kind begins, whichever comes first: the agent starting readers,
    the records coming back, `retro_propose`. One read of a hand-over's turn serves rounds and
    replies alike: answered at once when handed back as a tool result or sent between turns,
@@ -281,6 +282,7 @@ rare, since the hand-over asks it to start readers and nothing else — is left 
   `the person steering into the running turn leaves a waiting /retro its round`
   `prompts posted into a running turn, queued or steered, are answered in that turn`
   `a /retro sent between the person's prompt and the turn it opens takes nothing of that turn`
+  `a reply and a round each last their turn, and take nothing of a turn after begun with no prompt seen`
   `a prompt that opens the next turn, after a turn whose end was lost, is the person's turn`
   `an undelivered notice cancels the hand-over it names, not the latest one`
   `a notice of a failed send names the hand-over by its step`

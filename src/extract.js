@@ -207,10 +207,18 @@ export function ownRounds(records) {
     // person's session ends one: a delegated session's hand-over should never be written —
     // `retro_propose` refuses them — but a reader that slips past the gate must not close the
     // round for the rest (fortieth review).
+    // And to the end of the turn it is answered in, which it takes with it: a round lasts its
+    // turn, and one whose agent never called `retro_propose` took every later turn begun with
+    // no prompt seen.
+    let started = sorted[from]?.k === "session" && sorted[from].event === "start"
     for (let j = from; j < sorted.length; j++) {
       const r = sorted[j]
       if (j > from && ((!r.from && r.k === "prompt") || begins.has(j))) break
       steps.add(r.n)
+      if (!r.from && r.k === "session") {
+        if (r.event === "start") started = true
+        else if (r.event === "end" && started) break
+      }
     }
   }
   // A delegated session that began inside a round — a reader worded its own way — is ours in
@@ -292,6 +300,8 @@ export function repliesToPlugin(records) {
       continue
     }
     if (r.k === "prompt") answering = "prompt"
+    // A reply lasts its turn: a later turn begun without a prompt seen is not the plugin's for it.
+    else if (r.k === "session" && r.event === "end") answering = null
     else if (r.k === "text" && answering === "handover") out.add(r.n)
   }
   return out
@@ -607,7 +617,8 @@ function renderFixed(archived) {
       // To the minute: a backlog and its fix are often on the same day, and a date alone left
       // the reader to work out from raw timestamps which side of the fix a session was on.
       const ms = Date.parse(l.closedAt)
-      const when = `${String(l.closedAt).slice(0, 16).replace("T", " ")} UTC${Number.isFinite(ms) ? `, t ${ms}` : ""}`
+      // From the moment, not the string: a time edited by hand with an offset is still shown in UTC.
+      const when = Number.isFinite(ms) ? `${new Date(ms).toISOString().slice(0, 16).replace("T", " ")} UTC, t ${ms}` : String(l.closedAt)
       const changed = Array.isArray(l.changed) && l.changed.length ? ` — changed ${l.changed.join(", ")}` : ""
       return `- \`${l.id}\` (fixed ${when}): ${l.statement}${changed}`
     }),

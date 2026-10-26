@@ -2508,3 +2508,33 @@ test("a log passed over as one exchange, grown since by the plugin's round, says
     Date.now = real
   }
 })
+
+test("a reply and a round each last their turn, and take nothing of a turn after begun with no prompt seen", async () => {
+  const { ownRounds, repliesToPlugin } = await import("../src/extract.js")
+  const records = [
+    { n: 1, k: "prompt", text: "fix bug" },
+    { n: 2, k: "session", event: "start" },
+    { n: 3, k: "session", event: "end" },
+    { n: 4, k: "handover", about: "work", sent: true, text: "the logs come first" },
+    { n: 5, k: "session", event: "start" },
+    { n: 6, k: "text", text: "starting readers" },
+    { n: 7, k: "session", event: "end" }, // the agent stopped before retro_propose
+    { n: 8, k: "session", event: "start" }, // a turn whose prompt this process never saw
+    { n: 9, k: "tool", tool: "shell", input: { command: "npm test" }, exit: 2 },
+    { n: 10, k: "text", text: "the tests fail because…" },
+    { n: 11, k: "session", event: "end" },
+  ]
+  const { steps } = ownRounds(records)
+  assert.ok(steps.has(6) && steps.has(7), "the round's own turn")
+  assert.ok(!steps.has(9) && !steps.has(10), "not the turn after")
+  const replies = repliesToPlugin([
+    { n: 1, k: "prompt", text: "fix bug" },
+    { n: 2, k: "session", event: "start" },
+    { n: 3, k: "handover", about: "lesson", text: "a lesson" },
+    { n: 4, k: "text", text: "here is the lesson" },
+    { n: 5, k: "session", event: "end" },
+    { n: 6, k: "session", event: "start" },
+    { n: 7, k: "text", text: "a wrong answer to something else" },
+  ])
+  assert.ok(replies.has(4) && !replies.has(7))
+})

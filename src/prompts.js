@@ -142,8 +142,10 @@ export function createPrompts({
         try {
           writeFileSync(file, header(name, live, current) + text)
         } catch (err) {
-          // Not written, so not delivered: forgotten again, to be tried at the next load.
-          writeFileSync(delivered, sent.filter(Boolean).map((n) => `${n}\n`).join(""))
+          // Not written, so not delivered: forgotten again, to be tried at the next load — this
+          // one only, from the list as it is now, which another writer may have added to.
+          const now = readFileSync(delivered, "utf8").split("\n").filter((n) => n && n !== basename(file))
+          writeFileSync(delivered, now.map((n) => `${n}\n`).join(""))
           throw err
         }
       } catch (err) {
