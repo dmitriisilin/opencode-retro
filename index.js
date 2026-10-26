@@ -557,7 +557,9 @@ export default {
 
       if (!isTurnEnd(event)) return
 
-      if (logged === "repeated" || ended.has(sessionID)) return
+      // The log's word on it, and only the log's: an end it wrote is a turn that ended, an end it
+      // did not is none — whatever this process's own bookkeeping says.
+      if (logged !== "ended") return
       // A subagent finishing is a step in its parent's task, not a session to analyse.
       if (parents.has(sessionID)) return
       ended.add(sessionID)

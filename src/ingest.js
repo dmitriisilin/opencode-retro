@@ -361,7 +361,10 @@ export function createIngest({
           // read in log order, it was a turn boundary that never happened, and cut the round
           // that follows a hand-over short at it (the review after the stranger's hour). The
           // session stays ours across turns, so nothing else stops it any more.
-          if (s.endWritten) return "repeated"
+          // Known by the event's own place in the session's sequence where it has one — every
+          // event carries `durable.seq`, monotonic per session — and only without it by whether
+          // a turn has gone on since the last end written.
+          if (seq != null ? seq <= (s.lastEndSeq ?? -Infinity) : s.endWritten) return "repeated"
           for (const call of s.pending.values()) {
             // Counted, because it is the one honest reason an event has no after-hook: the turn
             // ended (an interrupt, usually) while the call was still running.
@@ -380,6 +383,7 @@ export function createIngest({
           }
           s.pending.clear()
           append(sessionID, { k: "session", seq, event: "end", outcome: e.type.split(".").pop() })
+          if (seq != null) s.lastEndSeq = seq
           return "ended"
       }
     },

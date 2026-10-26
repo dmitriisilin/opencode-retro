@@ -446,3 +446,14 @@ test("a child's end folded into its parent's log does not swallow the parent's o
   ingest.event({ type: "session.execution.succeeded", durable: { seq: 2 }, data: { sessionID: "p" } })
   assert.equal(out.filter((r) => r.k === "session" && r.event === "end" && !r.from).length, 1)
 })
+
+test("a turn's end delivered again after the next turn started is known by its place in the sequence", () => {
+  const { out, ingest } = collector()
+  ingest.prompt({ sessionID: "s", messageID: "m1", prompt: { text: "go" } })
+  ingest.event({ type: "session.execution.started", durable: { seq: 1 }, data: { sessionID: "s" } })
+  assert.equal(ingest.event({ type: "session.execution.succeeded", durable: { seq: 5 }, data: { sessionID: "s" } }), "ended")
+  ingest.prompt({ sessionID: "s", messageID: "m2", prompt: { text: "two" } })
+  ingest.event({ type: "session.execution.started", durable: { seq: 6 }, data: { sessionID: "s" } })
+  assert.equal(ingest.event({ type: "session.execution.succeeded", durable: { seq: 5 }, data: { sessionID: "s" } }), "repeated")
+  assert.equal(out.filter((r) => r.k === "session" && r.event === "end").length, 1, "no end in the middle of the new turn")
+})

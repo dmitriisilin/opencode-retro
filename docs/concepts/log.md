@@ -101,11 +101,14 @@ keeps everything.
 - A delegation's record says so wherever it is written: a call of a subagent's still open when
   the root's turn ends is logged as unfinished with that subagent as its `from`.
   `a delegation's call left open at the root's end is written with its origin`
-- One turn, one end record: an end delivered again, or late, with no turn going on since, is not
-  written — read in log order it would be a turn boundary that never happened.
+- One turn, one end record: an end delivered again, or late, is not written — read in log order
+  it would be a turn boundary that never happened. Known by the event's `durable.seq`, an end at
+  or before the last one written being a repeat; only an event without one is judged by whether
+  a turn has gone on since. The report acts on an end only when the log wrote it.
   `a turn's end delivered twice is written once, a hand-over between them notwithstanding`
   `a child's end folded into its parent's log does not swallow the parent's own end`
   `a turn's end delivered again after the next prompt is no end to the report either`
+  `a turn's end delivered again after the next turn started is known by its place in the sequence`
 - The event stream may annotate a log, never open one.
   `a session no hook ever fired for is not ours, and gets no log at all`
   `once a hook has fired, the event stream annotates that same session`
