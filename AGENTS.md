@@ -840,7 +840,7 @@ first prompt.
 ## Checked
 
 - ok              extract prompt  project (base 5, edited)
-- ok              propose prompt  project (base 3)
+- ok              propose prompt  project (base 8)
 
 ## Notes
 
