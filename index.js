@@ -534,7 +534,9 @@ export default {
       }
 
       if (sessionID && (foreign.has(sessionID) || internal.has(sessionID))) return
-      ingest.event(event)
+      // What the log made of it: a turn's end it did not write — the same end again — is no end
+      // here either. One gate for both, so the log and the report cannot disagree about a turn.
+      const logged = ingest.event(event)
 
       if (event.type === "session.execution.started" && sessionID) {
         // An execution is one turn, not the life of the session: a session left open and
@@ -555,7 +557,7 @@ export default {
 
       if (!isTurnEnd(event)) return
 
-      if (ended.has(sessionID)) return
+      if (logged === "repeated" || ended.has(sessionID)) return
       // A subagent finishing is a step in its parent's task, not a session to analyse.
       if (parents.has(sessionID)) return
       ended.add(sessionID)

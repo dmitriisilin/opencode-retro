@@ -2631,3 +2631,26 @@ test("a subagent started to answer a hand-over is the person's again in a turn a
   assert.ok(plugin.has(7), "its answer to the hand-over is the plugin's exchange")
   assert.ok(!plugin.has(12), "its work for the person later is the person's")
 })
+
+test("a turn's end delivered again after the next prompt is no end to the report either", async () => {
+  const dir = sandbox()
+  const fake = fakeOpenCode({ directory: dir, agent: false })
+  const cleanup = await plugin.setup(fake.ctx)
+  const flush = () => new Promise((r) => setTimeout(r, 20))
+  await fake.hooks.get("session.prompt")({ sessionID: "ses_a", messageID: "m1", prompt: { text: "one" } })
+  fake.emit({ type: "session.execution.started", durable: { seq: 1 }, data: { sessionID: "ses_a" } })
+  fake.emit({ type: "session.execution.succeeded", durable: { seq: 2 }, data: { sessionID: "ses_a" } })
+  await flush()
+  await fake.hooks.get("session.prompt")({ sessionID: "ses_a", messageID: "m2", prompt: { text: "two" } })
+  fake.emit({ type: "session.execution.succeeded", durable: { seq: 2 }, data: { sessionID: "ses_a" } }) // the same end, again
+  fake.emit({ type: "session.execution.started", durable: { seq: 3 }, data: { sessionID: "ses_a" } })
+  await flush()
+  const call = { sessionID: "ses_a", id: "c1", tool: "read", input: { path: "x" } }
+  await fake.hooks.get("tool.execute.before")(call)
+  await fake.hooks.get("tool.execute.after")({ ...call, status: "completed", result: { output: "y" } })
+  fake.emit({ type: "session.execution.succeeded", durable: { seq: 4 }, data: { sessionID: "ses_a" } })
+  await flush()
+  const report = readFileSync(join(dir, ".retro", "selfcheck.md"), "utf8")
+  assert.doesNotMatch(report, /BROKEN\s+prompt hook/, report)
+  await cleanup?.()
+})
