@@ -138,22 +138,25 @@ export function ownSteps(records) {
 }
 
 /**
- * The plugin's exchange, as far as the order of the log suggests — a guess, used only to decide
- * whether growth is worth an order and whether a quiet log may go (`nothingNew`), never to tell
- * a reader what to skip, and kept narrow enough not to take the person's work for the plugin's:
- * - a turn a delivered `work` hand-over resumed — one sent between turns, which is the only way
- *   a hand-over starts a turn (one sent into a running turn waits, and is not taken up when the
- *   turn ends; measured, cycle 9) — to its end, or until the person speaks in it;
- * - what the agent says after a hand-over of another kind, to the end of the turn it lands in,
- *   or until the person speaks.
- * A subagent first told something in such a stretch goes with it.
+ * The plugin's exchange — used only to decide whether growth is worth an order and whether a
+ * quiet log may go (`nothingNew`), never to tell a reader what to skip, and drawn from what the
+ * plugin knew when it wrote, not from the order of the log afterwards:
+ * - the turn a `work` hand-over marked `resumes` began — sent to a session this process knew
+ *   to be idle, so the turn that follows is the hand-over's — to its end, or until the person
+ *   speaks in it;
+ * - what the agent says after a hand-over of another kind that it was handed in its own turn
+ *   (a tool result: `retro_propose`'s), or that resumed the session, to the end of that turn or
+ *   until the person speaks.
+ * A hand-over sent into a turn running — or not known to be idle — opens nothing: it waits in
+ * the inbox and starts nothing by itself (measured, cycle 9), and when unsure the plugin pays
+ * for a read rather than risk a step. A subagent first told something in such a stretch goes
+ * with it.
  */
 export function pluginExchange(records) {
   const sorted = byStep(records)
   const lost = undelivered(sorted)
   const out = new Set()
   let mode = null // "work" | "reply" | null
-  let inTurn = false
   // Whether the stretch's own turn has begun: its end closes it.
   let begun = false
   const with_ = new Set()
@@ -168,28 +171,19 @@ export function pluginExchange(records) {
       continue
     }
     if (r.k === "session") {
-      if (r.event === "start") {
-        inTurn = true
-        begun = true
-      } else if (r.event === "end") {
-        inTurn = false
-        if (begun) close()
-      }
+      if (r.event === "start") begun = true
+      else if (r.event === "end" && begun) close()
       continue
     }
     if (r.k === "prompt") close()
     else if (r.k === "handover" && !r.undelivered && !lost.has(r.n)) {
-      if (isWorkHandover(r)) {
-        // Into a running turn it starts nothing; what the turn goes on with is the person's.
-        if (inTurn) close()
-        else {
-          mode = "work"
-          begun = false
-        }
-      } else {
-        mode = "reply"
-        begun = inTurn
-      }
+      if (r.resumes) {
+        mode = isWorkHandover(r) ? "work" : "reply"
+        begun = false
+      } else if (!r.sent && !isWorkHandover(r)) {
+        mode = "reply" // handed back inside the turn it answers
+        begun = true
+      } else close()
     } else if (mode === "work") out.add(r.n)
     else if (mode === "reply" && r.k === "text") out.add(r.n)
   }

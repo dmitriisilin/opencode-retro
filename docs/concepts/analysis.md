@@ -148,15 +148,18 @@ work, not the person's, and an analysis must never be analysed. Two kinds, handl
    hand-over waits in the inbox, a send fails. So the contract describes the round and the
    reader, who sees the hand-overs and the prompts, judges it — keeping for the person
    anything their own task needed in that stretch.
-4. **A guess is used only for cost, and kept narrow enough to be right**: whether a log that
-   grew is worth an order, and — the same rule — whether a quiet log may go. Growth the order of
-   the log shows to be the plugin's exchange takes no order: a turn that a `work` hand-over sent
-   between turns resumed, to its end or until the person speaks in it — the only way a
-   hand-over starts a turn, since one sent into a running turn waits and is not taken up when
-   the turn ends (measured, cycle 9), so what that turn goes on with is the person's; and what
-   the agent says after a hand-over of another kind, to the end of its turn or until the person
-   speaks. Nothing is credited as read on a guess, and the person speaking always makes the log
-   owed.
+4. **What the plugin knew when it wrote decides cost, never what a reader skips**: whether a
+   log that grew is worth an order, and — the same rule — whether a quiet log may go. A
+   hand-over is marked `resumes` when it is sent to a session this process knows to be idle —
+   it wrote the end of the last turn itself, and nothing has happened since — so the turn that
+   follows is the hand-over's. That turn, to its end or until the person speaks, is the
+   plugin's exchange, and so is what the agent says after a hand-over handed back inside its
+   own turn (`retro_propose`'s) or one that resumed the session. Growth that is only that takes
+   no order. A hand-over sent into a running turn, or to a session not known to be idle — after
+   a reload, a turn whose start was never seen — opens nothing: it waits in the inbox and
+   starts nothing by itself (measured, cycle 9), and unsure, the plugin pays for a read rather
+   than risk a step. Nothing is credited as read on it, and the person speaking always makes
+   the log owed.
 
 *Replaces two dozen review rounds of inferring the round from the order of the log, in three
 functions and the contract's prose at once. Each round found an ordering the rules had not
@@ -251,6 +254,8 @@ stretch of log is the reader's job).*
   `the contract names the certain steps and leaves the round to the reader`
   `a log is not pruned on a guess: work after a hand-over that nobody read is kept`
   `a session that ended with a /retro and its answer goes once it is quiet`
+  `a hand-over marks whether it resumes the session only when this process knows it idle`
+  `a hand-over not known to resume the session takes nothing of the person's for the plugin's`
   `a stretch of the plugin's exchange lasts to the end of the turn it is taken up in`
   `the contract counts the plugin's stretches a reader left out as read`
   `a re-read names every one of the plugin's own steps, those before the mark included`

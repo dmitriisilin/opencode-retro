@@ -505,3 +505,18 @@ test("an event that arrives out of order is not taken for a repeat", () => {
   assert.equal(ingest.event({ type: "session.execution.succeeded", durable: { seq: 40 }, data: { sessionID: "s" } }), "ended")
   assert.equal(out.filter((r) => r.k === "session" && r.event === "end").length, 1)
 })
+
+test("a call written as unfinished stays one record however many after-hooks come late", () => {
+  const { out, ingest } = collector()
+  ingest.prompt({ sessionID: "s", messageID: "m1", prompt: { text: "go" } })
+  ingest.event({ type: "session.execution.started", durable: { seq: 1 }, data: { sessionID: "s" } })
+  ingest.toolBefore({ sessionID: "s", id: "x", tool: "execute", input: {} })
+  ingest.event({ type: "session.execution.interrupted", durable: { seq: 2 }, data: { sessionID: "s" } })
+  ingest.endTurn("s")
+  ingest.event({ type: "session.execution.started", durable: { seq: 3 }, data: { sessionID: "s" } })
+  ingest.event({ type: "session.execution.succeeded", durable: { seq: 4 }, data: { sessionID: "s" } })
+  // Code Mode: the inner tool and its wrapper, both late, after another turn has ended.
+  ingest.toolAfter({ sessionID: "s", id: "x", tool: "shell", input: {}, status: "error", error: "aborted" })
+  ingest.toolAfter({ sessionID: "s", id: "x", tool: "execute", input: {}, status: "error", error: "aborted" })
+  assert.equal(out.filter((r) => r.k === "tool" && r.id === "x").length, 1)
+})

@@ -2349,7 +2349,7 @@ test("a growth that is the plugin's exchange takes no order, and a guess wrong t
     { n: 1, k: "prompt", text: "fix bug" },
     { n: 2, k: "session", event: "start" },
     { n: 3, k: "session", event: "end" },
-    { n: 4, k: "handover", about: "work", sent: true, text: "the logs come first" },
+    { n: 4, k: "handover", about: "work", sent: true, resumes: true, text: "the logs come first" },
     { n: 5, k: "session", event: "start" },
     { n: 6, k: "text", text: "starting readers" },
     { n: 7, k: "tool", tool: "glob", input: { pattern: ".retro/work/*" } },
@@ -2416,7 +2416,7 @@ test("a stretch of the plugin's exchange lasts to the end of the turn it is take
     { n: 1, k: "prompt", text: "fix bug" },
     { n: 2, k: "session", event: "start" },
     { n: 3, k: "session", event: "end" },
-    { n: 4, k: "handover", about: "work", sent: true, text: "the logs come first" },
+    { n: 4, k: "handover", about: "work", sent: true, resumes: true, text: "the logs come first" },
     { n: 5, k: "session", event: "start" },
     { n: 6, k: "text", text: "starting readers" },
     { n: 7, k: "session", event: "end" },
@@ -2440,9 +2440,13 @@ test("a session that ended with a /retro and its answer goes once it is quiet", 
   const fake = fakeOpenCode({ directory: dir, agent: false })
   const cleanup = await plugin.setup(fake.ctx)
   await work(fake, "ses_a")
+  // Its turn ends, written by this process: the session is known to be idle.
+  fake.emit({ type: "session.execution.started", durable: { seq: 798 }, data: { sessionID: "ses_a" } })
+  fake.emit({ type: "session.execution.succeeded", durable: { seq: 799 }, data: { sessionID: "ses_a" } })
+  await new Promise((r) => setTimeout(r, 20))
   await retro(fake)
   await record(fake, "ses_a", [], { dir }) // read to its end
-  await retro(fake, { invoker: "ses_a" }) // nothing owed: a notice, between turns
+  await retro(fake, { invoker: "ses_a" }) // nothing owed: a notice that resumes it
   fake.emit({ type: "session.execution.started", durable: { seq: 800 }, data: { sessionID: "ses_a" } })
   fake.emit({ type: "session.text.ended", durable: { seq: 801 }, data: { sessionID: "ses_a", assistantMessageID: "a9", text: "Nothing to review, then." } })
   fake.emit({ type: "session.execution.succeeded", durable: { seq: 802 }, data: { sessionID: "ses_a" } })
@@ -2452,4 +2456,45 @@ test("a session that ended with a /retro and its answer goes once it is quiet", 
   await fake.tools.get("retro_decide").execute({ id: "no-such", status: "rejected" }, { sessionID: "ses_review" })
   assert.equal(existsSync(logOf(dir, "ses_a")), false)
   await cleanup?.()
+})
+
+test("a hand-over marks whether it resumes the session only when this process knows it idle", () => {
+  // Known at the moment of sending, not inferred from the log's order: after a reload, or with
+  // a turn whose start was never seen, nothing is claimed — and nothing is taken for the plugin's.
+  return import("../src/ingest.js").then(({ createIngest }) => {
+    const out = []
+    const ingest = createIngest({ maxOutput: 8000, now: () => 1, emit: (_, r) => out.push(r) })
+    ingest.prompt({ sessionID: "s", messageID: "m1", prompt: { text: "go" } })
+    ingest.handover("s", "first", "work", { sent: true }) // no turn seen ending: unknown
+    ingest.event({ type: "session.execution.started", durable: { seq: 1 }, data: { sessionID: "s" } })
+    ingest.event({ type: "session.execution.succeeded", durable: { seq: 2 }, data: { sessionID: "s" } })
+    ingest.handover("s", "second", "work", { sent: true }) // idle, known
+    const [first, second] = out.filter((r) => r.k === "handover")
+    assert.equal(first.resumes, undefined)
+    assert.equal(second.resumes, true)
+  })
+})
+
+test("a hand-over not known to resume the session takes nothing of the person's for the plugin's", async () => {
+  const { pluginExchange, nothingNew } = await import("../src/extract.js")
+  // A reload mid-turn: no start logged, the /retro sent into the running turn.
+  const reload = [
+    { n: 1, k: "prompt", text: "fix it" },
+    { n: 2, k: "tool", tool: "read", input: { path: "a.js" } },
+    { n: 3, k: "handover", about: "work", sent: true, text: "the logs come first" },
+    { n: 4, k: "tool", tool: "edit", input: { path: "a.js" } },
+    { n: 5, k: "text", text: "fixed" },
+    { n: 6, k: "session", event: "end" },
+  ]
+  assert.equal(pluginExchange(reload).size, 0)
+  assert.equal(nothingNew(reload, reload.slice(2)), false)
+  // A lesson sent into the person's running turn: their agent's answer there is theirs.
+  const running = [
+    { n: 1, k: "prompt", text: "fix it" },
+    { n: 2, k: "session", event: "start" },
+    { n: 3, k: "handover", about: "lesson", sent: true, text: "a lesson" },
+    { n: 4, k: "text", text: "answer to the person" },
+    { n: 5, k: "session", event: "end" },
+  ]
+  assert.equal(pluginExchange(running).size, 0)
 })

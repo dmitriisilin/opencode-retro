@@ -66,7 +66,8 @@ hand-over, and the plugin's own rounds (analysis.md, "The plugin's own work"). I
 log, and the next read carries it along with whatever follows.
 
 **Read to its end.** Not owed: its mark covers it, with neither flag set, but for growth that
-holds nothing to read — the plugin's own, or its exchange as narrowly as analysis.md draws it.
+holds nothing to read — the plugin's own, or its exchange as analysis.md draws it from what the
+plugin knew when it wrote.
 Not permanent: a session prompted again grows past its mark by something to read and is owed
 again.
 
@@ -103,6 +104,7 @@ keeps everything.
   the root's turn ends is logged as unfinished with that subagent as its `from`.
   `a delegation's call left open at the root's end is written with its origin`
   `a call written as unfinished at an interrupt is not written again when its after-hook comes late`
+  `a call written as unfinished stays one record however many after-hooks come late`
 - An event is taken in once: one delivered again is known by its `durable.seq` — one already
   seen for its own session, a subagent's sequence being its own — and writes nothing. One that
   arrives out of order is not a repeat, and is taken in. A repeated start or end would be a turn boundary that never happened, a

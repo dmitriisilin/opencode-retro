@@ -237,7 +237,8 @@ export function createIngest({
       // The after-hook of a call the turn's end already wrote as unfinished — an interrupt, and
       // the aborted call reporting late: that call has its record, and this turn's counts are
       // not its (the review after the stranger's hour).
-      if (s.flushed?.delete(p.id)) return
+      // Not consumed: Code Mode reports a call twice, the inner tool and its wrapper.
+      if (s.flushed?.has(p.id)) return
       s.counts.toolHook++
       const started = s.pending.get(p.id)
       s.pending.delete(p.id)
@@ -290,10 +291,16 @@ export function createIngest({
       // for an analysis.
       // `sent`: sent to start a turn, as `/retro`'s hand-overs are, notices included — not a tool
       // result the agent already holds; only a sent one can be what started a turn (forty-eighth).
+      // Whether it resumes the session: sent to one this process knows to be idle — it wrote the
+      // end of the last turn itself, and nothing has happened since. Known at the moment of
+      // sending, not inferred from the log's order later; after a reload, or with a turn whose
+      // start was never seen, it is not known, and not claimed (analysis.md).
+      const resumes = sent && !undelivered && s.endWritten === true
       const n = append(sessionID, {
         k: "handover",
         about,
         ...(sent ? { sent: true } : {}),
+        ...(resumes ? { resumes: true } : {}),
         // The hand-over it names by its step never arrived: it started nothing (round 2 of 10).
         // Named, not taken to be the one above: another can be written while the send is
         // awaited.
@@ -389,13 +396,15 @@ export function createIngest({
           // one. Not with one: a real turn whose start went unlogged has nothing else to show for
           // itself, and judged by records it lost its end.
           if (seq == null && s.endWritten) return "repeated"
-          // Kept past this end, so a late after-hook for one of them writes nothing a second time.
-          s.flushed = new Set()
+          // Kept past this end and the ends after it, so a late after-hook for one of them writes
+          // nothing a second time; the oldest go first once there are many.
+          s.flushed ??= new Set()
           for (const call of s.pending.values()) {
             // Counted, because it is the one honest reason an event has no after-hook: the turn
             // ended (an interrupt, usually) while the call was still running.
             s.counts.unfinished++
             s.flushed.add(call.id)
+            if (s.flushed.size > 256) s.flushed.delete(s.flushed.values().next().value)
             append(call.session ?? sessionID, {
               k: "tool",
               seq: s.seq.get(call.id) ?? null,
