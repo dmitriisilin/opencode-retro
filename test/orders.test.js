@@ -2466,3 +2466,23 @@ test("what a reworded reader starts after an early retro_propose is the plugin's
   const { steps } = ownRounds(records)
   for (const n of [9, 10, 11]) assert.ok(steps.has(n), `step ${n} is the plugin's`)
 })
+
+test("the checks section agrees with the rest of the report after a decision and a prompt edit", async () => {
+  const dir = sandbox()
+  const fake = fakeOpenCode({ directory: dir, agent: false })
+  const cleanup = await plugin.setup(fake.ctx)
+  await work(fake, "ses_a")
+  await fake.hooks.get("session.prompt")({ sessionID: "ses_review", messageID: "rv", prompt: { text: "go" } })
+  await retro(fake)
+  await record(fake, "ses_a", [LESSON], { dir })
+  await fake.tools.get("retro_decide").execute({ id: LESSON.id, status: "accepted", note: "done" }, { sessionID: "ses_review" })
+  let report = readFileSync(join(dir, ".retro", "selfcheck.md"), "utf8")
+  assert.match(report, /store\s+0 open lesson\(s\)/, report)
+  // The person edits their criteria; the next write of the report says so, with no /retro.
+  const prompt = join(dir, ".retro", "prompts", "extract.md")
+  writeFileSync(prompt, readFileSync(prompt, "utf8") + "\nEvery ask begins with PINEAPPLE.\n")
+  await fake.tools.get("retro_decide").execute({ id: "no-such", status: "rejected" }, { sessionID: "ses_review" })
+  report = readFileSync(join(dir, ".retro", "selfcheck.md"), "utf8")
+  assert.match(report, /extract prompt\s+project \(base \d+, edited\)/, report)
+  await cleanup?.()
+})

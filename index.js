@@ -210,6 +210,7 @@ export default {
       // Counted when attempted: a write that keeps failing is tried again once a minute, not on
       // every hook, each time re-reading every lesson and log (twenty-sixth review).
       lastWrite = Date.now()
+      diagnose()
       try {
         const lessons = store.list()
         const ids = log.list()
@@ -944,7 +945,6 @@ export default {
       const extracted = analyseOwed(sessionID)
       if (extracted.orders.length) {
         rounds.set(sessionID, extracted.orders.map((o) => o.session))
-        await diagnose()
         writeSelfCheck()
         return say(
           sessionID,
@@ -975,7 +975,6 @@ export default {
       state.compact((id) => present.has(id))
       const extracted = { failures, left, analysed }
       const lessons = store.list()
-      await diagnose()
       writeSelfCheck()
 
       if (all) {
@@ -1079,9 +1078,16 @@ export default {
      * Free: a few property reads. It used to also ask the model whether it answers, which
      * was a call nobody requested, and which the analysis itself answers every time.
      */
-    async function diagnose() {
+    /**
+     * The checks a session cannot make for itself — the surface, the prompt in force, the store —
+     * evaluated anew with every write of the report. They are cheap, and evaluated only on
+     * `/retro` they went stale in the same file as the sections around them: "1 open lesson"
+     * above "no open lessons — 1 decided", and a prompt just edited still shown as untouched
+     * (the stranger's hour after the ten rounds).
+     */
+    function diagnose() {
       try {
-        const report = await activeCheck({
+        const report = activeCheck({
           ctx,
           config,
           prompts,

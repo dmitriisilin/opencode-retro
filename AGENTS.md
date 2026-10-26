@@ -587,7 +587,7 @@ subagent's answer to one order), `retro_propose` (hand over what the records mad
 edits the user's harness.
 
 There was a third, `/retro check`, and it is gone. Its free checks — the `ctx` surface, which
-prompt layer is live, what is waiting — now run on every review and land in `selfcheck.md`.
+prompt layer is live, what is waiting — now run every time `selfcheck.md` is written.
 Its paid checks asked whether the model answers and whether the output contract still
 parses, and both questions are answered by the analysis itself, every time. (Since the
 rewrite, the second question has no asker left: the contract's machine half is a tool schema
@@ -770,7 +770,8 @@ does not prove the tool hook works and must not claim to.
 
 ### The checks a session cannot make for itself
 
-Free, so it runs on every review. It adds the `ctx` surface we depend on, member by member
+Free, so it runs every time the file is written — evaluated only on a review, it went stale
+beside the sections around it. It adds the `ctx` surface we depend on, member by member
 — this part *is* detectable, since a missing member reads `undefined` (Gotcha 8) — which
 resolution layer each prompt came from with any pending update named, and how much is
 stocked up, so that "is it doing anything" is answered in the same place.

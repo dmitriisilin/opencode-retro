@@ -116,6 +116,10 @@ last analysis of the session whichever path ran it.
 - Every time in the report is the reader's local time with its offset, so it can be read
   against their own clock.
   `the report's times are the reader's own, with their offset`
+- The checks a session cannot make for itself — the surface, the prompt in force, the store —
+  are evaluated anew whenever the report is written, so they never disagree with the sections
+  around them.
+  `the checks section agrees with the rest of the report after a decision and a prompt edit`
 - A call the turn ended in the middle of accounts for its event: an interrupted turn with a
   subagent still running is not a dead tool hook.
   `an interrupted turn with a subagent still running is not a dead tool hook`

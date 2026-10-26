@@ -514,7 +514,7 @@ export const REQUIRED_SURFACE = [
  * which prompt layer is in force and whether a newer default is waiting, and how much is
  * stocked up — so that "is it doing anything" is answered in the same place.
  */
-export async function activeCheck({ ctx, config, prompts, store }) {
+export function activeCheck({ ctx, config, prompts, store }) {
   const checks = []
   const notes = []
 

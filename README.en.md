@@ -228,7 +228,7 @@ A registered hook proves nothing. A hook registered under a name the API no long
 
 > **If you are working right now and `heartbeat` is more than a few minutes old, this plugin is not running.**
 
-Those checks run on every review and cost nothing: the API surface the plugin depends on, which prompt layer is in force, and what is waiting, under a header naming the plugin and OpenCode versions. Whether an analysis gets through is not asked separately — every `/retro` exercises it, and an order that came back unanswered is reported as what it was.
+Those checks run every time the file is written and cost nothing: the API surface the plugin depends on, which prompt layer is in force, and what is waiting, under a header naming the plugin and OpenCode versions. Whether an analysis gets through is not asked separately — every `/retro` exercises it, and an order that came back unanswered is reported as what it was.
 
 ## Requirements
 

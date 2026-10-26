@@ -1,4 +1,4 @@
-<!-- translated-from: README.en.md@5623be199291 -->
+<!-- translated-from: README.en.md@1d6ac62262fc -->
 # opencode-retro
 
 [Русский](README.md) | [English](README.en.md) | [简体中文](README.zh-CN.md) | **Español** | [日本語](README.ja.md)
@@ -232,7 +232,7 @@ Por eso `.retro/selfcheck.md` informa de que está vivo, no de que está instala
 
 > **Si estás trabajando ahora mismo y `heartbeat` tiene más de unos pocos minutos, este plugin no está en marcha.**
 
-Esas comprobaciones se ejecutan en cada revisión y no cuestan nada: la superficie de API de la que el plugin depende, qué capa de prompts está vigente y qué hay esperando, bajo un encabezado que nombra las versiones del plugin y de OpenCode. Si un análisis llega a buen puerto no se pregunta por separado: cada `/retro` lo ejercita, y una orden que volvió sin respuesta se informa por lo que fue.
+Esas comprobaciones se ejecutan cada vez que se escribe el archivo y no cuestan nada: la superficie de API de la que el plugin depende, qué capa de prompts está vigente y qué hay esperando, bajo un encabezado que nombra las versiones del plugin y de OpenCode. Si un análisis llega a buen puerto no se pregunta por separado: cada `/retro` lo ejercita, y una orden que volvió sin respuesta se informa por lo que fue.
 
 ## Requisitos
 

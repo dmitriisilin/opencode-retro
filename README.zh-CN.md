@@ -1,4 +1,4 @@
-<!-- translated-from: README.en.md@5623be199291 -->
+<!-- translated-from: README.en.md@1d6ac62262fc -->
 # opencode-retro
 
 [Русский](README.md) | [English](README.en.md) | **简体中文** | [Español](README.es.md) | [日本語](README.ja.md)
@@ -231,7 +231,7 @@ OpenCode 会从 npm 获取插件；在 `opencode.json` 中写出包名即可：
 
 > **如果你此刻正在工作，而 `heartbeat` 已超过几分钟，那么这个插件没有在运行。**
 
-这些检查在每次复核时运行且不产生任何花费：插件所依赖的 API 构成、当前生效的是哪一层提示，以及有什么在等待裁决；插件与 OpenCode 的版本则写在文件抬头。分析能否走通则不单独询问：每次 `/retro` 都会实际检验它，而没人回答的工作单会被如实地称为它本来的样子。
+这些检查在每次写入该文件时运行且不产生任何花费：插件所依赖的 API 构成、当前生效的是哪一层提示，以及有什么在等待裁决；插件与 OpenCode 的版本则写在文件抬头。分析能否走通则不单独询问：每次 `/retro` 都会实际检验它，而没人回答的工作单会被如实地称为它本来的样子。
 
 ## 运行要求
 
