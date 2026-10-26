@@ -457,3 +457,23 @@ test("a turn's end delivered again after the next turn started is known by its p
   assert.equal(ingest.event({ type: "session.execution.succeeded", durable: { seq: 5 }, data: { sessionID: "s" } }), "repeated")
   assert.equal(out.filter((r) => r.k === "session" && r.event === "end").length, 1, "no end in the middle of the new turn")
 })
+
+test("any event delivered again is taken in once, a subagent's sequence apart from its parent's", () => {
+  const parents = new Map([["c", "p"]])
+  const { out, ingest } = collector({ parentOf: (id) => parents.get(id) ?? null })
+  ingest.prompt({ sessionID: "p", messageID: "m1", prompt: { text: "do the thing" } })
+  ingest.handover("p", "the logs come first", "work", { sent: true })
+  ingest.event({ type: "session.execution.started", durable: { seq: 1 }, data: { sessionID: "p" } })
+  assert.equal(ingest.event({ type: "session.execution.started", durable: { seq: 1 }, data: { sessionID: "p" } }), "repeated")
+  ingest.event({ type: "session.text.ended", durable: { seq: 2 }, data: { sessionID: "p", assistantMessageID: "a", text: "hi" } })
+  ingest.event({ type: "session.text.ended", durable: { seq: 2 }, data: { sessionID: "p", assistantMessageID: "a", text: "hi" } })
+  // The child's own sequence starts low again, and is not a repeat of the parent's.
+  ingest.event({ type: "session.text.ended", durable: { seq: 1 }, data: { sessionID: "c", assistantMessageID: "b", text: "child" } })
+  assert.equal(out.filter((r) => r.k === "session" && r.event === "start").length, 1)
+  assert.equal(out.filter((r) => r.k === "text" && !r.from).length, 1)
+  assert.equal(out.filter((r) => r.k === "text" && r.from === "c").length, 1)
+  // Two ends for one turn, different events: one end.
+  ingest.event({ type: "session.execution.failed", durable: { seq: 5 }, data: { sessionID: "p" } })
+  ingest.event({ type: "session.execution.interrupted", durable: { seq: 6 }, data: { sessionID: "p" } })
+  assert.equal(out.filter((r) => r.k === "session" && r.event === "end").length, 1)
+})

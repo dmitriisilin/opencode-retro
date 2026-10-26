@@ -88,6 +88,9 @@ export function createIngest({
     return current
   }
 
+  /** sessionID -> the last `durable.seq` taken in, so a repeat is known (`event`). */
+  const lastSeq = new Map()
+
   function append(sessionID, record) {
     const target = owner(sessionID)
     const s = session(target)
@@ -318,6 +321,15 @@ export function createIngest({
       const s = sessions.get(owner(sessionID))
       if (!s?.owned) return
       const seq = e?.durable?.seq ?? null
+      // An event delivered again, or late, is known by its own place in its session's sequence:
+      // every event carries `durable.seq`, monotonic per session — the event's own session, a
+      // subagent's having one of its own. One guard for every kind: a repeated start or end read
+      // as a turn boundary that never happened, a repeated text as said twice.
+      if (seq != null) {
+        const last = lastSeq.get(sessionID)
+        if (last != null && seq <= last) return "repeated"
+        lastSeq.set(sessionID, seq)
+      }
 
       switch (e.type) {
         case "session.tool.called":
@@ -364,7 +376,9 @@ export function createIngest({
           // Known by the event's own place in the session's sequence where it has one — every
           // event carries `durable.seq`, monotonic per session — and only without it by whether
           // a turn has gone on since the last end written.
-          if (seq != null ? seq <= (s.lastEndSeq ?? -Infinity) : s.endWritten) return "repeated"
+          // And a second end with no turn gone on since — `failed`, then `interrupted` — is not a
+          // second turn either, whatever its place in the sequence.
+          if (s.endWritten) return "repeated"
           for (const call of s.pending.values()) {
             // Counted, because it is the one honest reason an event has no after-hook: the turn
             // ended (an interrupt, usually) while the call was still running.
@@ -383,7 +397,6 @@ export function createIngest({
           }
           s.pending.clear()
           append(sessionID, { k: "session", seq, event: "end", outcome: e.type.split(".").pop() })
-          if (seq != null) s.lastEndSeq = seq
           return "ended"
       }
     },

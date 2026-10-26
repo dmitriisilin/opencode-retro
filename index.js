@@ -542,7 +542,7 @@ export default {
       // here either. One gate for both, so the log and the report cannot disagree about a turn.
       const logged = ingest.event(event)
 
-      if (event.type === "session.execution.started" && sessionID) {
+      if (event.type === "session.execution.started" && sessionID && logged !== "repeated") {
         // An execution is one turn, not the life of the session: a session left open and
         // prompted again starts another one, and its end must not be dropped as a duplicate of
         // the previous turn's. Before the ownership gate on purpose: the start event arrives

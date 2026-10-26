@@ -1074,10 +1074,12 @@ test("events the hooks never received are reported as a dead hook, with numbers"
   const cleanup = await plugin.setup(fake.ctx)
 
   await fake.hooks.get("session.prompt")({ sessionID: session, messageID: "m1", prompt: { text: "do it" } })
-  for (const id of ["c1", "c2"]) {
+  for (const [i, id] of ["c1", "c2"].entries()) {
+    // Each event its own place in the session's sequence, as measured: a repeated seq is a
+    // repeated event, and is taken in once.
     fake.emit({
       type: "session.tool.called",
-      durable: { seq: 3 },
+      durable: { seq: 3 + i },
       data: { sessionID: session, id, input: { command: "x" } },
     })
   }
