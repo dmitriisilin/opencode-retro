@@ -209,11 +209,6 @@ export function renderProposal(
   return lines.join("\n")
 }
 
-/**
- * What we can say about currency without doing the agent's job: when the lesson was
- * recorded, and whether its target has moved since. Both are facts to bound a check with,
- * not conclusions.
- */
 /** What was decided before a lesson came back: its history, oldest first, a few lines each. */
 function previousLines(lesson) {
   const decisions = Array.isArray(lesson.decisions) ? lesson.decisions : []
@@ -228,6 +223,11 @@ function previousLines(lesson) {
   ])
 }
 
+/**
+ * What we can say about currency without doing the agent's job: when the lesson was
+ * recorded, and whether its target has moved since. Both are facts to bound a check with,
+ * not conclusions.
+ */
 export function hintLines(lesson, currency) {
   const facts = []
   if (lesson?.recordedAt) facts.push(`recorded ${String(lesson.recordedAt).slice(0, 10)}`)

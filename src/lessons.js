@@ -407,7 +407,11 @@ export function createStore({ dir, archive, cap = DEFAULT_CAP, halfLife = DEFAUL
                   // not the fix leaves it at that, which the contract allows.
                   proposal: lesson.proposal ?? undefined,
                   ask: lesson.ask ?? undefined,
-                  body: lesson.why ?? buried.body ?? "",
+                  // The old narrative is the fixed problem's, kept with its decision.
+                  body: lesson.why ?? "",
+                  // Recorded now, what it says: the currency hint's "recorded" and "changed
+                  // since" are about this reading, as the fingerprint below is.
+                  recordedAt: new Date().toISOString(),
                 }
               : {}),
             ...(decisions.length ? { decisions } : {}),
@@ -429,10 +433,12 @@ export function createStore({ dir, archive, cap = DEFAULT_CAP, halfLife = DEFAUL
             // A reopened lesson whose new proposal names another file is measured against that
             // file from now: compared with the old target's hash, it read as changed when it was
             // not (checks after the stranger's hour).
-            targetFingerprint:
-              !evicted && lesson.proposal?.target && lesson.proposal.target !== buried.proposal?.target
-                ? fingerprint?.(lesson.proposal.target)
-                : (buried.targetFingerprint ?? fingerprint?.(buried.proposal?.target)),
+            // Taken afresh, after the fix, of whatever it now names: compared with the hash from
+            // before the fix, the fix itself read as "changed since this lesson was recorded"
+            // and pointed the agent at "probably resolved" for a problem just seen again.
+            targetFingerprint: evicted
+              ? (buried.targetFingerprint ?? fingerprint?.(buried.proposal?.target))
+              : (fingerprint?.(lesson.proposal?.target ?? buried.proposal?.target) ?? undefined),
             file: freeName(dir, buried.file ?? `${buried.id}.md`),
           }
           if (write(back)) {

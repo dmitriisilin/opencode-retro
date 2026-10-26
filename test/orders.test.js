@@ -2367,7 +2367,8 @@ test("the session's line reports an asking nobody answered, not just that the lo
   await record(fake, "ses_a", [], { dir })
   await work(fake, "ses_a")
   await retro(fake)
-  await retro(fake)
+  // The round ends with nobody having answered: settled as unanswered, and nothing issued since.
+  await propose(fake)
   // ses_a working again a minute later, measured afresh.
   const real = Date.now
   Date.now = () => real() + 61_000

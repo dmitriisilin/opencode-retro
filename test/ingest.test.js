@@ -400,3 +400,14 @@ test("a hand-over whose send failed is taken back from the count", () => {
   ingest.handover("s", "could not be delivered", "notice", { undelivered: true, of: 1 })
   assert.equal(ingest.counts("s").handovers, 0)
 })
+
+test("a failed send takes back only the hand-over it names, in the turn it was counted", () => {
+  // Numbered on from what was written, as the file would say after the turn ends.
+  let written = 0
+  const { ingest } = collector({ startAt: () => written, emit: (_, r) => (written = r.n) })
+  const first = ingest.handover("s", "a lesson", "lesson", { sent: true })
+  ingest.endTurn("s")
+  ingest.handover("s", "the logs come first", "work", { sent: true })
+  ingest.handover("s", "could not be delivered", "notice", { undelivered: true, of: first })
+  assert.equal(ingest.counts("s").handovers, 1, "the turn's own hand-over still counts")
+})

@@ -1081,13 +1081,6 @@ export default {
     }
 
     /**
-     * The checks a session cannot make for itself, folded into every proposal instead of
-     * hiding behind a command of its own.
-     *
-     * Free: a few property reads. It used to also ask the model whether it answers, which
-     * was a call nobody requested, and which the analysis itself answers every time.
-     */
-    /**
      * The checks a session cannot make for itself — the surface, the prompt in force, the store —
      * evaluated anew with every write of the report. They are cheap, and evaluated only on
      * `/retro` they went stale in the same file as the sections around them: "1 open lesson"
@@ -1254,7 +1247,9 @@ export default {
       // on the session's line beside "asked N times and no record came back" below it was two
       // accounts of one log (checks after the ten rounds).
       const last = lastExtraction.get(sessionID) ?? state.extractionOf(sessionID)
-      if (owed && last?.unanswered) return last
+      // Not once it has been asked again: an order out now is an asking in progress, which the
+      // stock does not count as unanswered either.
+      if (owed && last?.unanswered && !state.orderOf(sessionID)) return last
       // A log passed over as one exchange that has grown since by nothing but the plugin's own
       // work — the session `/retro` ran in — is still nothing to read, but "one exchange, nothing
       // done" over a log with a whole round in it read as wrong (the stranger's hour).

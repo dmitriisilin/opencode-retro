@@ -599,11 +599,11 @@ test("an explicit match to an open lesson merges into it, instead of creating it
   assert.equal(store.list()[0].recurrence, 2, "and it counts as a second session")
 })
 
-test("a reopened lesson keeps the fingerprint from when the problem was first recorded", () => {
-  // Currency compares the target's current content with the baseline taken at extraction.
-  // Reopening preferred a *fresh* fingerprint, so the re-read that brought the lesson back
-  // also reset what "changed since" means — and the one review that most needs to know the
-  // file moved could not see that it had.
+test("a reopened lesson is measured from its reopening, an evicted one from its first recording", () => {
+  // A reopened lesson says what is wrong now, recorded now, after the fix: measured against the
+  // hash from before the fix, the fix itself read as "changed since this lesson was recorded"
+  // and pointed the review at "probably resolved" for a problem just seen again (checks after
+  // the stranger's hour). An evicted lesson was never decided, and keeps its first baseline.
   const root = mkdtempSync(join(tmpdir(), "retro-fp-reopen-"))
   const store = createStore({ dir: join(root, "lessons"), archive: join(root, "archive") })
 
@@ -612,7 +612,7 @@ test("a reopened lesson keeps the fingerprint from when the problem was first re
   const again = store.record([lesson()], { session: "ses_b", fingerprint: () => "would-have-been-second" })
 
   assert.deepEqual(again.reopened, ["lint-skill-no-config"])
-  assert.equal(store.list()[0].targetFingerprint, "first-hash", "the baseline is the first recording, not the recurrence")
+  assert.equal(store.list()[0].targetFingerprint, "would-have-been-second", "the baseline is the reopening, after the fix")
 
   // The same rule when the cap, not a decision, was what archived it.
   const other = createStore({ dir: join(root, "lessons2"), archive: join(root, "archive2"), cap: 2 })
@@ -717,4 +717,14 @@ test("a lesson that comes back aimed at another file is measured against that fi
   store.record([lesson({ id: "z", matches: "lint-skill-no-config", statement: "The skill now.", proposal: { target: ".opencode/skills/lint/SKILL.md", change: "y" } })], { session: "ses_b", fingerprint })
   const [back] = store.list()
   assert.equal(back.targetFingerprint, "hash-of-.opencode/skills/lint/SKILL.md")
+})
+
+test("a lesson reopened by a reader that told no story keeps no story from before", () => {
+  const s = sandbox()
+  const store = s.store()
+  store.record([lesson({ why: "the build line failed at step 9" })], { session: "ses_a" })
+  store.close("lint-skill-no-config", "accepted", { note: "fixed" })
+  store.record([{ ...lesson({ id: "w", matches: "lint-skill-no-config", statement: "The lint line now." }), why: undefined }], { session: "ses_b" })
+  const [back] = store.list()
+  assert.doesNotMatch(back.body ?? "", /build line/)
 })

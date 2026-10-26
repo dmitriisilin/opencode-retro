@@ -181,6 +181,7 @@ export function createIngest({
       s.completed.clear()
       s.seq.clear()
       s.counts = freshCounts()
+      s.countedHandovers = new Set()
       // The numbering too, as forgetting did: the next turn starts from what the file says.
       s.n = null
     },
@@ -262,9 +263,9 @@ export function createIngest({
       // session has none — see `assess`, which must not call that a dead hook.
       // Only one sent to start a turn, and delivered: a tool result, or a notice that a send
       // failed, started nothing — as `turnHandovers` reads the log, for when it cannot be read.
-      if (sent && !undelivered) s.counts.handovers++
-      // And one counted before its send failed is taken back by the notice that says so.
-      if (undelivered && s.counts.handovers > 0) s.counts.handovers--
+      // And one counted before its send failed is taken back by the notice that names it —
+      // only that one, and only in the turn it was counted in.
+      if (undelivered && s.countedHandovers?.delete(of)) s.counts.handovers--
       // `about` separates the two hand-overs the plugin writes: a lesson put to the human,
       // and a request for the analyses that have to run first. They read identically in a
       // log and mean different things — the extraction contract discounts work that reviews
@@ -272,7 +273,7 @@ export function createIngest({
       // for an analysis.
       // `sent`: sent to start a turn, as `/retro`'s hand-overs are, notices included — not a tool
       // result the agent already holds; only a sent one can be what started a turn (forty-eighth).
-      return append(sessionID, {
+      const n = append(sessionID, {
         k: "handover",
         about,
         ...(sent ? { sent: true } : {}),
@@ -282,6 +283,11 @@ export function createIngest({
         ...(undelivered ? { undelivered: true, ...(Number.isFinite(of) ? { of } : {}) } : {}),
         text: text ?? "",
       })
+      if (sent && !undelivered) {
+        s.counts.handovers++
+        ;(s.countedHandovers ??= new Set()).add(n)
+      }
+      return n
     },
 
     /**

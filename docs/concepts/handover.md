@@ -95,10 +95,11 @@ closed. Accepting or rejecting moves the file to `archive/`; `later` keeps it op
 - The proposal states its own facts about currency and never a conclusion.
   `a target that changed since the lesson was written is flagged, not dropped`
   `a target that cannot be read reads as unknown, never as unchanged`
-- The currency baseline is recorded once and not moved by recurrence.
+- The currency baseline is recorded once and not moved by recurrence — except by a reopening,
+  which records anew what the lesson says, after the fix, and is measured from then.
   `record keeps a fingerprint of the target so currency can be checked later`
   `a merge keeps the fingerprint taken when the lesson was first recorded`
-  `a reopened lesson keeps the fingerprint from when the problem was first recorded`
+  `a reopened lesson is measured from its reopening, an evicted one from its first recording`
   `a lesson whose target had no fingerprint at record time stays unknown, rather than faking a baseline`
 - A decision records what was done, not what was proposed, and where it was taken.
   `the decision records what was actually done, not what was proposed`

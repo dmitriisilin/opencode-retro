@@ -818,7 +818,8 @@ verified   2026-10-19 20:31 +07:00   (when the checks below were last evaluated)
 **If you are working right now and `heartbeat` is more than a few minutes old, this plugin
 is not running.** Nothing else will tell you: OpenCode does not report a plugin that failed
 to load. Check that `opencode.json` still names the plugin — an absolute path if you run a
-checkout — then run `/retro`.
+checkout — then start a session: a plugin that loaded rewrites this file within a minute of its
+first prompt.
 
 ## Is it working
 
