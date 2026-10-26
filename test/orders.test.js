@@ -2404,3 +2404,31 @@ test("a fresh session /retro is run in first is idle, a log ending mid-turn is n
   createIngest({ emit: (_, r) => midTurn.push(r), lastRecord: () => ({ n: 9, k: "tool" }), startAt: () => 9 }).handover("m", "go", "work", { sent: true })
   assert.equal(midTurn[0].resumes, undefined)
 })
+
+test("the review of a lesson handed over inside a round is the person's work, its relay the plugin's", async () => {
+  const { ingest, out, ev, turn } = await stamping()
+  ingest.prompt({ sessionID: "s", messageID: "m1", prompt: { text: "go" } })
+  turn()
+  ingest.handover("s", "the logs come first", "work", { sent: true })
+  turn(() => {
+    ingest.toolAfter({ sessionID: "s", id: "sub", tool: "subagent", input: { prompt: "opencode-retro work order: read /x.md and do what it says." }, status: "completed", result: { output: "done" } })
+    ingest.handover("s", "a lesson", "lesson") // retro_propose's answer, inside the round's turn
+    ev("session.text.ended", "s", { assistantMessageID: "t", text: "here is the lesson" })
+    ingest.toolAfter({ sessionID: "s", id: "chk", tool: "read", input: { path: "AGENTS.md" }, status: "completed", result: { output: "x" } })
+  })
+  assert.ok(out.find((r) => r.id === "sub").round != null, "starting the reader is the round")
+  assert.ok(out.find((r) => r.k === "text").round != null, "relaying the lesson is the plugin's")
+  assert.equal(out.find((r) => r.id === "chk").round, undefined, "checking it is real work")
+})
+
+test("a hand-over to a session not seen running counts as a turn's input when it cannot be stamped", async () => {
+  // After a server stopped mid-turn, the log ends on a tool call: the session is not known to
+  // be idle, so the turn the hand-over resumes is not stamped — and must not read as a dead
+  // prompt hook for it.
+  const { createIngest } = await import("../src/ingest.js")
+  const out = []
+  const ingest = createIngest({ emit: (_, r) => out.push(r), lastRecord: () => ({ n: 9, k: "tool" }), startAt: () => 9 })
+  ingest.handover("s", "go", "work", { sent: true })
+  assert.equal(out[0].resumes, undefined)
+  assert.equal(ingest.counts("s").handovers, 1)
+})

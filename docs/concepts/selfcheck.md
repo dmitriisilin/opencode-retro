@@ -35,7 +35,10 @@ traffic proved.** A session without tool calls proves nothing about the tool hoo
 whose input is a hand-over proves nothing about the prompt hook — the counters are per
 turn, so a session prompted earlier and handed a lesson later was not "started by a
 hand-over"; whether a turn began with a hand-over is read from one fact written with it —
-its start stamped `round`, as a turn a hand-over resumed is (analysis.md); a shortfall of hook calls against events is not evidence while calls are in
+its start stamped `round`, as a turn a hand-over resumed is (analysis.md) — and, where the
+plugin could not stamp it, from the hand-overs counted for the turn: a sent one counts unless
+this process saw a turn running when it was sent, since one sent into a running turn starts
+nothing; a shortfall of hook calls against events is not evidence while calls are in
 flight; the trigger cannot be judged before the session ends.
 
 **Stock.** What is waiting for the human: open lessons, logs owed an analysis, logs read in
@@ -135,6 +138,7 @@ last analysis of the session whichever path ran it.
   `a hand-over that never arrived, or arrived during the turn, excuses nothing of it`
   `a turn whose start went unlogged is not excused by the hand-over that began the one before`
   `a lesson's turn stamps only the agent relaying it, and its start`
+  `a hand-over to a session not seen running counts as a turn's input when it cannot be stamped`
   `only a hand-over sent to start a turn is counted as one`
   `a hand-over whose send failed is taken back from the count`
   `a failed send takes back only the hand-over it names, in the turn it was counted`

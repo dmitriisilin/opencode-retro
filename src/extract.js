@@ -84,17 +84,8 @@ function isIndentedWorkLine(text) {
 const isReaderCall = (r) =>
   r.k === "tool" && r.tool === "subagent" && typeof r.input?.prompt === "string" && isIndentedWorkLine(r.input.prompt)
 
-/** Sent to start a turn. A `work` hand-over always is: `/retro` is its one writer, never a tool result. */
-const isSent = (r) => Boolean(r.sent) || isWorkHandover(r)
 
 const byStep = (records) => [...records].sort((a, b) => (a.n ?? 0) - (b.n ?? 0))
-
-/** Steps of hand-overs a failed-send notice names: never delivered, so they started nothing. */
-function undelivered(sorted) {
-  const out = new Set()
-  for (const r of sorted) if (r.k === "handover" && r.undelivered && Number.isFinite(r.of)) out.add(r.of)
-  return out
-}
 
 /**
  * The steps that are the plugin's own for certain, as a set and as the ranges an order names:
@@ -177,7 +168,8 @@ export function lastReadable(records, own = ownSteps(records).steps) {
 
 /** A step that could hold evidence: what someone said or did (log.md, "Owed"). */
 function readable(r, exchange = null) {
-  if (exchange?.has(r.n)) return false
+  // The stamp on the record itself, not a step number: two writers can number a step twice.
+  if (exchange && r.round != null) return false
   return r.k === "prompt" || r.k === "tool" || r.k === "text" || (r.k === "step" && r.files?.length > 0)
 }
 

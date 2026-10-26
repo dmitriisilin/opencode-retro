@@ -397,10 +397,9 @@ export function createStore({ dir, archive, cap = DEFAULT_CAP, halfLife = DEFAUL
               ]
           // (A re-read of the same session never gets here for a decided lesson: it was
           // skipped above. So everything not evicted is a new reading.)
-          const now = !evicted
           const back = {
             ...(evicted ? buried : rest),
-            ...(now
+            ...(!evicted
               ? {
                   statement: lesson.statement ?? buried.statement,
                   // Not the old ones as a fallback: those are what was done, and put to a human

@@ -1189,7 +1189,9 @@ export default {
       // empty list, and the per-turn counts stand rather than a report of none.
       const read = stat.exists && (records.length > 0 || stat.size === 0)
       return {
-        input: read ? { handovers: turnHandovers(records) } : {},
+        // The stamp when there is one; without it — a hand-over not known to resume the session —
+        // the per-turn count stands rather than a 0 that would call a healthy prompt hook dead.
+        input: read && turnHandovers(records) > 0 ? { handovers: 1 } : {},
         log: { ...stat, entries: read ? records.length : undefined },
         records: read ? records : undefined,
       }

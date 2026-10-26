@@ -153,8 +153,9 @@ work, not the person's, and an analysis must never be analysed. Two kinds, handl
    the last turn itself and nothing has come since, or the session has no log at all — is
    marked `resumes`, and the turn it resumes is stamped `round` (the hand-over's step) as its
    records are written: every record of it for a `work` hand-over, and only the agent's text
-   for a lesson or a notice, whose review is the person's real work. The stamp ends with the
-   turn, or when the person speaks. A hand-over sent into a running turn, or to a session not
+   for a lesson or a notice, whose review is the person's real work — a lesson handed back
+   inside a round (`retro_propose`'s) narrows the rest of that turn to the relay the same way.
+   The stamp ends with the turn, or when the person speaks. A hand-over sent into a running turn, or to a session not
    known to be idle, stamps nothing: it waits in the inbox and starts nothing by itself
    (measured, cycle 9), and unsure, the plugin pays for a read rather than risk a step. Growth
    that is only stamped or the plugin's own takes no order, and the same rule lets a quiet log
@@ -257,6 +258,7 @@ stretch of log is the reader's job).*
   `a lesson's turn stamps only the agent relaying it, and its start`
   `a hand-over that never arrived opens no round`
   `a fresh session /retro is run in first is idle, a log ending mid-turn is not`
+  `the review of a lesson handed over inside a round is the person's work, its relay the plugin's`
   `a hand-over marks whether it resumes the session only when this process knows it idle`
   `a hand-over not known to resume the session takes nothing of the person's for the plugin's`
   `the contract counts the plugin's stretches a reader left out as read`

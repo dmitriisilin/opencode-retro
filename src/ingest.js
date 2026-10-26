@@ -122,7 +122,7 @@ export function createIngest({
     // its parent was known, says nothing about whether the root's turn has ended.
     if (target === sessionID) {
       if (record.k === "session") s.endWritten = record.event === "end"
-      else if (record.k !== "prompt" && record.k !== "handover") s.endWritten = false
+      else if (record.k !== "handover") s.endWritten = false
     }
     // A record of a delegation's own session says so: its prompt is the delegation's
     // instruction, not the person's, and the log alone could not tell the two apart.
@@ -136,7 +136,9 @@ export function createIngest({
       if (record.k === "session" && record.event === "end") {
         s.round = null
         s.idle = true
+        s.running = false
       } else if (record.k !== "handover") s.idle = false
+      if (record.k === "session" && record.event === "start") s.running = true
     }
     return s.n
   }
@@ -345,13 +347,22 @@ export function createIngest({
         ...(undelivered ? { undelivered: true, ...(Number.isFinite(of) ? { of } : {}) } : {}),
         text: text ?? "",
       })
+      // A lesson handed over inside a round — `retro_propose`'s answer — ends the round's claim
+      // on the turn's work: reviewing it is the person's real work, and only the agent relaying
+      // it is the plugin's (the bench, after rounds were first stamped).
+      if (!undelivered && about !== "work" && s.round != null) {
+        s.round = n
+        s.roundKind = "reply"
+      }
       // The turn it resumes is the plugin's round; one that never arrived opens none.
       if (resumes) {
         s.pendingRound = n
         s.pendingKind = about === "work" ? "work" : "reply"
       }
       if (undelivered && s.pendingRound === of) s.pendingRound = null
-      if (sent && !undelivered) {
+      // Counted as a turn's input unless this process saw that turn running: one sent into it
+      // waits, and starts nothing (measured), so it must not excuse a turn with no prompt seen.
+      if (sent && !undelivered && !s.running) {
         s.counts.handovers++
         ;(s.countedHandovers ??= new Set()).add(n)
       }
@@ -436,10 +447,11 @@ export function createIngest({
           // Known by the event's own place in the session's sequence where it has one — every
           // event carries `durable.seq`, monotonic per session — and only without it by whether
           // a turn has gone on since the last end written.
-          // Without a `seq` to go by, a second end with no turn gone on since is taken for the same
-          // one. Not with one: a real turn whose start went unlogged has nothing else to show for
-          // itself, and judged by records it lost its end.
-          if (seq == null && s.endWritten) return "repeated"
+          // And an end with nothing of the session's written since the last one — not a prompt,
+          // not a start, not a step; hand-overs aside, which are ours — is the same end again,
+          // whatever its seq: a repeat past the seqs kept, or a second end event for one turn. A
+          // real turn always writes something first: at the least, its prompt.
+          if (s.endWritten) return "repeated"
           // Kept past this end and the ends after it, so a late after-hook for one of them writes
           // nothing a second time; the oldest go first once there are many.
           s.flushed ??= new Set()
