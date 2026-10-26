@@ -1172,7 +1172,7 @@ test("a report with no session of the person's to describe does not say no hook 
   await new Promise((r) => setImmediate(r))
   const report = readFileSync(join(dir, ".retro", "selfcheck.md"), "utf8")
   assert.doesNotMatch(report, /ses_helper/)
-  assert.doesNotMatch(report, /Nothing measured yet/)
+  assert.doesNotMatch(report, /Nothing measured since the plugin last started/)
   assert.match(report, /No session of yours to describe right now/)
   await cleanup?.()
 })
@@ -2467,4 +2467,20 @@ test("a skip decision does not count the plugin's round as tool calls", async ()
     state: createState({ path: join(root, "state.json") }),
   })
   assert.ok(order.skipped, order.detail)
+})
+
+test("the command, not the tool caller, decides one lesson or every one", async () => {
+  // A stranger's run: handed a round by /retro, the agent called retro_propose with all: true
+  // on its own and put a three-lesson plan to the person. One invocation, one lesson.
+  const dir = sandbox()
+  const fake = fakeOpenCode({ directory: dir, agent: false })
+  const cleanup = await plugin.setup(fake.ctx)
+  await work(fake, "ses_a")
+  await work(fake, "ses_b")
+  await retro(fake)
+  await record(fake, "ses_a", [LESSON], { dir })
+  await record(fake, "ses_b", [{ ...LESSON, id: "another", statement: "Another problem." }], { dir })
+  const result = await fake.tools.get("retro_propose").execute({ all: true }, { sessionID: "ses_review" })
+  assert.doesNotMatch(result.content, /## 2\. /, "one lesson, as /retro asked")
+  await cleanup?.()
 })

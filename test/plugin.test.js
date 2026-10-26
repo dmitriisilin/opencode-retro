@@ -458,7 +458,7 @@ test("the report is written from the first prompt, not once the session is over"
   const session = "ses_underway"
 
   const fresh = readFileSync(join(directory, ".retro", "selfcheck.md"), "utf8")
-  assert.match(fresh, /Nothing measured yet/, "before any traffic there is nothing to assert")
+  assert.match(fresh, /Nothing measured since the plugin last started/, "before any traffic there is nothing to assert")
 
   await fake.hooks.get("session.prompt")({ sessionID: session, messageID: "m1", prompt: { text: "go" } })
 
@@ -1456,7 +1456,7 @@ test("a session whose creation we never saw is not counted, queued or reported o
   const report = readFileSync(join(directory, ".retro", "selfcheck.md"), "utf8")
   assert.doesNotMatch(report, /BROKEN\s+prompt hook/, "it is not our prompt hook that is missing")
   assert.doesNotMatch(report, /file was never created/, "nor our shadow log")
-  assert.match(report, /Nothing measured yet/, "there is simply nothing of ours to measure")
+  assert.match(report, /Nothing measured since the plugin last started/, "there is simply nothing of ours to measure")
 
   await cleanup?.()
 })

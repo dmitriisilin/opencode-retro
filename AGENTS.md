@@ -825,7 +825,7 @@ first prompt.
 
 ## Is it working
 
-- ok              prompt hook     3 prompts seen
+- ok              prompt hook     3 prompts seen in this turn
 - ok              tool hook       12 tool-call events seen, 12 reached the hook
 - ok              shadow log      sessions/ses_eabb21.jsonl, 47 entries
 - ok              trigger         session.execution.succeeded
@@ -840,6 +840,7 @@ first prompt.
 ## Checked
 
 - ok              extract prompt  project (base 5, edited)
+- ok              propose prompt  project (base 3)
 
 ## Notes
 

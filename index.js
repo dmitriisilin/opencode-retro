@@ -151,6 +151,13 @@ export default {
      */
     const rounds = new Map()
     /**
+     * Whether the round a session's `/retro` began asked for every lesson (`/retro all`) or the
+     * top one: the command's to say, not the tool caller's. A stranger's run had the agent, handed
+     * a round by `/retro`, call `retro_propose` with `all: true` on its own and put a three-lesson
+     * plan to the person, where one invocation is one lesson (decision 9).
+     */
+    const roundAll = new Map()
+    /**
      * Whether a log is a session of its own — the person's, read and reported as one: not a
      * delegation (`parents`) and not one of our readers (`internal`). One predicate for every
      * consumer (tenth review).
@@ -477,7 +484,11 @@ export default {
             const asked = rounds.get(caller) ?? []
             rounds.delete(caller)
             const analysed = asked.filter((s) => state.askedFor(s).done === "answered").length
-            const { text, about } = await proposalText(Boolean(input?.all), { failures, left, analysed })
+            // As the command asked; the caller's own say only when this process does not know the
+            // round — after a reload, say.
+            const all = roundAll.has(caller) ? roundAll.get(caller) : Boolean(input?.all)
+            roundAll.delete(caller)
+            const { text, about } = await proposalText(all, { failures, left, analysed })
             // Logged, not sent: the agent asked for this and has it as the tool's result.
             noteHandover(caller, text, about)
             return { output: { ok: true, detail: text }, content: text }
@@ -966,6 +977,7 @@ export default {
       const extracted = analyseOwed(sessionID)
       if (extracted.orders.length) {
         rounds.set(sessionID, extracted.orders.map((o) => o.session))
+        roundAll.set(sessionID, Boolean(all))
         writeSelfCheck()
         return say(
           sessionID,

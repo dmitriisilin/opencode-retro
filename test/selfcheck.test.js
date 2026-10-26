@@ -177,7 +177,7 @@ test("the rendered file carries its own cadence, threshold and remedy", () => {
 test("before any session ends the file says so rather than looking healthy", () => {
   const check = createSelfCheck({ versions: {}, repo: "r" })
   const text = check.render()
-  assert.match(text, /Nothing measured yet/)
+  assert.match(text, /Nothing measured since the plugin last started/)
   assert.match(text, /registers happily and never fires/, "and says why registration is no proof")
 })
 
@@ -357,4 +357,15 @@ test("a session whose first hook wrote nothing yet is not a broken shadow log", 
   assert.equal(line.status, STATUS.SKIPPED)
   const broken = assess({ ...healthy, counts: { ...healthy.counts, records: 3 }, log: { exists: false, size: 0 } })
   assert.equal(broken.find((c) => c.name === "shadow log").status, STATUS.BROKEN, "records written and no file is")
+})
+
+test("right after a start the report says what is missing is since this start, and names both prompts", async () => {
+  const check = createSelfCheck({ versions: {}, repo: "r" })
+  const text = check.render()
+  assert.match(text, /heartbeat\s+none since this start/)
+  assert.match(text, /Nothing measured since the plugin last started/)
+  const r = activeRig()
+  const report = await activeCheck(r)
+  assert.ok(report.checks.find((c) => c.name === "propose prompt"), "the propose prompt has its line, as extract's does")
+  assert.match(assess(healthy).find((c) => c.name === "prompt hook").detail, /seen in this turn/)
 })

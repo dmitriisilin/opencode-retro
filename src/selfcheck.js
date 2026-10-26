@@ -103,7 +103,7 @@ export function assess(session) {
 
   checks.push(
     c.prompts > 0
-      ? { status: OK, name: "prompt hook", detail: `${c.prompts} prompt${c.prompts === 1 ? "" : "s"} seen` }
+      ? { status: OK, name: "prompt hook", detail: `${c.prompts} prompt${c.prompts === 1 ? "" : "s"} seen in this turn` }
       : c.handovers > 0
         ? {
             status: SKIPPED,
@@ -318,7 +318,9 @@ export function render(state) {
     "",
     "```",
     `loaded     ${stamp(state.loaded)}   (plugin start)`,
-    `heartbeat  ${stamp(state.heartbeat)}   (moved by every hook that fires, the plugin's own readers' too; a hook writes it at most once a minute)`,
+    // "never" alone, right after a reload, read as a plugin that had never run: it is the time
+    // since this start that is meant (a stranger's run, after a reload).
+    `heartbeat  ${state.heartbeat ? stamp(state.heartbeat) : "none since this start"}   (moved by every hook that fires, the plugin's own readers' too; a hook writes it at most once a minute)`,
     state.checks.length
       ? `verified   ${stamp(state.verified)}   (when the checks below were last evaluated)`
       : `verified   ${stamp(state.verified)}   (when checks were last evaluated; none are shown, see below)`,
@@ -359,9 +361,10 @@ export function render(state) {
     )
   } else {
     lines.push(
-      "Nothing measured yet. Hooks that registered prove nothing — a wrong hook name",
-      "registers happily and never fires — so these lines stay empty until a hook has fired",
-      "for real, which is the first prompt of the next session.",
+      "Nothing measured since the plugin last started — a restart or a change to",
+      "`opencode.json` starts it again, and what it measured before is not kept. Hooks that",
+      "registered prove nothing — a wrong hook name registers happily and never fires — so",
+      "these lines stay empty until a hook has fired for real: the next prompt you type.",
       "",
     )
   }
@@ -558,6 +561,18 @@ export function activeCheck({ ctx, config, prompts, store }) {
           detail: `${prompt.layer} (base ${prompt.base ?? "?"}${prompts.isEdited?.("extract") === true ? ", edited" : ""})`,
         }
       : { status: BROKEN, name: "extract prompt", detail: "could not be resolved at any layer" },
+  )
+  // And the propose prompt the same way: an edit to how a lesson is put to the person is as much
+  // the person's to see confirmed (a stranger's run edited it and found no line saying so).
+  const propose = prompts.resolve("propose")
+  checks.push(
+    propose
+      ? {
+          status: OK,
+          name: "propose prompt",
+          detail: `${propose.layer} (base ${propose.base ?? "?"}${prompts.isEdited?.("propose") === true ? ", edited" : ""})`,
+        }
+      : { status: DEGRADED, name: "propose prompt", detail: "could not be resolved: a terse built-in rule is used" },
   )
   for (const file of prompts.pendingUpdates()) {
     // Where it really is — inside an overridden prompts directory too — as a path from this file.

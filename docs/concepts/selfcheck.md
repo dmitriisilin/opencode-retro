@@ -121,6 +121,7 @@ last analysis of the session whichever path ran it.
   around them.
   `the checks section agrees with the rest of the report after a decision and a prompt edit`
   `a note about a file that is gone goes with it`
+  `right after a start the report says what is missing is since this start, and names both prompts`
   `a pending update is named where it really is, an overridden prompts directory included`
   `a session whose first hook wrote nothing yet is not a broken shadow log`
 - What it says reads true to a newcomer: more hook calls than events is explained, the remedy

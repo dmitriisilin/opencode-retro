@@ -93,6 +93,9 @@ closed. Accepting or rejecting moves the file to `archive/`; `later` keeps it op
   `the evidence names the log where the plugin keeps it, not at the project root`
   `the evidence follows options.dir when the log directory moves`
   `an empty hand-over names the plugin's files where options.dir put them`
+- One `/retro` is one lesson and `/retro all` one plan: the command decides, and an agent that
+  asks `retro_propose` for every lesson after a plain `/retro` gets the one.
+  `the command, not the tool caller, decides one lesson or every one`
 - `/retro all` is one plan over every open lesson, capped, and says what it left out.
   `/retro all delivers every waiting lesson as one plan`
   `proposeLimit caps one plan and says what it left out`
