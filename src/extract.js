@@ -310,8 +310,12 @@ export function repliesToPlugin(records) {
       continue
     }
     if (r.k === "prompt") answering = "prompt"
-    // A reply lasts its turn: a later turn begun without a prompt seen is not the plugin's for it.
-    else if (r.k === "session" && r.event === "end") answering = null
+    // A reply lasts its turn: a later turn begun without a prompt seen is not the plugin's for
+    // it, nor what a subagent started for that reply is asked to do in a turn after.
+    else if (r.k === "session" && r.event === "end") {
+      answering = null
+      answeringBy.clear()
+    }
     else if (r.k === "text" && answering === "handover") out.add(r.n)
   }
   return out

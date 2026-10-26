@@ -2609,3 +2609,25 @@ test("the contract counts a subagent started to answer a notice as the plugin's 
   const { OUTPUT_CONTRACT } = await import("../src/contract.js")
   assert.match(OUTPUT_CONTRACT, /what a subagent it started for that answer was told and said/)
 })
+
+test("a subagent started to answer a hand-over is the person's again in a turn after", async () => {
+  const { repliesToPlugin } = await import("../src/extract.js")
+  const records = [
+    { n: 1, k: "prompt", text: "fix bug" },
+    { n: 2, k: "session", event: "start" },
+    { n: 3, k: "session", event: "end" },
+    { n: 4, k: "handover", about: "lesson", text: "a lesson" },
+    { n: 5, k: "session", event: "start" },
+    { n: 6, k: "prompt", from: "c1", text: "check the lesson" },
+    { n: 7, k: "text", from: "c1", text: "it holds" },
+    { n: 8, k: "session", event: "end" },
+    { n: 9, k: "prompt", text: "now ask it to do Y" },
+    { n: 10, k: "session", event: "start" },
+    { n: 11, k: "prompt", from: "c1", text: "now do Y" },
+    { n: 12, k: "text", from: "c1", text: "did Y, and Y failed twice" },
+    { n: 13, k: "session", event: "end" },
+  ]
+  const plugin = repliesToPlugin(records)
+  assert.ok(plugin.has(7), "its answer to the hand-over is the plugin's exchange")
+  assert.ok(!plugin.has(12), "its work for the person later is the person's")
+})

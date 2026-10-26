@@ -278,6 +278,7 @@ rare, since the hand-over asks it to start readers and nothing else — is left 
   `the person speaking before a waiting hand-over's turn makes that turn theirs`
   `the contract says the agent's text answering a notice is not the session's`
   `the contract counts a subagent started to answer a notice as the plugin's exchange, as the plugin does`
+  `a subagent started to answer a hand-over is the person's again in a turn after`
   `a /retro waiting behind a round keeps its own round when the first one ends first`
   `the contract tells the reader to leave out exactly the steps the order names`
   `the person steering into the running turn leaves a waiting /retro its round`

@@ -179,14 +179,28 @@ const isMaterial = (r) => MATERIAL.has(r.k) || (r.k === "step" && r.files?.lengt
 const materialSteps = (records) => {
   let answering = null
   // The plugin's own round (analysis.md, "The plugin's own work"): from a `work` hand-over to
-  // the next hand-over of another kind or the next prompt. Written out here from the concept,
-  // not borrowed from the code it checks.
+  // the next hand-over of another kind, the next prompt, or the end of the turn it is answered
+  // in — a round and a reply each last their turn. Written out here from the concept, not
+  // borrowed from the code it checks; where a hand-over landed in a running turn the code
+  // starts the round later than this does, which only makes this oracle ask for less.
   let inRound = false
+  let started = false
   const out = []
   for (const r of [...records].sort((a, b) => a.n - b.n)) {
-    if (r.k === "handover" && r.about === "work") inRound = true
-    else if ((r.k === "prompt" && !r.from) || r.k === "handover") inRound = false
+    const ends = !r.from && r.k === "session" && r.event === "end"
+    if (r.k === "handover" && r.about === "work") {
+      inRound = true
+      started = false
+    } else if ((r.k === "prompt" && !r.from) || r.k === "handover") inRound = false
     if (r.k === "prompt" || r.k === "handover") answering = r.k
+    if (!r.from && r.k === "session" && r.event === "start") started = true
+    if (ends) {
+      // The round's turn has ended once a start came after the hand-over; an end before that
+      // is the end of the turn it landed in, which the round waits out.
+      if (started) inRound = false
+      answering = null
+      continue
+    }
     if (!isMaterial(r) || inRound) continue
     if (r.k === "tool" && (r.tool === "retro_record" || r.tool === "retro_propose")) continue
     if (r.k === "text" && answering === "handover") continue
