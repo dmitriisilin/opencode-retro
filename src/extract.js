@@ -79,8 +79,7 @@ function answerStarts(sorted) {
   let inTurn = false
   let waiting = []
   let spoke = false
-  let last = -1
-  for (let i = 0; i < sorted.length; i++) {
+    for (let i = 0; i < sorted.length; i++) {
     const r = sorted[i]
     if (r.from) continue
     // The person speaking before a waiting hand-over's turn begins makes that turn theirs: it
@@ -102,15 +101,14 @@ function answerStarts(sorted) {
     }
     if (r.k !== "handover") continue
     if (r.undelivered) {
-      // The hand-over it names by its step — another can be logged while the send is awaited —
-      // or, with none named, the latest.
-      let h = last
+      // The hand-over it names by its step — another can be logged while the send is awaited.
+      // One that names none names a hand-over that was never logged, and cancels nothing.
+      let h = -1
       if (Number.isFinite(r.of)) for (h = i - 1; h >= 0 && sorted[h].n !== r.of; h--);
       if (h >= 0) at.delete(h)
       waiting = waiting.filter((w) => w !== h)
       continue
     }
-    last = i
     const sent = isSent(r)
     // Sent after the person has spoken and before the turn they opened is logged as started —
     // the moment between a prompt and its turn's start: that turn answers them (checks after
@@ -221,8 +219,18 @@ export function ownRounds(records) {
   const readers = new Set()
   for (const r of sorted) if (r.k === "prompt" && r.from && steps.has(r.n)) readers.add(r.from)
   // And a session a `subagent` call with a work order's line started, wherever that call is:
-  // a reader the plugin did not recognise by its prompt is still one by its delegation.
+  // a reader the plugin did not recognise by its prompt is still one by its delegation. Then
+  // whatever a reader starts, at any depth, until nothing more is found.
   for (const r of sorted) if (isReaderCall(r) && r.child) readers.add(r.child)
+  for (let grew = true; grew; ) {
+    grew = false
+    for (const r of sorted) {
+      if (r.k === "tool" && r.tool === "subagent" && r.child && r.from && readers.has(r.from) && !readers.has(r.child)) {
+        readers.add(r.child)
+        grew = true
+      }
+    }
+  }
   for (const r of sorted) {
     if (r.from && readers.has(r.from)) steps.add(r.n)
     // And the delegation that started one, wherever it lands — after an early `retro_propose`.
@@ -456,21 +464,21 @@ const LESSONS_CLOSE = "<!-- /lessons recorded -->"
  * nothing was there. An order rewritten after every record lists them whatever the reader
  * does (checks after the ten rounds). Returns the text unchanged when it has no such section.
  */
-export function refreshLessons(text, { store, lessonsDir, block = lessonsBlock(currentLessons(store), lessonsDir) }) {
+export function refreshLessons(text, block) {
   const start = text.lastIndexOf(LESSONS_OPEN)
   const end = text.lastIndexOf(LESSONS_CLOSE)
   if (start < 0 || end < start) return text
   return text.slice(0, start) + block + text.slice(end + LESSONS_CLOSE.length)
 }
 
-/** The list as `refreshLessons` writes it, built once for every order a record leaves waiting. */
+/** The list `refreshLessons` writes, built once for every order a record leaves waiting. */
 export const recordedLessons = ({ store, lessonsDir }) => lessonsBlock(currentLessons(store), lessonsDir)
 
 // A statement is the model's prose and may quote anything, the marks included (this repository
 // runs the plugin on itself): inside the block a comment opener is broken, so the only marks
 // there are the two around it.
-const lessonsBlock = (lessons, dir) =>
-  `${LESSONS_OPEN}\n${renderExisting(lessons, dir).trim().replaceAll("<!--", "<!\u200b--")}\n${LESSONS_CLOSE}`
+const breakMarks = (text) => String(text).replaceAll("<!--", "<!\u200b--")
+const lessonsBlock = (lessons, dir) => `${LESSONS_OPEN}\n${breakMarks(renderExisting(lessons, dir).trim())}\n${LESSONS_CLOSE}`
 
 /**
  * A record, folded into the store: the rejected filtered out, the rest recorded by problem.
@@ -604,7 +612,9 @@ function renderFixed(archived) {
 
 function renderRejected(rejected) {
   if (!rejected.length) return null
-  return rejected.map((r) => `- \`${r.id}\`${r.reason ? ` — ${r.reason}` : ""}`).join("\n")
+  // A person's reason, written after the lesson list: a mark quoted in it would be taken for
+  // the list's own (`refreshLessons`), so a comment opener in it is broken too.
+  return rejected.map((r) => `- \`${r.id}\`${r.reason ? ` — ${breakMarks(r.reason)}` : ""}`).join("\n")
 }
 
 function summarise(recorded, lessons) {

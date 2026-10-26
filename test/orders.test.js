@@ -2024,7 +2024,7 @@ test("a hand-over that was never delivered leaves the rest of the turn the perso
     { n: 1, k: "prompt", text: "fix bug" },
     { n: 2, k: "session", event: "start" },
     { n: 3, k: "handover", about: "lesson", sent: true, text: "a lesson" },
-    { n: 4, k: "handover", about: "notice", undelivered: true, text: "could not be delivered" },
+    { n: 4, k: "handover", about: "notice", undelivered: true, of: 3, text: "could not be delivered" },
     { n: 5, k: "text", text: "found the bug in foo" },
     { n: 6, k: "session", event: "end" },
   ]
@@ -2061,7 +2061,7 @@ test("a /retro run again after an undelivered one has its round", async () => {
     { n: 2, k: "tool", tool: "read", input: { path: "a.js" } },
     { n: 3, k: "session", event: "end" },
     { n: 4, k: "handover", about: "work", sent: true, text: "the logs come first" },
-    { n: 5, k: "handover", about: "notice", undelivered: true, text: "could not be delivered" },
+    { n: 5, k: "handover", about: "notice", undelivered: true, of: 4, text: "could not be delivered" },
     { n: 6, k: "handover", about: "work", sent: true, text: "the logs come first" },
     { n: 7, k: "session", event: "start" },
     { n: 8, k: "text", text: "starting readers" },
@@ -2173,7 +2173,7 @@ test("the self-check reads which turn a hand-over started as rounds and replies 
       { n: 2, k: "session", event: "start" },
       { n: 3, k: "session", event: "end" },
       { n: 4, k: "handover", about: "work", sent: true, text: "the logs come first" },
-      { n: 5, k: "handover", about: "notice", undelivered: true, text: "could not be delivered" },
+      { n: 5, k: "handover", about: "notice", undelivered: true, of: 4, text: "could not be delivered" },
       { n: 6, k: "session", event: "start" },
     ]),
     0,
@@ -2446,4 +2446,23 @@ test("a reader started by a work order's line is the plugin's, recognised by its
   const { steps } = ownRounds(records)
   for (const n of [4, 5, 6, 7]) assert.ok(steps.has(n), `step ${n} is the reader's`)
   assert.ok(!steps.has(3))
+})
+
+test("what a reworded reader starts after an early retro_propose is the plugin's too", async () => {
+  const { ownRounds } = await import("../src/extract.js")
+  const records = [
+    { n: 1, k: "prompt", text: "fix bug" },
+    { n: 2, k: "session", event: "start" },
+    { n: 3, k: "session", event: "end" },
+    { n: 4, k: "handover", about: "work", sent: true, text: "the logs come first" },
+    { n: 5, k: "session", event: "start" },
+    { n: 6, k: "prompt", from: "ses_c", text: "please analyse that log" },
+    { n: 7, k: "tool", tool: "retro_propose", input: {} },
+    { n: 8, k: "handover", about: "lesson", text: "a lesson" },
+    { n: 9, k: "prompt", from: "ses_g", text: "grep the other log" },
+    { n: 10, k: "tool", from: "ses_g", tool: "shell", input: { command: "grep lint ses_other.jsonl" }, exit: 1 },
+    { n: 11, k: "tool", from: "ses_c", tool: "subagent", child: "ses_g", input: { prompt: "grep the other log" } },
+  ]
+  const { steps } = ownRounds(records)
+  for (const n of [9, 10, 11]) assert.ok(steps.has(n), `step ${n} is the plugin's`)
 })

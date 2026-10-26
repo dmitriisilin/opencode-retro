@@ -1385,7 +1385,7 @@ export default {
         const path = workPath(order.session)
         try {
           const text = readFileSync(path, "utf8")
-          const fresh = refreshLessons(text, { block })
+          const fresh = refreshLessons(text, block)
           if (fresh === text) continue
           writeAtomic(path, fresh)
         } catch (err) {

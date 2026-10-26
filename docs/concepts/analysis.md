@@ -162,7 +162,7 @@ work, not the person's, and an analysis must never be analysed. Two kinds, handl
    worded its own way is an ordinary child, folded into the person's log like any subagent —
    inside the round, its reading of other logs with it, and ours in full: a delegated session
    whose first prompt lies inside a round is ours to its last record, which may come after an
-   early `retro_propose` has closed the round. The order tells the reader to leave a
+   early `retro_propose` has closed the round — and so is whatever it starts, at any depth. The order tells the reader to leave a
    round out (no lesson, no cost, no recurrence), and the plugin does not count a round as new
    material, so a log that grew by nothing but a round takes no order.
 
@@ -187,6 +187,7 @@ rare, since the hand-over asks it to start readers and nothing else — is left 
   `an order still waiting lists the lessons a reader before it recorded`
   `an order's lesson list is found by its own marks, not by a heading the person may write`
   `a lesson that quotes the list's own mark does not multiply the list`
+  `a rejection reason quoting the list's mark does not stop the list being brought up to date`
   `already-recorded lessons are shown so the reader matches instead of re-stating`
   `an order with nothing recorded yet still says where the lessons will be`
 - The plugin makes no model call: `/retro` issues work orders and hands them to the agent in
@@ -300,6 +301,7 @@ rare, since the hand-over asks it to start readers and nothing else — is left 
   `a log pruned between turns starts its numbering again`
   `a reworded reader's delegation is ours wherever it lands`
   `a reader started by a work order's line is the plugin's, recognised by its prompt or not`
+  `what a reworded reader starts after an early retro_propose is the plugin's too`
   `a subagent's prompt does not end a reply to the plugin's hand-over`
   `a reader's call to retro_propose writes nothing into any log`
   `a reworded reader calling retro_propose is told so too`
