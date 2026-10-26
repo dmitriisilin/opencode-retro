@@ -351,7 +351,11 @@ async function roundIn(fake, dir, { worded = true } = {}) {
   await new Promise((r) => setImmediate(r))
   await fake.hooks.get("tool.execute.before")({ sessionID: sub, id: "r1", tool: "read", input: { filePath: paths[0] } })
   await fake.hooks.get("tool.execute.after")({ sessionID: sub, id: "r1", tool: "read", input: { filePath: paths[0] }, status: "completed", result: { output: "the order" } })
+  // Its answer goes through the hooks as it does live: a call of the reader's own session.
+  const rec = { sessionID: sub, id: "rr1", tool: "retro_record", input: { session: "ses_a" } }
+  await fake.hooks.get("tool.execute.before")(rec)
   await record(fake, "ses_a", [], { dir })
+  await fake.hooks.get("tool.execute.after")({ ...rec, status: "completed", result: { output: "recorded" } })
   await fake.hooks.get("tool.execute.after")({ ...delegation, status: "completed", result: { output: "done", metadata: { sessionID: sub } } })
   const call = { sessionID: "ses_review", id: "t_propose", tool: "retro_propose", input: {} }
   await fake.hooks.get("tool.execute.before")(call)
@@ -390,8 +394,8 @@ test("a reworded reader is folded into the person's log inside the round", async
   assert.equal(existsSync(logOf(dir, sub)), false, "no log of its own")
   const read = records.find((r) => r.k === "tool" && r.tool === "read")
   assert.ok(read, "its work is in the person's log")
-  const { ownRounds } = await import("../src/extract.js")
-  assert.ok(ownRounds(records).steps.has(read.n), "inside the round: " + records.map((r) => `${r.n}:${r.k}:${r.about ?? r.tool ?? ""}`).join(" "))
+  const { ownSteps } = await import("../src/extract.js")
+  assert.ok(ownSteps(records).steps.has(read.n), "inside the round: " + records.map((r) => `${r.n}:${r.k}:${r.about ?? r.tool ?? ""}`).join(" "))
   await cleanup?.()
 })
 
@@ -406,12 +410,12 @@ test("the order tells the reader where the plugin's own work is and to leave it 
   const { paths } = await retro(fake, { invoker: "ses_other" })
   const order = readFileSync(paths.find((path) => path.includes("ses_review")), "utf8")
   assert.match(order, /The plugin's own work — leave it out/)
-  const { ownRounds, formatRanges } = await import("../src/extract.js")
+  const { ownSteps, formatRanges } = await import("../src/extract.js")
   const logged = readFileSync(logOf(dir, "ses_review"), "utf8").trim().split("\n").map((l) => JSON.parse(l))
-  const named = formatRanges(ownRounds(logged).ranges)
+  const named = formatRanges(ownSteps(logged).ranges)
   assert.ok(named.length > 0)
-  assert.ok(order.includes(`all of it: ${named}.`), `the order names exactly the plugin's own steps: ${named}`)
-  assert.match(order, /asks for a round of this plugin's own/, "and the rule that says what a round is")
+  assert.ok(order.includes(`everything those readers did: ${named}.`), `the order names exactly the plugin's own steps: ${named}`)
+  assert.match(order, /The round around them — the agent starting readers — is yours to recognise/, "and leaves the round to the reader")
   await cleanup?.()
 })
 
@@ -1423,26 +1427,8 @@ test("a reader whose prompt OpenCode prefixed with its own line is still not log
   await cleanup?.()
 })
 
-test("a /retro posted into a turn still running leaves the rest of that turn the person's", async () => {
-  const { ownRounds } = await import("../src/extract.js")
-  const records = [
-    { n: 1, k: "prompt", text: "fix the build" },
-    { n: 2, k: "session", event: "start" },
-    { n: 3, k: "handover", about: "work", text: "the logs come first" },
-    { n: 4, k: "tool", tool: "shell", input: { command: "npm run build" }, exit: 1 },
-    { n: 5, k: "session", event: "end" },
-    { n: 6, k: "session", event: "start" },
-    { n: 7, k: "tool", tool: "subagent", input: { prompt: "opencode-retro work order: read /x.md and do what it says." } },
-    { n: 8, k: "handover", about: "lesson", text: "a lesson" },
-  ]
-  const { steps, ranges } = ownRounds(records)
-  assert.ok(!steps.has(4), "the person's turn finishing is theirs")
-  assert.ok(steps.has(6) && steps.has(7), "the round is the turn the hand-over started")
-  assert.deepEqual(ranges, [[3, 3], [6, 7]], "the hand-over named, and its round after the person's turn")
-})
-
 test("a delegation of ours written after an early retro_propose is still ours", async () => {
-  const { ownRounds } = await import("../src/extract.js")
+  const { ownSteps } = await import("../src/extract.js")
   const records = [
     { n: 1, k: "handover", about: "work", text: "the logs come first" },
     { n: 2, k: "session", event: "start" },
@@ -1453,7 +1439,7 @@ test("a delegation of ours written after an early retro_propose is still ours", 
     { n: 5, k: "tool", tool: "subagent", input: { prompt: "opencode-retro work order: read /x.md and do what it says." }, output: "the reader's report" },
     { n: 6, k: "tool", tool: "subagent", input: { prompt: "explore the repo" } },
   ]
-  const { steps } = ownRounds(records)
+  const { steps } = ownSteps(records)
   assert.ok(steps.has(4) && steps.has(5), "the plugin's own calls, wherever they land")
   assert.ok(!steps.has(6), "and only those")
 })
@@ -1501,22 +1487,6 @@ test("a hand-over that could not be delivered is followed by a notice saying so"
 
 /* Thirty-third pre-release review. */
 
-test("a hand-over that landed in a running turn with no turn after it takes nothing of the person's", async () => {
-  const { ownRounds, nothingNew } = await import("../src/extract.js")
-  const records = [
-    { n: 1, k: "prompt", text: "fix the build" },
-    { n: 2, k: "session", event: "start" },
-    { n: 3, k: "handover", about: "work", text: "the logs come first" },
-    { n: 4, k: "tool", tool: "shell", input: { command: "npm run build" }, exit: 1 },
-    { n: 5, k: "text", text: "the build is broken because…" },
-    { n: 6, k: "session", event: "end" },
-    { n: 7, k: "prompt", text: "and now?" },
-  ]
-  const { steps } = ownRounds(records)
-  assert.ok(!steps.has(4) && !steps.has(5), "the person's turn is theirs")
-  assert.equal(nothingNew(records, records.slice(3, 6)), false, "and their answer is something to read")
-})
-
 test("a person who pastes the hand-over into a new session is still logged", async () => {
   // The hand-over carries the reader's line indented deep inside it; only a prompt that starts
   // with it, or has it right after one line (OpenCode's own), is a reader's.
@@ -1557,23 +1527,6 @@ test("a reader that read up to a trailing turn's end has read it all", async () 
 
 /* Whole-series review over 4112915..9f75752. */
 
-test("a reworded reader still reading after an early retro_propose is ours to its last record", async () => {
-  const { ownRounds } = await import("../src/extract.js")
-  const records = [
-    { n: 1, k: "handover", about: "work", text: "the logs come first" },
-    { n: 2, k: "session", event: "start" },
-    { n: 3, k: "prompt", from: "ses_reader", text: "You are a subagent.\nHave a look at /x/.retro/work/ses_a.md" },
-    { n: 4, k: "tool", from: "ses_reader", tool: "read", input: { path: "/x/.retro/sessions/ses_a.jsonl" } },
-    { n: 5, k: "handover", about: "lesson", text: "a lesson" },
-    { n: 6, k: "tool", tool: "retro_propose", input: {} },
-    { n: 7, k: "tool", from: "ses_reader", tool: "read", input: { path: "/x/.retro/sessions/ses_a.jsonl" } },
-    { n: 8, k: "tool", from: "ses_helper", tool: "read", input: { path: "src/a.js" } },
-  ]
-  const { steps } = ownRounds(records)
-  assert.ok(steps.has(7), "its reading after the round closed is still ours")
-  assert.ok(!steps.has(8), "and only its")
-})
-
 test("orders whose hand-over could not be delivered are voided, not reported as unanswered", async () => {
   const dir = sandbox()
   const fake = fakeOpenCode({ directory: dir, agent: false })
@@ -1591,36 +1544,6 @@ test("orders whose hand-over could not be delivered are voided, not reported as 
 })
 
 /* Whole-series review over 4112915..f47d919. */
-
-test("the rounds an order names include a reworded reader's records after the round closed", async () => {
-  const { ownRounds } = await import("../src/extract.js")
-  const records = [
-    { n: 5, k: "handover", about: "work", text: "the logs come first" },
-    { n: 6, k: "session", event: "start" },
-    { n: 7, k: "text", text: "starting a reader" },
-    { n: 8, k: "prompt", from: "c1", text: "You are a subagent.\nHave a look at /x/.retro/work/ses_a.md" },
-    { n: 9, k: "tool", tool: "retro_propose", input: {} },
-    { n: 10, k: "handover", about: "lesson", text: "a lesson" },
-    { n: 11, k: "tool", from: "c1", tool: "read", input: { path: "/x/.retro/sessions/ses_b.jsonl" } },
-    { n: 12, k: "text", from: "c1", text: "session B had eslint problems" },
-  ]
-  assert.deepEqual(ownRounds(records).ranges, [[5, 9], [11, 12]])
-})
-
-test("a second /retro inside a running round continues it", async () => {
-  const { ownRounds } = await import("../src/extract.js")
-  const records = [
-    { n: 5, k: "handover", about: "work", text: "the logs come first" },
-    { n: 6, k: "session", event: "start" },
-    { n: 7, k: "text", text: "starting readers" },
-    { n: 8, k: "handover", about: "work", text: "the logs come first, again" },
-    { n: 9, k: "text", text: "waiting on the first reader" },
-    { n: 10, k: "tool", tool: "subagent", input: { prompt: "explore" } },
-    { n: 11, k: "handover", about: "lesson", text: "a lesson" },
-  ]
-  const { steps } = ownRounds(records)
-  assert.ok(steps.has(9) && steps.has(10), "the round goes on")
-})
 
 test("a reader calling retro_propose is told it is not its call, and nothing happens", async () => {
   const dir = sandbox()
@@ -1680,23 +1603,6 @@ test("a reworded reader calling retro_propose is told so too", async () => {
   await cleanup?.()
 })
 
-test("a delegated hand-over in a log does not end the round", async () => {
-  // A reader that slipped past the gate — before its creation was known, or after a reload —
-  // must not close the round for the rest of it (fortieth review).
-  const { ownRounds } = await import("../src/extract.js")
-  const records = [
-    { n: 1, k: "handover", about: "work", text: "the logs come first" },
-    { n: 2, k: "session", event: "start" },
-    { n: 3, k: "prompt", from: "ses_kid", text: "You are a subagent.\nHave a look at /x.md" },
-    { n: 4, k: "handover", about: "lesson", from: "ses_kid", text: "a lesson" },
-    { n: 5, k: "tool", tool: "subagent", input: { prompt: "another reader, worded its own way" } },
-    { n: 6, k: "handover", about: "lesson", text: "the lesson, to the person" },
-  ]
-  const { steps } = ownRounds(records)
-  assert.ok(steps.has(5), "the round goes on past the reader's hand-over")
-  assert.ok(!steps.has(6), "and ends at the person's")
-})
-
 test("/retro in a subagent's session issues nothing", async () => {
   // Its round could never be proposed there: `retro_propose` refuses delegated sessions.
   const dir = sandbox()
@@ -1716,12 +1622,12 @@ test("/retro in a subagent's session issues nothing", async () => {
 })
 
 test("a work hand-over noted for a subagent opens no round", async () => {
-  const { ownRounds } = await import("../src/extract.js")
+  const { ownSteps } = await import("../src/extract.js")
   const records = [
     { n: 1, k: "handover", about: "work", from: "ses_kid", text: "the logs come first" },
     { n: 2, k: "tool", tool: "shell", input: { command: "npm test" }, exit: 1 },
   ]
-  assert.ok(!ownRounds(records).steps.has(2), "the person's work after it is theirs")
+  assert.ok(!ownSteps(records).steps.has(2), "the person's work after it is theirs")
 })
 
 test("a reader's call to retro_propose writes nothing into any log", async () => {
@@ -1737,48 +1643,6 @@ test("a reader's call to retro_propose writes nothing into any log", async () =>
 })
 
 /* Whole-series review over 4112915..85657f4. */
-
-test("a /retro posted into a running turn has its round begin at the turn it resumes", async () => {
-  // Reproduced by the forty-second review against the entry point: the plugin stopped owning a
-  // session when its turn ended, so the resumed turn's start was not logged, and the round came
-  // out empty. A session stays the plugin's across turns now, and the start is there.
-  const dir = sandbox()
-  const fake = fakeOpenCode({ directory: dir, agent: false })
-  const cleanup = await plugin.setup(fake.ctx)
-  await work(fake, "ses_a")
-  await fake.hooks.get("session.prompt")({ sessionID: "ses_p", messageID: "p1", prompt: { text: "fix the build" } })
-  fake.emit({ type: "session.execution.started", durable: { seq: 1 }, data: { sessionID: "ses_p" } })
-  await new Promise((r) => setImmediate(r))
-  const sh = { sessionID: "ses_p", id: "s1", tool: "shell", input: { command: "npm run build" } }
-  await fake.hooks.get("tool.execute.before")(sh)
-  await fake.hooks.get("tool.execute.after")({ ...sh, status: "completed", result: { output: { exit: 1 } } })
-  await fake.commands.get("retro").execute({ sessionID: "ses_p", prompt: { text: "" } })
-  fake.emit({ type: "session.execution.succeeded", durable: { seq: 5 }, data: { sessionID: "ses_p" } })
-  fake.emit({ type: "session.execution.started", durable: { seq: 6 }, data: { sessionID: "ses_p" } })
-  await new Promise((r) => setImmediate(r))
-  const d = { sessionID: "ses_p", id: "d1", tool: "subagent", input: { agent: "general", prompt: "have a look at the order" } }
-  await fake.hooks.get("tool.execute.before")(d)
-  await fake.hooks.get("tool.execute.after")({ ...d, status: "completed", result: { output: "report", metadata: { sessionID: "ses_r" } } })
-  const { ownRounds } = await import("../src/extract.js")
-  const records = readFileSync(logOf(dir, "ses_p"), "utf8").trim().split("\n").map((l) => JSON.parse(l))
-  const call = records.find((r) => r.id === "d1")
-  assert.ok(ownRounds(records).steps.has(call.n), "the round is the turn after the person's ended")
-  assert.ok(!ownRounds(records).steps.has(records.find((r) => r.id === "s1").n), "and the person's call is theirs")
-  await cleanup?.()
-})
-
-test("a reworded reader's delegation is ours wherever it lands", async () => {
-  const { ownRounds } = await import("../src/extract.js")
-  const records = [
-    { n: 1, k: "handover", about: "work", text: "the logs come first" },
-    { n: 2, k: "session", event: "start" },
-    { n: 3, k: "prompt", from: "ses_r", text: "You are a subagent.\nanalyse the order at /x" },
-    { n: 4, k: "tool", tool: "retro_propose", input: {} },
-    { n: 5, k: "handover", about: "lesson", text: "a lesson" },
-    { n: 6, k: "tool", tool: "subagent", child: "ses_r", input: { prompt: "analyse the order at /x" }, output: "other session failed npm run lint" },
-  ]
-  assert.ok(ownRounds(records).steps.has(6))
-})
 
 test("a subagent's prompt does not end a reply to the plugin's hand-over", async () => {
   const { nothingNew } = await import("../src/extract.js")
@@ -1992,19 +1856,6 @@ test("a person's first message quoting the work line after a blank line is still
 
 /* Round 5 of 10. */
 
-test("a notice sent into a running turn leaves the rest of that turn the person's", async () => {
-  const { nothingNew } = await import("../src/extract.js")
-  const records = [
-    { n: 1, k: "prompt", text: "fix bug" },
-    { n: 2, k: "session", event: "start" },
-    { n: 3, k: "text", text: "looking" },
-    { n: 4, k: "handover", about: "notice", sent: true, text: "nothing to review" },
-    { n: 5, k: "text", text: "I found the cause and fixed it" },
-    { n: 6, k: "session", event: "end" },
-  ]
-  assert.equal(nothingNew(records, records.slice(4)), false, "the person's answer is something to read")
-})
-
 test("a long first prompt is checked for the reader line in linear time", async () => {
   const { isWorkLine } = await import("../src/extract.js")
   const long = "x".repeat(400_000)
@@ -2036,52 +1887,8 @@ test("a hand-over that was never delivered leaves the rest of the turn the perso
   assert.equal(lastReadable(records), 5)
 })
 
-test("a hand-over waiting for the round's turn to end leaves that turn the round's", async () => {
-  const { ownRounds, nothingNew } = await import("../src/extract.js")
-  const records = [
-    { n: 1, k: "prompt", text: "fix bug" },
-    { n: 2, k: "session", event: "start" },
-    { n: 3, k: "session", event: "end" },
-    { n: 4, k: "handover", about: "work", sent: true, text: "the logs come first" },
-    { n: 5, k: "session", event: "start" },
-    { n: 6, k: "tool", tool: "subagent", input: { prompt: "opencode-retro work order: read /x.md and do what it says." } },
-    { n: 7, k: "handover", about: "lesson", sent: true, text: "a lesson" },
-    { n: 8, k: "text", text: "reader 1 done" },
-    { n: 9, k: "tool", tool: "glob", input: { pattern: ".retro/work/*" } },
-    { n: 10, k: "session", event: "end" },
-  ]
-  const { steps, ranges } = ownRounds(records)
-  assert.ok(steps.has(8) && steps.has(9), "the round's turn goes on past the waiting hand-over")
-  assert.deepEqual(ranges, [[4, 10]])
-  assert.equal(nothingNew(records, records.slice(3)), true, "nothing of the person's was added")
-})
-
-/* Round 7 of 10. */
-
-test("a /retro run again after an undelivered one has its round", async () => {
-  const { ownRounds, nothingNew } = await import("../src/extract.js")
-  const records = [
-    { n: 1, k: "prompt", text: "fix bug" },
-    { n: 2, k: "tool", tool: "read", input: { path: "a.js" } },
-    { n: 3, k: "session", event: "end" },
-    { n: 4, k: "handover", about: "work", sent: true, text: "the logs come first" },
-    { n: 5, k: "handover", about: "notice", undelivered: true, of: 4, text: "could not be delivered" },
-    { n: 6, k: "handover", about: "work", sent: true, text: "the logs come first" },
-    { n: 7, k: "session", event: "start" },
-    { n: 8, k: "text", text: "starting readers" },
-    { n: 9, k: "tool", tool: "read", input: { path: ".retro/work/x.md" } },
-    { n: 10, k: "tool", tool: "retro_propose", input: {} },
-    { n: 11, k: "handover", about: "lesson", text: "a lesson" },
-    { n: 12, k: "text", text: "here is the lesson" },
-    { n: 13, k: "session", event: "end" },
-  ]
-  const { steps } = ownRounds(records)
-  for (const n of [7, 8, 9]) assert.ok(steps.has(n), `step ${n} is the round's`)
-  assert.equal(nothingNew(records, records.slice(3)), true, "a log grown by the round takes no order")
-})
-
 test("the person speaking before a waiting hand-over's turn makes that turn theirs", async () => {
-  const { repliesToPlugin, lastReadable } = await import("../src/extract.js")
+  const { pluginExchange, lastReadable } = await import("../src/extract.js")
   const records = [
     { n: 1, k: "prompt", text: "fix bug" },
     { n: 2, k: "session", event: "start" },
@@ -2094,7 +1901,7 @@ test("the person speaking before a waiting hand-over's turn makes that turn thei
     { n: 9, k: "text", text: "you are right, X is done differently" },
     { n: 10, k: "session", event: "end" },
   ]
-  assert.ok(!repliesToPlugin(records).has(9), "the answer to the person is theirs")
+  assert.ok(!pluginExchange(records).has(9), "the answer to the person is theirs")
   assert.equal(lastReadable(records), 9)
 })
 
@@ -2104,43 +1911,6 @@ test("the contract says the agent's text answering a notice is not the session's
 })
 
 /* Round 8 of 10. */
-
-test("a /retro waiting behind a round keeps its own round when the first one ends first", async () => {
-  const { ownRounds, repliesToPlugin } = await import("../src/extract.js")
-  const records = [
-    { n: 1, k: "prompt", text: "fix bug" },
-    { n: 2, k: "session", event: "start" },
-    { n: 3, k: "tool", tool: "read", input: { path: "a.js" } },
-    { n: 4, k: "session", event: "end" },
-    { n: 5, k: "handover", about: "work", sent: true, text: "the logs come first" },
-    { n: 6, k: "session", event: "start" },
-    { n: 7, k: "tool", tool: "subagent", input: { prompt: "opencode-retro work order: read /x.md and do what it says." } },
-    { n: 8, k: "handover", about: "work", sent: true, text: "the logs come first" },
-    { n: 9, k: "tool", tool: "retro_propose", input: {} },
-    { n: 10, k: "handover", about: "lesson", text: "a lesson" },
-    { n: 11, k: "text", text: "here is the lesson" },
-    { n: 12, k: "session", event: "end" },
-    { n: 13, k: "session", event: "start" },
-    { n: 14, k: "text", text: "starting readers" },
-    { n: 15, k: "tool", tool: "read", input: { path: ".retro/work/y.md" } },
-    { n: 16, k: "session", event: "end" },
-  ]
-  const { steps } = ownRounds(records)
-  for (const n of [13, 14, 15]) assert.ok(steps.has(n), `step ${n} is the second round's`)
-  assert.ok(!steps.has(11), "the review of the lesson is not a round")
-  assert.ok(repliesToPlugin(records).has(11))
-})
-
-/* Round 9 of 10. */
-
-test("the contract tells the reader to leave out exactly the steps the order names", async () => {
-  // It used to restate how a round is found, and every change to that reading needed the prose
-  // re-worded — a mismatch found in round after round. The order names the steps; that is the rule.
-  const { OUTPUT_CONTRACT } = await import("../src/contract.js")
-  assert.match(OUTPUT_CONTRACT, /Leave exactly those steps out/)
-  assert.match(OUTPUT_CONTRACT, /Where the order names none, there are none/)
-  assert.doesNotMatch(OUTPUT_CONTRACT, /between turns|session` start/, "and no second account of how they are found")
-})
 
 test("the askings add up in the session /retro runs in, which its own rounds lengthen", async () => {
   const dir = sandbox()
@@ -2196,26 +1966,8 @@ test("the self-check reads which turn a hand-over started as rounds and replies 
   )
 })
 
-test("the person steering into the running turn leaves a waiting /retro its round", async () => {
-  const { ownRounds } = await import("../src/extract.js")
-  const records = [
-    { n: 1, k: "prompt", text: "fix bug" },
-    { n: 2, k: "session", event: "start" },
-    { n: 3, k: "handover", about: "work", sent: true, text: "the logs come first" },
-    { n: 4, k: "prompt", text: "and check the tests too", delivery: "steer" },
-    { n: 5, k: "tool", tool: "shell", input: { command: "npm test" }, exit: 0 },
-    { n: 6, k: "session", event: "end" },
-    { n: 7, k: "session", event: "start" },
-    { n: 8, k: "text", text: "starting readers" },
-    { n: 9, k: "session", event: "end" },
-  ]
-  const { steps } = ownRounds(records)
-  assert.ok(steps.has(7) && steps.has(8), "the turn the hand-over waited for is the round")
-  assert.ok(!steps.has(5), "the steered turn is the person's")
-})
-
 test("a prompt that opens the next turn, after a turn whose end was lost, is the person's turn", async () => {
-  const { ownRounds } = await import("../src/extract.js")
+  const { ownSteps } = await import("../src/extract.js")
   const records = [
     { n: 1, k: "prompt", text: "fix bug" },
     { n: 2, k: "session", event: "start" },
@@ -2225,13 +1977,13 @@ test("a prompt that opens the next turn, after a turn whose end was lost, is the
     { n: 6, k: "session", event: "start" },
     { n: 7, k: "tool", tool: "shell", input: { command: "npm test" }, exit: 2 },
   ]
-  assert.ok(!ownRounds(records).steps.has(7), "the person's work is not taken for a round")
+  assert.ok(!ownSteps(records).steps.has(7), "the person's work is not taken for a round")
 })
 
 /* Checks after the ten rounds. */
 
 test("an undelivered notice cancels the hand-over it names, not the latest one", async () => {
-  const { ownRounds, repliesToPlugin } = await import("../src/extract.js")
+  const { ownSteps, pluginExchange } = await import("../src/extract.js")
   const records = [
     { n: 1, k: "prompt", text: "fix bug" },
     { n: 2, k: "session", event: "start" },
@@ -2244,8 +1996,8 @@ test("an undelivered notice cancels the hand-over it names, not the latest one",
     { n: 8, k: "session", event: "start" },
     { n: 9, k: "tool", tool: "shell", input: { command: "npm test" }, exit: 2 },
   ]
-  assert.ok(repliesToPlugin(records).has(6), "the proposal handed back is still answered")
-  assert.ok(!ownRounds(records).steps.has(9), "and the failed /retro opens no round")
+  assert.ok(pluginExchange(records).has(6), "the proposal handed back is still answered")
+  assert.ok(!ownSteps(records).steps.has(9), "and the failed /retro opens no round")
 })
 
 test("a notice of a failed send names the hand-over by its step", async () => {
@@ -2398,7 +2150,7 @@ test("a log with no turn start at all is not excused by hand-overs from turns lo
 })
 
 test("a /retro sent between the person's prompt and the turn it opens takes nothing of that turn", async () => {
-  const { ownRounds } = await import("../src/extract.js")
+  const { ownSteps } = await import("../src/extract.js")
   const records = [
     { n: 1, k: "prompt", text: "fix bug" },
     { n: 2, k: "session", event: "start" },
@@ -2410,7 +2162,7 @@ test("a /retro sent between the person's prompt and the turn it opens takes noth
     { n: 8, k: "text", text: "the build fails because…" },
     { n: 9, k: "session", event: "end" },
   ]
-  const { steps } = ownRounds(records)
+  const { steps } = ownSteps(records)
   assert.ok(!steps.has(7) && !steps.has(8), "the person's turn is theirs")
 })
 
@@ -2433,7 +2185,7 @@ test("an order still waiting lists the lessons a reader before it recorded", asy
 })
 
 test("a reader started by a work order's line is the plugin's, recognised by its prompt or not", async () => {
-  const { ownRounds } = await import("../src/extract.js")
+  const { ownSteps } = await import("../src/extract.js")
   const records = [
     { n: 1, k: "prompt", text: "fix bug" },
     { n: 2, k: "session", event: "start" },
@@ -2443,28 +2195,9 @@ test("a reader started by a work order's line is the plugin's, recognised by its
     { n: 6, k: "text", from: "ses_r", text: "ses_other hit the lint trap" },
     { n: 7, k: "tool", tool: "subagent", child: "ses_r", input: { prompt: "opencode-retro work order: read /p/.retro/work/ses_other.md and do what it says." } },
   ]
-  const { steps } = ownRounds(records)
+  const { steps } = ownSteps(records)
   for (const n of [4, 5, 6, 7]) assert.ok(steps.has(n), `step ${n} is the reader's`)
   assert.ok(!steps.has(3))
-})
-
-test("what a reworded reader starts after an early retro_propose is the plugin's too", async () => {
-  const { ownRounds } = await import("../src/extract.js")
-  const records = [
-    { n: 1, k: "prompt", text: "fix bug" },
-    { n: 2, k: "session", event: "start" },
-    { n: 3, k: "session", event: "end" },
-    { n: 4, k: "handover", about: "work", sent: true, text: "the logs come first" },
-    { n: 5, k: "session", event: "start" },
-    { n: 6, k: "prompt", from: "ses_c", text: "please analyse that log" },
-    { n: 7, k: "tool", tool: "retro_propose", input: {} },
-    { n: 8, k: "handover", about: "lesson", text: "a lesson" },
-    { n: 9, k: "prompt", from: "ses_g", text: "grep the other log" },
-    { n: 10, k: "tool", from: "ses_g", tool: "shell", input: { command: "grep lint ses_other.jsonl" }, exit: 1 },
-    { n: 11, k: "tool", from: "ses_c", tool: "subagent", child: "ses_g", input: { prompt: "grep the other log" } },
-  ]
-  const { steps } = ownRounds(records)
-  for (const n of [9, 10, 11]) assert.ok(steps.has(n), `step ${n} is the plugin's`)
 })
 
 test("the checks section agrees with the rest of the report after a decision and a prompt edit", async () => {
@@ -2509,109 +2242,8 @@ test("a log passed over as one exchange, grown since by the plugin's round, says
   }
 })
 
-test("a reply and a round each last their turn, and take nothing of a turn after begun with no prompt seen", async () => {
-  const { ownRounds, repliesToPlugin } = await import("../src/extract.js")
-  const records = [
-    { n: 1, k: "prompt", text: "fix bug" },
-    { n: 2, k: "session", event: "start" },
-    { n: 3, k: "session", event: "end" },
-    { n: 4, k: "handover", about: "work", sent: true, text: "the logs come first" },
-    { n: 5, k: "session", event: "start" },
-    { n: 6, k: "text", text: "starting readers" },
-    { n: 7, k: "session", event: "end" }, // the agent stopped before retro_propose
-    { n: 8, k: "session", event: "start" }, // a turn whose prompt this process never saw
-    { n: 9, k: "tool", tool: "shell", input: { command: "npm test" }, exit: 2 },
-    { n: 10, k: "text", text: "the tests fail because…" },
-    { n: 11, k: "session", event: "end" },
-  ]
-  const { steps } = ownRounds(records)
-  assert.ok(steps.has(6) && steps.has(7), "the round's own turn")
-  assert.ok(!steps.has(9) && !steps.has(10), "not the turn after")
-  const replies = repliesToPlugin([
-    { n: 1, k: "prompt", text: "fix bug" },
-    { n: 2, k: "session", event: "start" },
-    { n: 3, k: "handover", about: "lesson", text: "a lesson" },
-    { n: 4, k: "text", text: "here is the lesson" },
-    { n: 5, k: "session", event: "end" },
-    { n: 6, k: "session", event: "start" },
-    { n: 7, k: "text", text: "a wrong answer to something else" },
-  ])
-  assert.ok(replies.has(4) && !replies.has(7))
-})
-
-test("a round whose turn start went unlogged still ends with that turn", async () => {
-  const { ownRounds } = await import("../src/extract.js")
-  const records = [
-    { n: 1, k: "handover", about: "work", sent: true, text: "the logs come first" },
-    { n: 2, k: "tool", tool: "subagent", input: { prompt: "opencode-retro work order: read /x.md and do what it says." } },
-    { n: 3, k: "text", text: "done" },
-    { n: 4, k: "session", event: "end" },
-    { n: 5, k: "session", event: "start" },
-    { n: 6, k: "tool", tool: "shell", input: { command: "npm test" }, exit: 2 },
-    { n: 7, k: "session", event: "end" },
-  ]
-  const { steps } = ownRounds(records)
-  assert.ok(steps.has(3) && !steps.has(6))
-})
-
-test("a /retro sent in the moment before the person's turn starts has its round in the turn after", async () => {
-  const { ownRounds, nothingNew } = await import("../src/extract.js")
-  const records = [
-    { n: 1, k: "prompt", text: "fix bug" },
-    { n: 2, k: "session", event: "start" },
-    { n: 3, k: "session", event: "end" },
-    { n: 4, k: "prompt", text: "quick question" },
-    { n: 5, k: "handover", about: "work", sent: true, text: "the logs come first" },
-    { n: 6, k: "session", event: "start" },
-    { n: 7, k: "text", text: "the answer is 42" },
-    { n: 8, k: "session", event: "end" },
-    { n: 9, k: "session", event: "start" },
-    { n: 10, k: "text", text: "Starting readers now" },
-    { n: 11, k: "tool", tool: "glob", input: { pattern: ".retro/work/*" } },
-    { n: 12, k: "session", event: "end" },
-  ]
-  const { steps } = ownRounds(records)
-  assert.ok(!steps.has(7), "the person's turn is theirs")
-  assert.ok(steps.has(10) && steps.has(11), "and the turn after is the round")
-  assert.equal(nothingNew(records, records.slice(8)), true)
-})
-
-test("a hand-over waiting past the person's turn is cancelled by its failed send, and survives an unlogged start", async () => {
-  const { ownRounds } = await import("../src/extract.js")
-  const failed = [
-    { n: 1, k: "prompt", text: "fix bug" },
-    { n: 2, k: "handover", about: "work", sent: true, text: "the logs come first" },
-    { n: 3, k: "handover", about: "notice", undelivered: true, of: 2, text: "could not be delivered" },
-    { n: 4, k: "session", event: "start" },
-    { n: 6, k: "session", event: "end" },
-    { n: 8, k: "session", event: "start" },
-    { n: 9, k: "tool", tool: "edit", input: { path: "a.js" } },
-    { n: 11, k: "session", event: "end" },
-  ]
-  assert.ok(!ownRounds(failed).steps.has(9), "a send that failed opens nothing, later or not")
-  const unlogged = [
-    { n: 1, k: "prompt", text: "fix bug" },
-    { n: 2, k: "handover", about: "work", sent: true, text: "the logs come first" },
-    { n: 5, k: "tool", tool: "read", input: { path: "a.js" } }, // the person's turn, its start unlogged
-    { n: 6, k: "session", event: "end" },
-    { n: 8, k: "session", event: "start" },
-    { n: 9, k: "tool", tool: "subagent", input: { prompt: "please read it" } },
-    { n: 11, k: "session", event: "end" },
-    { n: 12, k: "session", event: "start" },
-    { n: 13, k: "tool", tool: "edit", input: { path: "b.js" } },
-    { n: 14, k: "session", event: "end" },
-  ]
-  const { steps } = ownRounds(unlogged)
-  assert.ok(steps.has(9) && !steps.has(13) && !steps.has(5), "the round is the turn after the person's")
-})
-
-test("the contract counts a subagent started to answer a notice as the plugin's exchange, as the plugin does", async () => {
-  const { OUTPUT_CONTRACT } = await import("../src/contract.js")
-  assert.match(OUTPUT_CONTRACT, /what a subagent it started for that answer was told and said/)
-})
-
 test("a subagent started to answer a hand-over is the person's again in a turn after", async () => {
-  const { repliesToPlugin } = await import("../src/extract.js")
+  const { pluginExchange } = await import("../src/extract.js")
   const records = [
     { n: 1, k: "prompt", text: "fix bug" },
     { n: 2, k: "session", event: "start" },
@@ -2627,7 +2259,7 @@ test("a subagent started to answer a hand-over is the person's again in a turn a
     { n: 12, k: "text", from: "c1", text: "did Y, and Y failed twice" },
     { n: 13, k: "session", event: "end" },
   ]
-  const plugin = repliesToPlugin(records)
+  const plugin = pluginExchange(records)
   assert.ok(plugin.has(7), "its answer to the hand-over is the plugin's exchange")
   assert.ok(!plugin.has(12), "its work for the person later is the person's")
 })
@@ -2656,7 +2288,7 @@ test("a turn's end delivered again after the next prompt is no end to the report
 })
 
 test("a delegated session that recorded an analysis is the plugin's, wherever its prompt fell", async () => {
-  const { ownRounds } = await import("../src/extract.js")
+  const { ownSteps } = await import("../src/extract.js")
   const records = [
     { n: 1, k: "prompt", text: "fix bug" },
     { n: 2, k: "session", event: "start" },
@@ -2670,6 +2302,84 @@ test("a delegated session that recorded an analysis is the plugin's, wherever it
     { n: 10, k: "tool", from: "r1", tool: "retro_record", input: {} },
     { n: 11, k: "tool", tool: "subagent", child: "r1", input: { prompt: "Please analyse the work order at /x.md" } },
   ]
-  const { steps } = ownRounds(records)
+  const { steps } = ownSteps(records)
   for (const n of [7, 8, 9, 10, 11]) assert.ok(steps.has(n), `step ${n} is the reader's`)
+})
+
+
+/* The plugin's own work: named where it is certain, guessed only where a guess cannot lose a step. */
+
+test("what the plugin names as its own is certain, and never the person's work around it", async () => {
+  // The rounds used to be inferred from the order of the log, and every ordering OpenCode
+  // allows — a /retro posted into a running turn, a steered prompt, an unlogged start, a send
+  // that failed — took the person's work for the plugin's somewhere, and told a reader to skip
+  // it. What is named now is only what the plugin knows: its hand-overs, its own tools, the
+  // delegations that started readers, and everything those readers did.
+  const { ownSteps } = await import("../src/extract.js")
+  const records = [
+    { n: 1, k: "prompt", text: "fix the build" },
+    { n: 2, k: "session", event: "start" },
+    { n: 3, k: "handover", about: "work", sent: true, text: "the logs come first" }, // into a running turn
+    { n: 4, k: "tool", tool: "shell", input: { command: "npm run build" }, exit: 1 },
+    { n: 5, k: "text", text: "the build is broken because…" },
+    { n: 6, k: "session", event: "end" },
+    { n: 7, k: "session", event: "start" },
+    { n: 8, k: "tool", tool: "subagent", child: "r1", input: { prompt: "opencode-retro work order: read /x.md and do what it says." } },
+    { n: 9, k: "prompt", from: "c2", text: "Please have a look at /y.md" }, // a reader worded its own way
+    { n: 10, k: "tool", from: "c2", tool: "read", input: { path: "/p/.retro/sessions/other.jsonl" } },
+    { n: 11, k: "tool", from: "c2", tool: "subagent", child: "g", input: { prompt: "grep it" } },
+    { n: 12, k: "tool", from: "g", tool: "shell", input: { command: "grep lint other.jsonl" }, exit: 1 },
+    { n: 13, k: "tool", from: "c2", tool: "retro_record", input: {} },
+    { n: 14, k: "tool", tool: "subagent", child: "c2", input: { prompt: "Please have a look at /y.md" } },
+    { n: 15, k: "tool", tool: "retro_propose", input: {} },
+    { n: 16, k: "handover", about: "lesson", text: "a lesson" },
+    { n: 17, k: "tool", tool: "edit", input: { path: "AGENTS.md" } }, // the review: the person's
+  ]
+  const { steps } = ownSteps(records)
+  for (const n of [3, 8, 9, 10, 11, 12, 13, 14, 15, 16]) assert.ok(steps.has(n), `step ${n} is the plugin's`)
+  for (const n of [1, 4, 5, 17]) assert.ok(!steps.has(n), `step ${n} is the person's`)
+})
+
+test("a growth that is the plugin's exchange takes no order, and a guess wrong that way loses nothing", async () => {
+  // The one place the order of the log is still read for the round: whether a log that grew
+  // is worth paying a reader for. Wrong, it waits — the mark does not move — and is read with
+  // whatever comes next; the person speaking again always makes it owed.
+  const { nothingNew, pluginExchange, lastReadable } = await import("../src/extract.js")
+  const records = [
+    { n: 1, k: "prompt", text: "fix bug" },
+    { n: 2, k: "session", event: "start" },
+    { n: 3, k: "session", event: "end" },
+    { n: 4, k: "handover", about: "work", sent: true, text: "the logs come first" },
+    { n: 5, k: "session", event: "start" },
+    { n: 6, k: "text", text: "starting readers" },
+    { n: 7, k: "tool", tool: "glob", input: { pattern: ".retro/work/*" } },
+    { n: 8, k: "handover", about: "lesson", text: "a lesson" },
+    { n: 9, k: "text", text: "here is the lesson" },
+    { n: 10, k: "session", event: "end" },
+  ]
+  assert.ok([6, 7, 9].every((n) => pluginExchange(records).has(n)))
+  assert.equal(nothingNew(records, records.slice(3)), true, "a round and a reply take no order")
+  const more = [...records, { n: 11, k: "prompt", text: "now fix the build" }, { n: 12, k: "tool", tool: "shell", input: {} }]
+  assert.equal(nothingNew(more, more.slice(3)), false, "the person speaking again does")
+  assert.equal(lastReadable(records), 9, "and nothing is credited as read on a guess")
+})
+
+test("a hand-over that never arrived opens no exchange", async () => {
+  const { pluginExchange } = await import("../src/extract.js")
+  const records = [
+    { n: 1, k: "prompt", text: "fix bug" },
+    { n: 2, k: "session", event: "start" },
+    { n: 3, k: "handover", about: "work", sent: true, text: "the logs come first" },
+    { n: 4, k: "handover", about: "notice", undelivered: true, of: 3, text: "could not be delivered" },
+    { n: 5, k: "tool", tool: "shell", input: { command: "npm test" }, exit: 2 },
+  ]
+  assert.ok(!pluginExchange(records).has(5))
+})
+
+test("the contract names the certain steps and leaves the round to the reader", async () => {
+  const { OUTPUT_CONTRACT } = await import("../src/contract.js")
+  assert.match(OUTPUT_CONTRACT, /The order names the steps\s+that are this plugin's for certain/)
+  assert.match(OUTPUT_CONTRACT, /which only you\s+can see whole/)
+  assert.match(OUTPUT_CONTRACT, /anything the person's own task needed in\s+that stretch is still theirs/)
+  assert.match(OUTPUT_CONTRACT, /what a subagent it started for\s+that answer was told and said/)
 })

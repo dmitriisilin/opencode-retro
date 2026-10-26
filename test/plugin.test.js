@@ -1663,7 +1663,7 @@ test("prompts posted into a running turn, queued or steered, are answered in tha
   // the turn, and both are answered before its one end — the steered one in the same reply,
   // the queued one in a step of its own. So a person's prompt between a turn's start and its
   // end belongs to that turn, whichever way it was delivered (`answerStarts`).
-  const { ownRounds } = await import("../src/extract.js")
+  const { ownSteps } = await import("../src/extract.js")
   const records = parseShadowLog(
     readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "fixtures", "sessions", "queue-and-steer.jsonl"), "utf8"),
   )
@@ -1672,7 +1672,7 @@ test("prompts posted into a running turn, queued or steered, are answered in tha
   assert.equal(records.filter((r) => r.k === "session" && r.event === "start").length, 1, "one execution")
   assert.equal(records.at(-1).event, "end")
   assert.match(records.filter((r) => r.k === "text").map((r) => r.text).join(" "), /steered[\s\S]*queued/)
-  assert.equal(ownRounds(records).steps.size, 0)
+  assert.equal(ownSteps(records).steps.size, 0)
 })
 
 test("a session that turns out to be a subagent is not analysed on its own", async () => {

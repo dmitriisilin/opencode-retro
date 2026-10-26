@@ -964,9 +964,10 @@ understood is just a diagnostic that was written badly.
 - [x] Gone with the call they served: `options.model`, `extractTimeoutMs`, `asyncExtract`,
       the variant choice, the model-resolution chain, the empty-reply retry, and
       `session.create / generate / remove` from the required surface.
-- [x] An analysis is never analysed. A reader's session is not logged; the rest of a round —
-      the delegations, the plugin's own tool calls — is logged between its hand-overs, the
-      order tells the next reader to leave it out, and it is not new material (analysis.md).
+- [x] An analysis is never analysed. A reader's session is not logged; what is the plugin's
+      for certain in the person's log — its hand-overs, tools, reader delegations and readers'
+      work — is named in the order to leave out, and the round around it is the reader's to
+      recognise from the contract (analysis.md).
       *First built as a mechanical filter on every call, which took thirteen review rounds to
       fail at; replaced on the owner's suggestion by the markers that were already there.*
 - [x] The two hand-overs are told apart in the log (`about`), because the extraction contract
@@ -1053,16 +1054,17 @@ Known, listed so nobody discovers them as surprises:
   the log and the pairing of hooks rest on it. A provider that numbered calls per message would lose a call's record when an id came
   round again. Not guarded against: no provider OpenCode drives has been seen doing it, and a
   finer key risks splitting a Code Mode wrapper from what it wraps.
-- **What the person's agent does inside a round is left out with it.** A round — from the
-  `work` hand-over to the end of the turn it is answered in, the next hand-over of another kind
-  or the person's next prompt — is the
-  plugin's own, and the reader of the next order is told to leave it out (analysis.md). The
-  hand-over asks the agent to start readers and nothing else, so the only thing lost is work it
-  did of its own accord in between. *This replaces thirteen review rounds of deciding, call by
-  call and child by child, which work was ours — by the delegation's prompt, by its order's
-  path, by what else its parent had in flight, by which delegation named which child. Every
-  round found the last one's interleaving. The owner's question ended it: why not tell the
-  reader where the plugin's work begins and ends, and let it leave that out?*
+- **The round is the reader's to recognise, and the plugin's guess at it only decides cost.**
+  The plugin names as its own only what is certain — its hand-overs, its tools, the
+  delegations that start readers, and everything readers do. Where the round around those
+  begins and ends in a turn is inferred from the order of the log only to decide whether a log
+  that grew is worth an order; wrong, a read waits for the next growth, and the person speaking
+  again always makes it owed. A log whose last growth was the plugin's exchange and that never
+  grows again keeps that stretch unread — the stretch the contract calls the plugin's anyway.
+  *Replaces two dozen review rounds of inferring the round from record order, which kept
+  meeting orderings OpenCode does not rule out and, when wrong, told the reader to skip the
+  person's work. The reviewer pointed at the inference as the cause several times before it
+  was taken out.*
 - **A reload in the middle of a round can leave a reader's log behind.** A reader is known by
   its first prompt, and that knowledge is in memory: reloaded mid-delegation (an edit to
   `opencode.json`, a service restart), the plugin logs the reader's later work as a session of

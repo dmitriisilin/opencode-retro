@@ -8,7 +8,7 @@ import { createState } from "./src/state.js"
 import { concludedIn, createStore, score } from "./src/lessons.js"
 import { assessCurrency, fingerprintOf } from "./src/currency.js"
 import { writeAtomic } from "./src/atomic.js"
-import { composeOrder, isWorkLine, lastReadable, nothingNew, ownRounds, recordAnswer, recordedLessons, refreshLessons, repliesToPlugin, turnHandovers } from "./src/extract.js"
+import { composeOrder, isWorkLine, lastReadable, nothingNew, ownSteps, pluginExchange, recordAnswer, recordedLessons, refreshLessons, turnHandovers } from "./src/extract.js"
 import { RECORD_INPUT } from "./src/contract.js"
 import {
   PROPOSE_INPUT,
@@ -1339,15 +1339,15 @@ export default {
        */
       // The plugin's own rounds are not new material: a log that grew by nothing but a round
       // takes no order (analysis.md, "The plugin's own work").
-      const own = ownRounds(records)
-      const replies = repliesToPlugin(records)
+      const own = ownSteps(records)
+      const exchange = pluginExchange(records)
       const fresh = (mark.n > 0 ? records.filter((r) => r.n > mark.n || r.k === "prompt") : records).filter(
         (r) => !own.steps.has(r.n),
       )
       const composed = composeOrder({
         records: fresh,
         rounds: own.ranges,
-        replies,
+        exchange,
         analysedUpTo: mark.n,
         concluded: concludedFrom(sessionID),
         session: sessionID,
@@ -1408,7 +1408,7 @@ export default {
       // `lastReal`: the last step anything could be read in — not the plugin's own, not a turn's
       // end. A reader leaves a trailing round out as it is told to, and reading up to here is
       // reading all of it (thirty-second and thirty-third reviews).
-      const lastReal = Math.max(mark.n, lastReadable(records, own.steps, replies))
+      const lastReal = Math.max(mark.n, lastReadable(records, own.steps))
       const order = { id: identity, size: readSize, lastN, lastReal, n: mark.n, asked }
       state.issue(sessionID, order)
       return { ok: true, order: { session: sessionID, ...order } }

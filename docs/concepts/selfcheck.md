@@ -34,11 +34,10 @@ written down.)
 traffic proved.** A session without tool calls proves nothing about the tool hook; a turn
 whose input is a hand-over proves nothing about the prompt hook — the counters are per
 turn, so a session prompted earlier and handed a lesson later was not "started by a
-hand-over"; which turn a hand-over started is read from the log, by the one reading rounds
-and replies take as well (analysis.md, "The plugin's own work") — one sent to start a turn
-(`sent`; not `retro_propose`'s, which is a tool result, and not one that was never
-delivered) is the input of the first turn that starts after it, so one sent into a running turn counts for the next, and the
-person's turn after that has nothing of the plugin's to excuse it; a shortfall of hook calls against events is not evidence while calls are in
+hand-over"; a turn's input is read from the log as one fact — the last input written before
+the turn began, back to the previous turn's start: a sent, delivered hand-over (`sent`; not
+`retro_propose`'s, which is a tool result, and not one that was never delivered), or the
+person's prompt, which makes the turn theirs; a shortfall of hook calls against events is not evidence while calls are in
 flight; the trigger cannot be judged before the session ends.
 
 **Stock.** What is waiting for the human: open lessons, logs owed an analysis, logs read in

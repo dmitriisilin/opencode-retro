@@ -133,48 +133,34 @@ work, not the person's, and an analysis must never be analysed. Two kinds, handl
    is not a reader. Its whole job is reading
    other sessions' logs, so its own log would be copies of them. Recognised by the line alone,
    because a session is never taken for ours by anything less.
-2. **Everything else is logged, and marked.** A **round** is the turn a `handover` with
-   `about: "work"` starts — from the next turn start after it, since a hand-over delivered
-   into a turn still running waits for that turn, and what the turn does is the person's —
-   to the end of the turn it is answered in, the next `prompt` of the person's (one without
-   `from`, log.md) or the place the answer
-   to a `handover` of another kind begins, whichever comes first: the agent starting readers,
-   the records coming back, `retro_propose`. One read of a hand-over's turn serves rounds and
-   replies alike: answered at once when handed back as a tool result or sent between turns,
-   from the next turn start when sent into a running one — so a hand-over waiting for the
-   round's own turn leaves the turn the round's — and never when the plugin failed to send it,
-   whose notice names it by its step (another hand-over can be logged while the send is
-   awaited) and is written to the log and to nobody else, so it ends nothing and starts no
-   reply, nor does the `work` hand-over it is about open a round — a `/retro` run again after
-   it has the round. One still waiting when the person speaks is not answered either: that
-   turn answers them — told by the log, a prompt the next turn start follows having opened that
-   turn, while one steered into the running turn is followed by its end and leaves the
-   hand-over waiting for the turn after. Each round runs from its own beginning, so a `/retro` run again while
-   one reads, waiting for that turn to end, has its round even when the first ends before it. Every turn start is logged, since a session stays the plugin's across
-   turns. With none to go by, a hand-over that came between turns starts its round itself, and
-   one that landed in a running turn opens an empty one. The
-   `work` hand-overs themselves are named with it — the plugin's own text, holding nothing to
-   read — and only the person's session ends it: a hand-over or a prompt with `from` does
-   not. (A delegated session's hand-over should never be written — `retro_propose` refuses
-   them — but one that slipped past must not close the round for the rest of it.) Calls to
-   `retro_record` and `retro_propose`, and a `subagent` call whose prompt is a work order's
-   line, are ours wherever they are — a delegation is written when its reader is done, which
-   an early `retro_propose` puts after the round has closed. A reader whose delegation was
-   worded its own way is an ordinary child, folded into the person's log like any subagent —
-   inside the round, its reading of other logs with it, and ours in full: a delegated session
-   whose first prompt lies inside a round is ours to its last record, which may come after an
-   early `retro_propose` has closed the round — and so is whatever it starts, at any depth. The order names every one of the
-   plugin's own steps and tells the reader to leave exactly those out (no lesson, no cost, no
-   recurrence) — without a second account of how they were found, which drifted from the code
-   in round after round, and the plugin does not count a round as new
-   material, so a log that grew by nothing but a round takes no order.
+2. **Everything else is logged, and what is certain is named.** The plugin names as its own
+   only what it knows to be: its hand-overs, its calls to `retro_record` and `retro_propose`,
+   a `subagent` call whose prompt is a work order's line, and everything a reader did — a
+   session such a delegation started, a delegated session that called `retro_record` (only a
+   reader does), whatever those started, at any depth, and the delegation that started any of
+   them, wherever in the log each of these lands. None of it can be the person's. The order
+   names these steps and the reader leaves them out.
+3. **The round is the reader's to recognise.** After a `handover` with `about: "work"`, until
+   the person next speaks, what the agent does to start readers, wait for them and hand the
+   results over is the plugin's too — but where that stretch begins and ends in a turn can only
+   be guessed from the order of the log, and OpenCode does not guarantee it: events lag hooks
+   and arrive twice, a turn's start goes unlogged, a prompt is steered into a running turn, a
+   hand-over waits in the inbox, a send fails. So the contract describes the round and the
+   reader, who sees the hand-overs and the prompts, judges it — keeping for the person
+   anything their own task needed in that stretch.
+4. **A guess is used only where it cannot lose a step**: whether a log that grew is worth an
+   order. Growth that the order of the log suggests is the plugin's exchange — after a
+   delivered `work` hand-over, what the agent did until the person spoke; after a hand-over of
+   another kind, what it said — takes no order. Wrong, the mark stays where it was, and the
+   material is read with whatever comes next; the person speaking again always makes the log
+   owed. Nothing is credited as read on a guess.
 
-*Replaces thirteen review rounds of deciding mechanically, call by call, which work was ours —
-by the delegation's prompt, by its open order's path, by what else its parent had in flight, by
-which delegation named which child. Each round found the last one's interleaving. The markers
-were in the log all along, and judging what a stretch of log is is the reader's job (decision
-4). A limit, stated: whatever the person's agent does inside a round that is not the round —
-rare, since the hand-over asks it to start readers and nothing else — is left out with it.*
+*Replaces two dozen review rounds of inferring the round from the order of the log, in three
+functions and the contract's prose at once. Each round found an ordering the rules had not
+met, the fix for it opened the next, and a wrong inference told a reader to skip the person's
+work — the one failure that loses material unseen. The rule that cost nothing to get wrong
+kept its guess; the rule that could lose a step stopped guessing (decision 4: judging a
+stretch of log is the reader's job).*
 
 ## Invariants
 
@@ -250,45 +236,35 @@ rare, since the hand-over asks it to start readers and nothing else — is left 
   `a person who names an open order's path in a new session is still logged`
   `a fresh session given the prescribed line is recognised as the plugin's own reader`
   `a reader's helper is ours however it was told what to do`
-- A round is logged and marked, and is not new material: a log that grew by nothing but a
-  round takes no order, and the order tells the reader to leave rounds out.
+- What is the plugin's for certain is logged and named, and the order tells the reader to leave
+  it out; the round around it is described for the reader to recognise; and growth the log's
+  order suggests is the plugin's exchange takes no order — a guess allowed there only, since a
+  wrong one delays a read and never loses a step.
   `a round of the plugin's own is logged, and a log grown by nothing else takes no order`
   `the order tells the reader where the plugin's own work is and to leave it out`
+  `what the plugin names as its own is certain, and never the person's work around it`
+  `a growth that is the plugin's exchange takes no order, and a guess wrong that way loses nothing`
+  `a hand-over that never arrived opens no exchange`
+  `the contract names the certain steps and leaves the round to the reader`
   `a re-read names every one of the plugin's own steps, those before the mark included`
   `a reworded reader is folded into the person's log inside the round`
   `a reader whose prompt OpenCode prefixed with its own line is still not logged`
-  `a /retro posted into a turn still running leaves the rest of that turn the person's`
   `a delegation of ours written after an early retro_propose is still ours`
   `a reader that read everything but a trailing round has read it all`
   `a hand-over that could not be delivered is followed by a notice saying so`
-  `a hand-over that landed in a running turn with no turn after it takes nothing of the person's`
   `a person who pastes the hand-over into a new session is still logged`
   `a person's first message quoting the work line after a blank line is still logged`
   `a reader whose delegation copied the indented line is still recognised`
   `a long first prompt is checked for the reader line in linear time`
-  `a notice sent into a running turn leaves the rest of that turn the person's`
   `a reader that read up to a trailing turn's end has read it all`
-  `a reworded reader still reading after an early retro_propose is ours to its last record`
   `orders whose hand-over could not be delivered are voided, not reported as unanswered`
-  `the rounds an order names include a reworded reader's records after the round closed`
-  `a second /retro inside a running round continues it`
   `a turn that added only a round does not report its log as waiting`
   `a hand-over that was never delivered leaves the rest of the turn the person's`
-  `a hand-over waiting for the round's turn to end leaves that turn the round's`
-  `a /retro run again after an undelivered one has its round`
   `the person speaking before a waiting hand-over's turn makes that turn theirs`
   `the contract says the agent's text answering a notice is not the session's`
-  `the contract counts a subagent started to answer a notice as the plugin's exchange, as the plugin does`
   `a subagent started to answer a hand-over is the person's again in a turn after`
-  `a /retro waiting behind a round keeps its own round when the first one ends first`
-  `the contract tells the reader to leave out exactly the steps the order names`
-  `the person steering into the running turn leaves a waiting /retro its round`
   `prompts posted into a running turn, queued or steered, are answered in that turn`
   `a /retro sent between the person's prompt and the turn it opens takes nothing of that turn`
-  `a /retro sent in the moment before the person's turn starts has its round in the turn after`
-  `a hand-over waiting past the person's turn is cancelled by its failed send, and survives an unlogged start`
-  `a reply and a round each last their turn, and take nothing of a turn after begun with no prompt seen`
-  `a round whose turn start went unlogged still ends with that turn`
   `a prompt that opens the next turn, after a turn whose end was lost, is the person's turn`
   `an undelivered notice cancels the hand-over it names, not the latest one`
   `a notice of a failed send names the hand-over by its step`
@@ -297,21 +273,17 @@ rare, since the hand-over asks it to start readers and nothing else — is left 
   closed and no order removed; and `/retro` itself issues nothing in a delegated session, whose
   round could never be proposed. (Limit, AGENTS.md "Known": the plugin knows a session as
   delegated by what it has seen, so a reader calling before its creation is known, or after a
-  reload, slips through — and then its hand-over does not end the round.)
+  reload, slips through.)
   `a reader calling retro_propose is told it is not its call, and nothing happens`
-  `a delegated hand-over in a log does not end the round`
   `/retro in a subagent's session issues nothing`
   `a work hand-over noted for a subagent opens no round`
-  `a /retro posted into a running turn has its round begin at the turn it resumes`
   `a session stays the plugin's across turns, so a turn resumed by a hand-over is logged from its start`
   `a subagent's text, delegated in answer to a plugin notice, is part of that reply`
   `a subagent of the person's already running when a hand-over arrives stays theirs`
   `a turn resumed by a hand-over that arrived in the previous turn is not a dead prompt hook`
   `a log pruned between turns starts its numbering again`
-  `a reworded reader's delegation is ours wherever it lands`
   `a reader started by a work order's line is the plugin's, recognised by its prompt or not`
   `a delegated session that recorded an analysis is the plugin's, wherever its prompt fell`
-  `what a reworded reader starts after an early retro_propose is the plugin's too`
   `a subagent's prompt does not end a reply to the plugin's hand-over`
   `a reader's call to retro_propose writes nothing into any log`
   `a reworded reader calling retro_propose is told so too`

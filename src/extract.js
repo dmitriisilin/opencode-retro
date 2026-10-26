@@ -63,76 +63,22 @@ function isIndentedWorkLine(text) {
   return text.startsWith(WORK_LINE, i)
 }
 
-/**
- * Where the answer to each of the person's session's hand-overs begins, as an index into
- * `sorted` (ordered by `n`), keyed by the hand-over's own index. One sent into a turn still
- * running waits in the inbox for that turn to end, and is answered from the next turn start —
- * `null` while there is none. One handed back as a tool result, or sent between turns, is
- * answered at once. One the plugin failed to send is answered nowhere, and the notice saying so
- * is no hand-over of its own: it is written to the log, never to anybody (round 6 of 10). One
- * still waiting when the person speaks is answered nowhere either: the turn is theirs.
- * The single reading of a hand-over's turn that `ownRounds` and `repliesToPlugin` share: two
- * copies of it drifted apart in rounds 5 and 6.
+/*
+ * What in a log is the plugin's own (analysis.md, "The plugin's own work").
+ *
+ * Two kinds of knowing, kept apart on purpose. What the plugin knows for certain — its own
+ * hand-overs, its own tools, the delegations that start its readers and everything those
+ * readers do — is named to the reader as steps to leave out, and only that: none of it can be
+ * the person's. Where a round of its own begins and ends in a turn, and which text answers a
+ * hand-over of its, it can only guess from the order of the log, which OpenCode does not
+ * guarantee — events lag hooks, arrive twice, a turn's start goes unlogged, a prompt is steered
+ * into a running turn. Those guesses decided what a reader was told to skip for two dozen
+ * review rounds, each finding the next ordering, and a wrong guess lost the person's work
+ * unread. So a guess is now used only where being wrong costs a read and never a step: whether
+ * a log that grew is worth an order. Wrong that way, the mark stays where it was and the
+ * material is read with whatever comes next. The round itself is the reader's to recognise,
+ * from the hand-overs it sees in the log and what the contract says about them.
  */
-function answerStarts(sorted) {
-  const at = new Map()
-  let inTurn = false
-  // Hand-overs in the inbox, one queue: each waits for a turn start, and one sent after the
-  // person spoke but before their turn began waits past that turn first (`past` false until it
-  // has gone by — at its start, or at its end when the start went unlogged).
-  let waiting = []
-  let spoke = false
-  for (let i = 0; i < sorted.length; i++) {
-    const r = sorted[i]
-    if (r.from) continue
-    // The person speaking before a waiting hand-over's turn begins makes that turn theirs: it
-    // answers them, and their material is not to be taken for a reply (round 7 of 10). Told by
-    // what comes next in the log, not by whether a turn looked to be running: a prompt the next
-    // turn start follows opened that turn — between turns, or after one whose end was lost to a
-    // restart — while one steered into the running turn is followed by its end, and the
-    // hand-over goes on waiting for the turn after.
-    if (r.k === "prompt") {
-      spoke = true
-      continue
-    }
-    if (r.k === "session") {
-      inTurn = r.event === "start"
-      const still = []
-      for (const w of waiting) {
-        if (!w.past) {
-          w.past = true // the person's own turn, going by
-          still.push(w)
-        } else if (inTurn) {
-          if (spoke) at.delete(w.h)
-          else at.set(w.h, i)
-        } else still.push(w)
-      }
-      waiting = still
-      spoke = false
-      continue
-    }
-    if (r.k !== "handover") continue
-    if (r.undelivered) {
-      // The hand-over it names by its step — another can be logged while the send is awaited.
-      // One that names none names a hand-over that was never logged, and cancels nothing.
-      let h = -1
-      if (Number.isFinite(r.of)) for (h = i - 1; h >= 0 && sorted[h].n !== r.of; h--);
-      if (h >= 0) at.delete(h)
-      waiting = waiting.filter((w) => w.h !== h)
-      continue
-    }
-    const sent = isSent(r)
-    if (sent && (inTurn || spoke)) {
-      // Into a running turn, it waits for that turn to end. Sent after the person has spoken
-      // and before the turn they opened is logged as started — the moment between a prompt and
-      // its start — it waits past their turn too: that turn answers them, and the one after may
-      // take it up (checks after the ten rounds, and the review after the stranger's hour).
-      at.set(i, null)
-      waiting.push({ h: i, past: inTurn })
-    } else at.set(i, i)
-  }
-  return at
-}
 
 /** A delegation whose prompt is a work order's line: a reader's start. */
 const isReaderCall = (r) =>
@@ -141,108 +87,29 @@ const isReaderCall = (r) =>
 /** Sent to start a turn. A `work` hand-over always is: `/retro` is its one writer, never a tool result. */
 const isSent = (r) => Boolean(r.sent) || isWorkHandover(r)
 
-/**
- * How many of the plugin's hand-overs the latest turn of the person's session began with: sent
- * ones whose answer is that turn — sent between turns just before it, or waiting in the inbox
- * while the turn before it ran. Read from `answerStarts`, the same reading rounds and replies
- * take, so the self-check cannot disagree with them about which turn a hand-over started (a
- * third copy of the rule, kept beside the self-check, had already drifted from them). One
- * never delivered started nothing, and one still waiting when the person spoke was answered by
- * the person's turn. With no turn start logged yet, the latest turn is the one still to start.
- */
-export function turnHandovers(records) {
-  const sorted = [...records].sort((a, b) => (a.n ?? 0) - (b.n ?? 0))
-  const at = answerStarts(sorted)
-  const starts = []
-  sorted.forEach((r, i) => {
-    if (r.k === "session" && r.event === "start" && !r.from) starts.push(i)
-  })
-  const turnOf = (j) => starts.find((s) => s >= j) ?? Infinity
-  const latest = starts.length ? starts.at(-1) : Infinity
-  // Unless the current turn went unlogged: its start dropped by a process that did not own the
-  // session yet. Then the current turn is what follows the last end the person's session went
-  // on working after, and its input is what was sent after that end, or is still waiting —
-  // never a hand-over that began a turn before it, which would excuse a prompt hook dead in
-  // this one (checks after the ten rounds).
-  let end = -1
-  let lastEnd = -1
-  for (let i = 0; i < sorted.length; i++) {
-    const r = sorted[i]
-    if (r.from) continue
-    if (r.k === "session" && r.event === "end") end = i
-    else if (end >= 0 && (r.k === "prompt" || r.k === "tool" || r.k === "text")) lastEnd = end
-  }
-  const unlogged = !starts.length || lastEnd > latest
-  let count = 0
-  for (const [h, j] of at) {
-    if (!isSent(sorted[h])) continue
-    if (unlogged ? h > lastEnd || j === null : j !== null && turnOf(j) === latest) count++
-  }
-  return count
+const byStep = (records) => [...records].sort((a, b) => (a.n ?? 0) - (b.n ?? 0))
+
+/** Steps of hand-overs a failed-send notice names: never delivered, so they started nothing. */
+function undelivered(sorted) {
+  const out = new Set()
+  for (const r of sorted) if (r.k === "handover" && r.undelivered && Number.isFinite(r.of)) out.add(r.of)
+  return out
 }
 
 /**
- * The plugin's own rounds in a log, as step ranges (analysis.md, "The plugin's own work").
- *
- * A round is answered by the turn its `handover` with `about: "work"` starts, and runs to the
- * end of that turn, the next `prompt`, or where a `handover` of another kind is answered,
- * whichever comes first — only the person's session's (no `from`) counts: a delegated one's
- * opens nothing and ends nothing.
- * A call to one of the plugin's own tools is the plugin's wherever it is. One definition,
- * read two ways: the order lists the rounds for its reader to leave out, and the plugin does
- * not count them as new material.
+ * The steps that are the plugin's own for certain, as a set and as the ranges an order names:
+ * every hand-over of its, every call to `retro_record` or `retro_propose`, every delegation whose
+ * prompt is a work order's line, and everything a reader did — a session such a delegation
+ * started, a delegated session that called `retro_record` (only a reader does), and whatever
+ * those started, at any depth. Never decided by where a step sits in the log.
  */
-export function ownRounds(records) {
-  const sorted = [...records].sort((a, b) => (a.n ?? 0) - (b.n ?? 0))
-  const at = answerStarts(sorted)
-  // Where the answer to each of the plugin's other hand-overs begins: each ends a round.
-  const begins = new Set()
-  for (const [h, j] of at) if (j !== null && !isWorkHandover(sorted[h])) begins.add(j)
-  const steps = new Set()
-  for (let i = 0; i < sorted.length; i++) {
-    if (!isWorkHandover(sorted[i])) continue
-    // A `work` hand-over is the plugin's own text, whether it opens a round, goes on with one —
-    // a `/retro` run again while it reads (thirty-fifth review) — or was never delivered: named,
-    // so the order's ranges stay whole and no hand-over goes unnamed (thirty-sixth and
-    // thirty-seventh reviews). It holds nothing to read either way.
-    steps.add(sorted[i].n)
-    // Starts where its answer begins: at the hand-over between turns, at the next turn start
-    // when it landed in a running one — whose work is the person's (thirty-second and
-    // thirty-third reviews) — and nowhere when there is none yet, when the person spoke first,
-    // or when it was never delivered (rounds 6 and 7 of 10).
-    const from = at.get(i)
-    if (from === null || from === undefined) continue
-    // Runs to the next prompt of the person's session, or to where the answer to another of the
-    // plugin's hand-overs begins — not where that hand-over was written: one waiting in the inbox
-    // leaves the turn the round's (round 6 of 10). Each round from its own beginning, so one
-    // waiting behind another is not jumped when the other ends first (round 8 of 10). Only the
-    // person's session ends one: a delegated session's hand-over should never be written —
-    // `retro_propose` refuses them — but a reader that slips past the gate must not close the
-    // round for the rest (fortieth review).
-    // And to the end of the turn it is answered in, which it takes with it: a round lasts its
-    // turn, and one whose agent never called `retro_propose` took every later turn begun with
-    // no prompt seen.
-    // The first end after it is that turn's: the round begins at a turn's start, or at a
-    // hand-over that came between turns and whose turn follows, logged or not.
-    for (let j = from; j < sorted.length; j++) {
-      const r = sorted[j]
-      if (j > from && ((!r.from && r.k === "prompt") || begins.has(j))) break
-      steps.add(r.n)
-      if (!r.from && r.k === "session" && r.event === "end") break
-    }
-  }
-  // A delegated session that began inside a round — a reader worded its own way — is ours in
-  // full, including what it writes after the round has closed: an early `retro_propose` ends
-  // the round while the reader is still reading (thirty-fourth review).
+export function ownSteps(records) {
+  const sorted = byStep(records)
   const readers = new Set()
-  for (const r of sorted) if (r.k === "prompt" && r.from && steps.has(r.n)) readers.add(r.from)
-  // And a session a `subagent` call with a work order's line started, wherever that call is:
-  // a reader the plugin did not recognise by its prompt is still one by its delegation. Then
-  // whatever a reader starts, at any depth, until nothing more is found.
-  for (const r of sorted) if (isReaderCall(r) && r.child) readers.add(r.child)
-  // And a delegated session that recorded an analysis, whatever it was told and wherever its
-  // first prompt fell: only a reader calls `retro_record`.
-  for (const r of sorted) if (r.from && r.k === "tool" && r.tool === "retro_record") readers.add(r.from)
+  for (const r of sorted) {
+    if (isReaderCall(r) && r.child) readers.add(r.child)
+    if (r.from && r.k === "tool" && r.tool === "retro_record") readers.add(r.from)
+  }
   for (let grew = true; grew; ) {
     grew = false
     for (const r of sorted) {
@@ -252,105 +119,122 @@ export function ownRounds(records) {
       }
     }
   }
+  const steps = new Set()
   for (const r of sorted) {
-    if (r.from && readers.has(r.from)) steps.add(r.n)
-    // And the delegation that started one, wherever it lands — after an early `retro_propose`.
-    if (r.k === "tool" && r.tool === "subagent" && r.child && readers.has(r.child)) steps.add(r.n)
-    if (r.k !== "tool") continue
-    // Ours wherever they land: a delegation's after-hook is written when its reader is done,
-    // which an early `retro_propose` puts after the round has closed (thirty-second review).
-    // A delegation's own text is the agent's, never the person's, so an indent is allowed — and
-    // OpenCode's own line is never in it: that is added to the child's prompt, not the call's.
-    if (OWN_TOOLS.has(r.tool) || isReaderCall(r)) steps.add(r.n)
+    const delegatesReader = r.k === "tool" && r.tool === "subagent" && r.child && readers.has(r.child)
+    if (r.k === "handover" || (r.from && readers.has(r.from)) || isReaderCall(r) || delegatesReader || (r.k === "tool" && OWN_TOOLS.has(r.tool))) {
+      steps.add(r.n)
+    }
   }
-  // The ranges the order names are the steps themselves, run by run, so a reader is told about
-  // everything that is ours — a reworded reader's records after its round included, and a
-  // stray call to the plugin's own tools — and not only the rounds (thirty-fifth review).
-  const listed = []
+  const ranges = []
   let run = null
   for (const r of sorted) {
     if (steps.has(r.n)) {
       if (run) run[1] = r.n
-      else listed.push((run = [r.n, r.n]))
+      else ranges.push((run = [r.n, r.n]))
     } else run = null
   }
-  return { steps, ranges: listed }
+  return { steps, ranges }
 }
 
 /**
- * The last step an analysis could read something in: not the plugin's own, not a step that holds
- * nothing. Reading up to it is reading all of it, whatever trails after (thirty-third review).
+ * The plugin's exchange, as far as the order of the log suggests — a guess, and used only to
+ * decide whether growth is worth an order (`nothingNew`), never to tell a reader what to skip:
+ * after a `work` hand-over that was delivered, what the agent does until the person next
+ * speaks; after a hand-over of another kind, what the agent says until then. A subagent first
+ * told something in such a stretch goes with it.
  */
-export function lastReadable(records, own = ownRounds(records).steps, plugin = repliesToPlugin(records)) {
-  let last = 0
-  for (const r of records) if (readable(r, plugin) && !own.has(r.n) && (r.n ?? 0) > last) last = r.n
-  return last
-}
-
-/** Texts that answer one of the plugin's own hand-overs (not `work`: that one has a round). */
-export function repliesToPlugin(records) {
-  const sorted = [...records].sort((a, b) => (a.n ?? 0) - (b.n ?? 0))
-  const at = answerStarts(sorted)
-  const begins = new Set()
-  for (const [h, j] of at) if (j !== null && !isWorkHandover(sorted[h])) begins.add(j)
+export function pluginExchange(records) {
+  const sorted = byStep(records)
+  const lost = undelivered(sorted)
   const out = new Set()
-  let answering = null
-  // Subagents delegated while a reply to a hand-over was going on: theirs is part of it — their
-  // instruction and their text, as the agent's own text is. One already running before the
-  // hand-over is the person's, and stays so (forty-second to forty-fourth reviews).
-  const answeringBy = new Set()
-  // A reply starts where `answerStarts` says the hand-over is answered — a turn later for one
-  // sent into a running turn (round 5 of 10), and never for one that was not delivered, whose
-  // notice leaves the turn the person's (round 6 of 10).
-  for (let i = 0; i < sorted.length; i++) {
-    const r = sorted[i]
-    if (begins.has(i)) answering = "handover"
+  let mode = null // "work" | "reply" | null
+  const with_ = new Set()
+  for (const r of sorted) {
     if (r.from) {
-      if (r.k === "prompt" && answering === "handover" && !answeringBy.has(r.from)) {
-        answeringBy.add(r.from)
-        out.add(r.n)
-      } else if (r.k === "text" && answeringBy.has(r.from)) out.add(r.n)
+      if (r.k === "prompt" && mode) with_.add(r.from)
+      if (with_.has(r.from) && (mode === "work" || r.k === "text" || r.k === "prompt")) out.add(r.n)
       continue
     }
-    if (r.k === "prompt") answering = "prompt"
-    // A reply lasts its turn: a later turn begun without a prompt seen is not the plugin's for
-    // it, nor what a subagent started for that reply is asked to do in a turn after.
-    else if (r.k === "session" && r.event === "end") {
-      answering = null
-      answeringBy.clear()
-    }
-    else if (r.k === "text" && answering === "handover") out.add(r.n)
+    if (r.k === "prompt") {
+      mode = null
+      with_.clear()
+    } else if (r.k === "handover" && !r.undelivered && !lost.has(r.n)) mode = isWorkHandover(r) ? "work" : "reply"
+    else if (mode === "work" && r.k !== "session") out.add(r.n)
+    else if (mode === "reply" && r.k === "text") out.add(r.n)
   }
   return out
 }
 
+/**
+ * How many of the plugin's hand-overs the latest turn of the person's session began with — 0 or
+ * 1. A turn's input is the last input written before it began: the person's prompt, or a sent,
+ * delivered hand-over — one sent into the turn before waits in the inbox (measured, cycle 9),
+ * so the turn after is the first it can begin. Read back from the current turn's start to the
+ * previous one's. The current turn is the last one logged as started, unless the log went on
+ * after that turn ended: then this one's start is not logged, and it is what came after.
+ */
+export function turnHandovers(records) {
+  const sorted = byStep(records)
+  const lost = undelivered(sorted)
+  const isStart = (r) => !r.from && r.k === "session" && r.event === "start"
+  let last = -1
+  for (let i = sorted.length - 1; i >= 0 && last < 0; i--) if (isStart(sorted[i])) last = i
+  // Where the current turn begins, and how far back its input can lie: to the previous turn's
+  // start — or, for a turn whose start is not logged, to the end of the turn before it.
+  let from = last < 0 ? sorted.length : last
+  let floor = -1
+  let end = -1
+  for (let i = last + 1; i < sorted.length; i++) {
+    const r = sorted[i]
+    if (r.from) continue
+    if (r.k === "session" && r.event === "end") end = i
+    else if (end >= 0 && r.k !== "prompt" && r.k !== "handover") {
+      from = i
+      floor = end
+      end = -1
+    }
+  }
+  for (let i = from - 1; i > floor; i--) {
+    const r = sorted[i]
+    if (r.from) continue
+    if (isStart(r) || r.k === "prompt") return 0
+    if (r.k === "handover" && isSent(r) && !r.undelivered && !lost.has(r.n)) return 1
+  }
+  return 0
+}
+
+/**
+ * The last step an analysis could read something in: anything readable that is not the
+ * plugin's for certain. Reading up to it is reading all of it. Not narrowed by a guess: a step
+ * credited as read and wrongly taken for the plugin's would be lost.
+ */
+export function lastReadable(records, own = ownSteps(records).steps) {
+  let last = 0
+  for (const r of records) if (readable(r) && !own.has(r.n) && (r.n ?? 0) > last) last = r.n
+  return last
+}
+
 /** A step that could hold evidence: what someone said or did (log.md, "Owed"). */
-function readable(r, plugin) {
-  return (
-    (r.k === "prompt" && !plugin.has(r.n)) ||
-    r.k === "tool" ||
-    (r.k === "text" && !plugin.has(r.n)) ||
-    (r.k === "step" && r.files?.length > 0)
-  )
+function readable(r, exchange = null) {
+  if (exchange?.has(r.n)) return false
+  return r.k === "prompt" || r.k === "tool" || r.k === "text" || (r.k === "step" && r.files?.length > 0)
 }
 
 /**
  * Whether the records a log gained since its mark (`added`, out of `all` — the whole log, or a
- * function that reads it, called only when it is needed) hold nothing to read:
- * each is a step that cannot hold evidence — a hand-over, a turn's start or end, a reply to the
- * plugin's own hand-over — or part of the plugin's own work. A log grown by nothing else is not
- * owed for it (log.md, "Owed"): otherwise every `/retro` left its own session waiting, and the
- * next one paid a read to skip the round.
+ * function that reads it, called only when it is needed) hold nothing worth an order: each is a
+ * step that cannot hold evidence, the plugin's own for certain, or — the one place a guess is
+ * allowed — the plugin's exchange as the log's order suggests it. Wrong, it delays a read; the
+ * mark does not move, so nothing is lost (log.md, "Owed").
  */
 export function nothingNew(all, added) {
-  // The common cases, cheaply, before the whole log is needed: nothing added that could be
-  // material at all, or the person speaking — which is always something, and never a round's.
-  if (!added.some((r) => readable(r, new Set()))) return true
+  if (!added.some((r) => readable(r))) return true
   if (added.some((r) => r.k === "prompt" && !r.from)) return false
   const records = typeof all === "function" ? all() : all
-  const own = ownRounds(records).steps
-  const plugin = repliesToPlugin(records)
-  return added.every((r) => !readable(r, plugin) || own.has(r.n))
+  const own = ownSteps(records).steps
+  const exchange = pluginExchange(records)
+  return added.every((r) => !readable(r, exchange) || own.has(r.n))
 }
 
 /**
@@ -384,7 +268,7 @@ export function composeOrder({
   /** The plugin's own rounds in the log, `[first, last]` each, for the reader to leave out. */
   rounds = [],
   /** Texts that answer the plugin's hand-overs, from the whole log — one rule with `nothingNew`. */
-  replies = null,
+  exchange = null,
 }) {
   // Skip only a session that cannot contain evidence of anything: one instruction, one
   // answer, nothing done. Everything else is analysed.
@@ -411,10 +295,9 @@ export function composeOrder({
   // answered in turn — a call per `/retro`, spent on the plugin talking to itself. Found by a
   // stranger's run. Only replies to a person's prompt count; tool calls always do.
   const reread = analysedUpTo > 0
-  // One rule with `nothingNew`: the `work` hand-over's replies are its round's, already left
-  // out; the other hand-overs' replies — a subagent delegated in answer included — are the
-  // plugin talking to itself (forty-fifth review).
-  const plugin = replies ?? repliesToPlugin(records)
+  // The same guess as `nothingNew`'s, and for the same kind of decision — whether a read is
+  // worth paying for. A skip moves no step mark, so a wrong one costs a read later, not a step.
+  const plugin = exchange ?? pluginExchange(records)
   // On `readable`, the one rule `nothingNew` and `lastReadable` use too (forty-sixth review).
   const asked = records.filter((r) => r.k === "prompt" && readable(r, plugin) && (!reread || r.n > analysedUpTo)).length
   const toolCalls = records.filter((r) => r.k === "tool").length
@@ -455,12 +338,13 @@ export function composeOrder({
     rounds.length
       ? section(
           "The plugin's own work — leave it out",
-          "These steps are the plugin's own — its rounds, its own calls and its readers' work — " +
-            "and they are all of it: " +
+          "These steps are the plugin's own, for certain — its hand-overs, its own tool calls, " +
+            "the delegations that started its readers and everything those readers did: " +
             // Every one, those before the mark included: the reader is invited to read the earlier
-            // steps for context, and a round there may quote another session's problems.
+            // steps for context, and a reader there may quote another session's problems.
             formatRanges(rounds) +
-            ". Leave exactly these out, as the rules below say.",
+            ". Leave them out. The round around them — the agent starting readers — is yours to " +
+            "recognise, as the rules below say.",
         )
       : null,
     section("Already concluded from this session", renderConcluded(concluded)),

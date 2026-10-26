@@ -416,5 +416,5 @@ test("a re-read names every one of the plugin's own steps, those before the mark
   // another session's problems: listed or not, they are the plugin's.
   const r = rig()
   const { order } = analyse(r, { analysedUpTo: 10, rounds: [[3, 5], [12, 14]] })
-  assert.match(order.text, /all of it: steps 3–5, steps 12–14\./)
+  assert.match(order.text, /everything those readers did: steps 3–5, steps 12–14\./)
 })

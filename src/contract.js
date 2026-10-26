@@ -88,18 +88,21 @@ Rules:
   \`"about": "lesson"\` means that — and not a hand-over that a later notice with
   \`"undelivered": true\` names by its step (\`of\`): that one never arrived, and what follows it
   is ordinary work.
-- **The plugin's own work is not the session's — leave it out.** A \`handover\` with
-  \`"about": "work"\` asks for a round of this plugin's own: the agent starting readers like
-  you, their records coming back, \`retro_propose\`. The order names, step by step, everything
-  in this log that is the plugin's own — its rounds, its calls to \`retro_record\` and
-  \`retro_propose\`, a \`subagent\` call whose prompt is a work order's line, and whatever such
-  a reader did. Leave exactly those steps out: take no lesson from them, count none of them as
-  cost, and read nothing in them as a recurrence — a reader in there may be quoting another
-  session's problems, and they are that session's. Where the order names none, there are none.
-  A \`handover\` with \`"about": "notice"\` is this plugin saying something else — nothing to
-  review, a command that failed — and what follows it is ordinary work, but for the agent's
-  text in answer to it, and what a subagent it started for that answer was told and said:
-  those are the plugin's exchange and hold nothing of the session's.
+- **The plugin's own work is not the session's — leave it out.** The order names the steps
+  that are this plugin's for certain: its hand-overs, its calls to \`retro_record\` and
+  \`retro_propose\`, the delegations that started readers like you, and everything those
+  readers did — a reader in there may be quoting another session's problems, and they are that
+  session's. Leave those steps out. Around them is the round they belong to, which only you
+  can see whole: after a \`handover\` with \`"about": "work"\`, until the person next speaks
+  (a \`prompt\` without \`from\`), what the agent does to start readers, wait for them and
+  hand the results over is the plugin's too. Take no lesson from any of it, count none of it
+  as cost, read nothing in it as a recurrence — but anything the person's own task needed in
+  that stretch is still theirs. A \`handover\` with \`"about": "notice"\` is this plugin
+  saying something else — nothing to review, a command that failed — and what follows it is
+  ordinary work, but for the agent's text in answer to it, and what a subagent it started for
+  that answer was told and said: those are the plugin's exchange and hold nothing of the
+  session's. A hand-over that a later notice with \`"undelivered": true\` names by its step
+  (\`of\`) never arrived, and opens nothing.
 - \`proposal\` is optional. Omit it, or use \`null\`, when you can name the problem but not
   the fix — that is a normal and useful answer.
 - \`ask\` is optional and is for when the fix depends on something only the human knows.
