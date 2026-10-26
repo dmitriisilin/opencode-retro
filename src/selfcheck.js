@@ -276,7 +276,17 @@ export function assess(session) {
   return checks
 }
 
-const stamp = (ms) => (ms ? new Date(ms).toISOString().replace("T", " ").slice(0, 16) : "never")
+// In the reader's own time, with its offset: the file tells them a heartbeat "more than a few
+// minutes old" means a dead plugin, and an unlabelled UTC time read against a clock seven hours
+// ahead made a healthy plugin look hours dead (the stranger's hour after the ten rounds).
+const stamp = (ms) => {
+  if (!ms) return "never"
+  const d = new Date(ms)
+  const pad = (n) => String(n).padStart(2, "0")
+  const off = -d.getTimezoneOffset()
+  const zone = `${off < 0 ? "-" : "+"}${pad(Math.floor(Math.abs(off) / 60))}:${pad(Math.abs(off) % 60)}`
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())} ${zone}`
+}
 
 export function render(state) {
   const width = Math.max(...state.checks.map((c) => c.status.length), DEGRADED.length)

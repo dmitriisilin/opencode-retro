@@ -305,3 +305,17 @@ test("a session whose log was set aside is not told the next /retro asks again",
   assert.doesNotMatch(line.meaning, /asks again/)
   assert.match(line.meaning, /unless it grows/)
 })
+
+test("the report's times are the reader's own, with their offset", () => {
+  // Read against a clock: an unlabelled UTC time made a healthy plugin look hours dead to a
+  // reader seven hours east, next to a rule that calls a few minutes' silence a dead plugin.
+  const tz = process.env.TZ
+  process.env.TZ = "Asia/Novosibirsk"
+  try {
+    const check = createSelfCheck({ versions: {}, repo: "r", now: () => Date.parse("2026-10-26T04:12:00Z") })
+    check.verify(healthy, Date.parse("2026-10-26T04:12:00Z"))
+    assert.match(check.render(), /verified\s+2026-10-26 11:12 \+07:00/)
+  } finally {
+    process.env.TZ = tz
+  }
+})
