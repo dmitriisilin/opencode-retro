@@ -26,7 +26,9 @@ it the log could not tell the two apart.
 hand-over's step: every record of the turn for a `work` hand-over, the agent's text and the
 turn's start for a lesson or a notice. Written at the moment of writing, from what ingest knew
 then, and ended by the turn's end or the person's prompt (analysis.md). A hand-over that
-resumed a session carries `resumes`.
+resumed a session carries `resumes`. One the plugin sent to the session to be acted on, rather than handed back as
+a tool result, carries `sent`; one whose send failed is followed by a notice with `undelivered`
+naming it by `of`.
 
 **Step number (`n`).** The plugin's own counter, one per owner, continuous for the life of
 the file. It is the coordinate a lesson's evidence uses, so it must be unique within a
@@ -112,6 +114,7 @@ keeps everything.
   `a call written as unfinished at an interrupt is not written again when its after-hook comes late`
   `a call written as unfinished stays one record however many after-hooks come late`
   `a wrapper's after-hook arriving after the turn's end is not counted into the next turn`
+  `after a reload, a call already begun means a turn is running, and the log's end guards a redelivered end`
 - An event is taken in once: one delivered again is known by its `durable.seq` — one already
   seen for its own session, a subagent's sequence being its own — and writes nothing. One that
   arrives out of order is not a repeat, and is taken in. A repeated start or end would be a turn boundary that never happened, a

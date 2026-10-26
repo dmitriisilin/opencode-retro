@@ -324,7 +324,7 @@ test("the report's times are the reader's own, with their offset", () => {
 
 test("more hook calls than events is explained, and the remedy for a dead plugin is one that works", () => {
   const checks = assess({ ...healthy, counts: { ...healthy.counts, toolEvents: 2, toolHook: 3 } })
-  assert.match(checks.find((c) => c.name === "tool hook").detail, /reaches the hook twice/)
+  assert.match(checks.find((c) => c.name === "tool hook").detail, /the event stream missed some calls the hook saw/)
   const check = createSelfCheck({ versions: {}, repo: "r" })
   check.verify(healthy)
   const text = check.render()

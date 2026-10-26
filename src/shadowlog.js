@@ -86,8 +86,11 @@ export function createShadowLog({ dir, onError }) {
       return this.last(sessionID)?.n ?? 0
     },
 
-    /** The last whole record in the log, or null: what the numbering and the idle check read. */
-    last(sessionID) {
+    /**
+     * The last whole record in the log, or null: what the numbering reads. With `skip`, the last
+     * one it does not reject — the idle check looks past the plugin's own hand-overs.
+     */
+    last(sessionID, skip = null) {
       // From the tail, widening until a whole record is found: this is read at the start of
       // every turn, inside the first hook, and a log left open for weeks is large.
       let fd
@@ -110,7 +113,7 @@ export function createShadowLog({ dir, onError }) {
             if (!line) continue
             try {
               const record = JSON.parse(line)
-              if (Number.isFinite(record?.n)) return record
+              if (Number.isFinite(record?.n) && !skip?.(record)) return record
             } catch {
               /* a half-written last line: keep looking back */
             }

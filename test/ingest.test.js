@@ -529,3 +529,18 @@ test("a wrapper's after-hook arriving after the turn's end is not counted into t
   ingest.toolAfter({ sessionID: "s", id: "x", tool: "execute", input: {}, status: "completed", result: { output: "y" } })
   assert.equal(ingest.counts("s").toolHook, 0)
 })
+
+test("after a reload, a call already begun means a turn is running, and the log's end guards a redelivered end", () => {
+  const out = []
+  const ingest = createIngest({ emit: (_, r) => out.push(r), lastRecord: () => ({ n: 5, k: "session", event: "end" }), startAt: () => 5 })
+  ingest.toolBefore({ sessionID: "s", id: "c1", tool: "shell", input: {} }) // a turn running, seen mid-way
+  ingest.handover("s", "go", "work", { sent: true })
+  assert.equal(out.at(-1).resumes, undefined, "not claimed idle")
+  const again = []
+  const fresh = createIngest({ emit: (_, r) => again.push(r), lastRecord: () => ({ n: 5, k: "session", event: "end" }), startAt: () => 5 })
+  fresh.prompt({ sessionID: "t", messageID: "m", prompt: { text: "x" } }) // owned
+  fresh.endTurn("t")
+  const t = createIngest({ emit: (_, r) => again.push(r), lastRecord: () => ({ n: 5, k: "session", event: "end" }), startAt: () => 5 })
+  t.handover("u", "note", "notice") // owns u; nothing of u's own written since the log's end
+  assert.equal(t.event({ type: "session.execution.succeeded", durable: { seq: 40 }, data: { sessionID: "u" } }), "repeated")
+})

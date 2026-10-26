@@ -150,7 +150,9 @@ export function assess(session) {
     (c.unfinished ? `, ${c.unfinished} unfinished when the turn ended` : "") +
     // More hook calls than events is not a fault: a tool run through Code Mode's `execute`
     // reaches the hook as itself and as the wrapper, under one id and one event.
-    (c.toolHook > c.toolEvents ? " (a tool run through `execute` reaches the hook twice)" : "")
+    // More hook calls than events: a call is counted once however many after-hooks it fires, so
+    // it is the event stream that missed some — reported, not a fault of the hook.
+    (c.toolHook > c.toolEvents ? " (the event stream missed some calls the hook saw)" : "")
 
   if (!c.toolEvents) {
     checks.push({

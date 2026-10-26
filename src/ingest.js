@@ -334,10 +334,14 @@ export function createIngest({
       // Not seen by this process: idle if its log ends with a turn's end, or if it has no log at
       // all — a fresh session, where `/retro` is the first thing done, has nothing running. A
       // log that ends any other way is a turn this process came into the middle of.
+      // Calls already begun in this process mean a turn is running, whatever the log ends with.
+      // Hand-overs of the plugin's own at the log's end — a send that failed, a notice — say
+      // nothing either way, and are looked past.
       let idle = s.idle
-      if (idle === undefined && !(s.n > 0)) {
+      if (idle === undefined && s.pending.size === 0) {
         const last = lastRecord(target)
         idle = last == null || (last.k === "session" && last.event === "end" && !last.from)
+        s.idle = idle
       }
       const resumes = sent && !undelivered && target === sessionID && idle === true
       const n = append(sessionID, {
@@ -456,6 +460,12 @@ export function createIngest({
           // whatever its seq: a repeat past the seqs kept, or a second end event for one turn. A
           // real turn writes something first — its prompt, or its start; one that wrote neither
           // (a start lost, a call interrupted before it finished) loses its end: a known limit.
+          // After a reload the guard starts from the log: a session whose last record of its own
+          // is a turn's end has no turn going on, and a redelivered end is a repeat.
+          if (s.endWritten === undefined) {
+            const last = lastRecord(owner(sessionID))
+            s.endWritten = last?.k === "session" && last.event === "end" && !last.from
+          }
           if (s.endWritten) return "repeated"
           // Kept past this end and the ends after it, so a late after-hook for one of them writes
           // nothing a second time; the oldest go first once there are many.

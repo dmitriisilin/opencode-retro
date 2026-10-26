@@ -22,9 +22,6 @@ export const WORK_MARK = "opencode-retro work order"
 /** Step ranges as an order names them: `step 4, steps 6–9`. One spelling, shared with the tests. */
 export const formatRanges = (ranges) => ranges.map(([a, b]) => (a === b ? `step ${a}` : `steps ${a}–${b}`)).join(", ")
 
-/** A hand-over asking for a round: a marker, holding nothing to read. */
-// Only the person's session's: a delegated one's neither opens a round nor ends one.
-const isWorkHandover = (r) => r.k === "handover" && r.about === "work" && !r.from
 
 /** The plugin's own tools: a call to one is the plugin's work wherever it is (analysis.md). */
 const OWN_TOOLS = new Set(["retro_record", "retro_propose"])
