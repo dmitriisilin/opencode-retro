@@ -104,6 +104,7 @@ keeps everything.
 - One turn, one end record: an end delivered again, or late, with no turn going on since, is not
   written — read in log order it would be a turn boundary that never happened.
   `a turn's end delivered twice is written once, a hand-over between them notwithstanding`
+  `a child's end folded into its parent's log does not swallow the parent's own end`
 - The event stream may annotate a log, never open one.
   `a session no hook ever fired for is not ours, and gets no log at all`
   `once a hook has fired, the event stream annotates that same session`

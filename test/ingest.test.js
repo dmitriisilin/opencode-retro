@@ -435,3 +435,14 @@ test("a turn's end delivered twice is written once, a hand-over between them not
   ingest.event({ type: "session.execution.succeeded", durable: { seq: 4 }, data: { sessionID: "s" } })
   assert.equal(out.filter((r) => r.k === "session" && r.event === "end").length, 2, "the next turn's end is news")
 })
+
+test("a child's end folded into its parent's log does not swallow the parent's own end", () => {
+  const parents = new Map()
+  const { out, ingest } = collector({ parentOf: (id) => parents.get(id) ?? null })
+  ingest.prompt({ sessionID: "p", messageID: "m1", prompt: { text: "go" } })
+  ingest.event({ type: "session.execution.started", durable: { seq: 1 }, data: { sessionID: "p" } })
+  parents.set("c", "p")
+  ingest.absorb("c", [{ n: 1, k: "session", event: "end", outcome: "succeeded" }])
+  ingest.event({ type: "session.execution.succeeded", durable: { seq: 2 }, data: { sessionID: "p" } })
+  assert.equal(out.filter((r) => r.k === "session" && r.event === "end" && !r.from).length, 1)
+})

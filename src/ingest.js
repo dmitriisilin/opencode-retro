@@ -94,8 +94,11 @@ export function createIngest({
     s.counts.records++
     // A turn going on again — a start, or work being done — makes its end news; a prompt or a
     // hand-over written between turns does not, since neither is a turn yet.
-    if (record.k === "session") s.endWritten = record.event === "end"
-    else if (record.k !== "prompt" && record.k !== "handover") s.endWritten = false
+    // Only the root's own turn: a delegation's start or end, folded in from a log it wrote before
+    // its parent was known, says nothing about whether the root's turn has ended.
+    if (record.k === "session") {
+      if (target === sessionID) s.endWritten = record.event === "end"
+    } else if (record.k !== "prompt" && record.k !== "handover") s.endWritten = false
     // A record of a delegation's own session says so: its prompt is the delegation's
     // instruction, not the person's, and the log alone could not tell the two apart.
     // Read from the file again after a turn ended: another process may have written the turns
