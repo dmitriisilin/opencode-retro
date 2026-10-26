@@ -411,9 +411,10 @@ test("a rejection reason quoting the list's mark does not stop the list being br
   assert.match(list, /`fresh-one`/)
 })
 
-test("a re-read names only the plugin's own steps it is asked to read", () => {
+test("a re-read names every one of the plugin's own steps, those before the mark included", () => {
+  // The reader is invited to read the earlier steps for context, and a round there may quote
+  // another session's problems: listed or not, they are the plugin's.
   const r = rig()
   const { order } = analyse(r, { analysedUpTo: 10, rounds: [[3, 5], [12, 14]] })
-  assert.match(order.text, /all of it: steps 12–14\./)
-  assert.doesNotMatch(order.text, /steps 3–5/)
+  assert.match(order.text, /all of it: steps 3–5, steps 12–14\./)
 })

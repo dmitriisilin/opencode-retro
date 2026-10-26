@@ -449,12 +449,14 @@ export function composeOrder({
     prompt.text,
     section("Session", [`id: ${session}`, `log: ${logPath}`, `steps: 1 to ${lastN || "?"}`].join("\n")),
     section("What to read", scope),
-    rounds.some(([, last]) => last > analysedUpTo)
+    rounds.length
       ? section(
           "The plugin's own work — leave it out",
           "These steps are the plugin's own — its rounds, its own calls and its readers' work — " +
             "and they are all of it: " +
-            formatRanges(rounds.filter(([, last]) => last > analysedUpTo)) +
+            // Every one, those before the mark included: the reader is invited to read the earlier
+            // steps for context, and a round there may quote another session's problems.
+            formatRanges(rounds) +
             ". Leave exactly these out, as the rules below say.",
         )
       : null,

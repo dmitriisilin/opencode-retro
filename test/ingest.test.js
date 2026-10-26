@@ -411,3 +411,14 @@ test("a failed send takes back only the hand-over it names, in the turn it was c
   ingest.handover("s", "could not be delivered", "notice", { undelivered: true, of: first })
   assert.equal(ingest.counts("s").handovers, 1, "the turn's own hand-over still counts")
 })
+
+test("a delegation's call left open at the root's end is written with its origin", () => {
+  const parents = new Map()
+  const { out, ingest } = collector({ parentOf: (id) => parents.get(id) ?? null })
+  ingest.prompt({ sessionID: "p", messageID: "m1", prompt: { text: "go" } })
+  parents.set("c", "p")
+  ingest.toolBefore({ sessionID: "c", id: "k1", tool: "shell", input: { command: "sleep 99" } })
+  ingest.event({ type: "session.execution.interrupted", durable: { seq: 9 }, data: { sessionID: "p" } })
+  const open = out.find((r) => r.status === "unfinished")
+  assert.equal(open.from, "c", "the subagent's call, not the agent's")
+})

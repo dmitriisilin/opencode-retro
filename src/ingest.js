@@ -210,6 +210,8 @@ export function createIngest({
       if (before.pending.has(p.id)) return
       before.pending.set(p.id, {
         id: p.id,
+        // Whose call it is: written as unfinished at the root's end, a delegated one keeps `from`.
+        session: p.sessionID,
         tool: p.tool,
         input: p.input,
         message: p.messageID ?? null,
@@ -351,7 +353,7 @@ export function createIngest({
             // Counted, because it is the one honest reason an event has no after-hook: the turn
             // ended (an interrupt, usually) while the call was still running.
             s.counts.unfinished++
-            append(sessionID, {
+            append(call.session ?? sessionID, {
               k: "tool",
               seq: s.seq.get(call.id) ?? null,
               id: call.id,

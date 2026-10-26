@@ -98,6 +98,9 @@ keeps everything.
   in the middle of an append loses the record being written and nothing after it — the next
   append starts on a line of its own.
   `a crash mid-append loses only its own half-record, not the prompt after it`
+- A delegation's record says so wherever it is written: a call of a subagent's still open when
+  the root's turn ends is logged as unfinished with that subagent as its `from`.
+  `a delegation's call left open at the root's end is written with its origin`
 - The event stream may annotate a log, never open one.
   `a session no hook ever fired for is not ours, and gets no log at all`
   `once a hook has fired, the event stream annotates that same session`
