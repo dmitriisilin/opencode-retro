@@ -372,7 +372,11 @@ export default {
         await run(invocation)
       } catch (err) {
         onError(`command.${name}`, err)
-        await say(invocation.sessionID, `_opencode-retro: \`/${name}\` failed: ${err?.message ?? err}. See .retro/plugin.log._`, "notice")
+        // Not resumed in a subagent's session, as `retro()` does not resume one for its refusal:
+        // its agent would take a note meant for the person as work.
+        await say(invocation.sessionID, `_opencode-retro: \`/${name}\` failed: ${err?.message ?? err}. See .retro/plugin.log._`, "notice", {
+          resume: !invocation.sessionID || standsAlone(invocation.sessionID),
+        })
       }
     }
 
