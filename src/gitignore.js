@@ -26,6 +26,7 @@ state.json
 selfcheck.md
 plugin.log
 prompts/updates/
+updates-delivered
 *.tmp
 `
 

@@ -272,14 +272,16 @@ export function createIngest({
       // not its (the review after the stranger's hour).
       // Not consumed: Code Mode reports a call twice, the inner tool and its wrapper.
       if (s.flushed?.has(p.id)) return
-      s.counts.toolHook++
       const started = s.pending.get(p.id)
       s.pending.delete(p.id)
-      // One call id is one record. Code Mode's `execute` reports its inner tool and the
-      // wrapper separately, both under the same id; appending both made the extractor read
-      // one action as two calls and invent a lesson about it (measured live).
+      // One call id is one record, and one hook call counted. Code Mode's `execute` reports its
+      // inner tool and the wrapper separately, both under the same id; appending both made the
+      // extractor read one action as two calls and invent a lesson about it (measured live), and
+      // counting a wrapper that came after the turn's end gave the next turn a hook call it never
+      // had — enough to hide a dead hook there.
       if (s.completed.has(p.id)) return
       s.completed.add(p.id)
+      s.counts.toolHook++
       append(p.sessionID, {
         k: "tool",
         seq: s.seq.get(p.id) ?? null,
@@ -452,7 +454,8 @@ export function createIngest({
           // And an end with nothing of the session's written since the last one — not a prompt,
           // not a start, not a step; hand-overs aside, which are ours — is the same end again,
           // whatever its seq: a repeat past the seqs kept, or a second end event for one turn. A
-          // real turn always writes something first: at the least, its prompt.
+          // real turn writes something first — its prompt, or its start; one that wrote neither
+          // (a start lost, a call interrupted before it finished) loses its end: a known limit.
           if (s.endWritten) return "repeated"
           // Kept past this end and the ends after it, so a late after-hook for one of them writes
           // nothing a second time; the oldest go first once there are many.

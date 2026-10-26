@@ -520,3 +520,12 @@ test("a call written as unfinished stays one record however many after-hooks com
   ingest.toolAfter({ sessionID: "s", id: "x", tool: "execute", input: {}, status: "error", error: "aborted" })
   assert.equal(out.filter((r) => r.k === "tool" && r.id === "x").length, 1)
 })
+
+test("a wrapper's after-hook arriving after the turn's end is not counted into the next turn", () => {
+  const { ingest } = collector()
+  ingest.prompt({ sessionID: "s", messageID: "m1", prompt: { text: "go" } })
+  ingest.toolAfter({ sessionID: "s", id: "x", tool: "shell", input: {}, status: "completed", result: { output: "y" } })
+  ingest.endTurn("s")
+  ingest.toolAfter({ sessionID: "s", id: "x", tool: "execute", input: {}, status: "completed", result: { output: "y" } })
+  assert.equal(ingest.counts("s").toolHook, 0)
+})

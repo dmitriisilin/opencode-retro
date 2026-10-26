@@ -101,7 +101,7 @@ export default {
       onError,
     })
     const fingerprint = fingerprintOf(config.directory)
-    const prompts = createPrompts({ dir: config.prompts, updates: config.updates, onError })
+    const prompts = createPrompts({ dir: config.prompts, updates: config.updates, delivered: join(config.dir, "updates-delivered"), onError })
     const check = createSelfCheck({
       versions: { opencode: ctx?.app?.version ?? null, plugin: VERSION },
       repo: REPO,

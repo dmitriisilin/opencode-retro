@@ -209,7 +209,6 @@ export function composeOrder({
   concluded = [],
   /** The plugin's own rounds in the log, `[first, last]` each, for the reader to leave out. */
   rounds = [],
-  /** Texts that answer the plugin's hand-overs, from the whole log — one rule with `nothingNew`. */
 }) {
   // Skip only a session that cannot contain evidence of anything: one instruction, one
   // answer, nothing done. Everything else is analysed.

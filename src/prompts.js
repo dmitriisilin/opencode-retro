@@ -18,6 +18,9 @@ const packaged = resolve(dirname(fileURLToPath(import.meta.url)), "..", "prompts
 export function createPrompts({
   dir,
   updates,
+  // Which notices were delivered: machine state, kept inside the plugin's own directory even when
+  // the prompts are elsewhere — never written beside a user's own files.
+  delivered: deliveredPath = null,
   global = join(homedir(), ".config", "opencode", "retro", "prompts"),
   onError,
   write = writeFileSync,
@@ -116,7 +119,7 @@ export function createPrompts({
       // writing it again at the next load made it impossible to dismiss (decision 15; the
       // review after the stranger's hour). Remembered before the notice is written, and for
       // one already there, so a failure to remember never brings one back.
-      const delivered = join(updates, ".delivered")
+      const delivered = deliveredPath ?? join(updates, ".delivered")
       const sent = (() => {
         try {
           return readFileSync(delivered, "utf8").split("\n")
@@ -138,6 +141,7 @@ export function createPrompts({
       if (sent.includes(basename(file))) return null
       try {
         mkdirSync(updates, { recursive: true })
+        mkdirSync(dirname(delivered), { recursive: true })
         remember()
         try {
           writeFileSync(file, header(name, live, current) + text)

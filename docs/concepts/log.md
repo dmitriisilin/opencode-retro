@@ -111,6 +111,7 @@ keeps everything.
   `a delegation's call left open at the root's end is written with its origin`
   `a call written as unfinished at an interrupt is not written again when its after-hook comes late`
   `a call written as unfinished stays one record however many after-hooks come late`
+  `a wrapper's after-hook arriving after the turn's end is not counted into the next turn`
 - An event is taken in once: one delivered again is known by its `durable.seq` — one already
   seen for its own session, a subagent's sequence being its own — and writes nothing. One that
   arrives out of order is not a repeat, and is taken in. A repeated start or end would be a turn boundary that never happened, a
