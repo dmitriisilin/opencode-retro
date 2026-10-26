@@ -129,20 +129,6 @@ export function ownSteps(records) {
 }
 
 /**
- * The plugin's round, as it was stamped when written (`round` on a record: ingest). Used to
- * decide whether growth is worth an order and whether a quiet log may go (`nothingNew`), never
- * to tell a reader what to skip — though a reader sees the stamp too. A round is only ever a
- * turn that a hand-over sent to a session known to be idle resumed, to its end or until the
- * person speaks: when unsure, nothing is stamped, and the plugin pays for a read rather than
- * risk a step.
- */
-export function pluginExchange(records) {
-  const out = new Set()
-  for (const r of records) if (r.round != null) out.add(r.n)
-  return out
-}
-
-/**
  * How many of the plugin's hand-overs the latest turn of the person's session began with — 0 or
  * 1: whether that turn's start was stamped as a round's (ingest). A turn the plugin cannot be
  * sure it began is not claimed.
@@ -150,7 +136,11 @@ export function pluginExchange(records) {
 export function turnHandovers(records) {
   for (let i = records.length - 1; i >= 0; i--) {
     const r = records[i]
-    if (!r.from && r.k === "session" && r.event === "start") return r.round != null ? 1 : 0
+    if (r.from || r.k !== "session") continue
+    // An end first: the current turn's start is not logged (yet — events lag hooks), and the
+    // stamp on an earlier turn's start says nothing about this one.
+    if (r.event === "end") return 0
+    if (r.event === "start") return r.round != null ? 1 : 0
   }
   return 0
 }
@@ -167,26 +157,26 @@ export function lastReadable(records, own = ownSteps(records).steps) {
 }
 
 /** A step that could hold evidence: what someone said or did (log.md, "Owed"). */
-function readable(r, exchange = null) {
-  // The stamp on the record itself, not a step number: two writers can number a step twice.
-  if (exchange && r.round != null) return false
+function readable(r, { skipRound = false } = {}) {
+  // The plugin's round, as stamped when written (ingest, analysis.md): decides cost only — whether
+  // growth is worth an order, whether a quiet log may go — never what a reader is told to skip.
+  // Read on the record itself, not by step number: two writers can number a step twice.
+  if (skipRound && r.round != null) return false
   return r.k === "prompt" || r.k === "tool" || r.k === "text" || (r.k === "step" && r.files?.length > 0)
 }
 
 /**
  * Whether the records a log gained since its mark (`added`, out of `all` — the whole log, or a
  * function that reads it, called only when it is needed) hold nothing worth an order: each is a
- * step that cannot hold evidence, the plugin's own for certain, or — the one place a guess is
- * allowed — the plugin's exchange as the log's order suggests it. Wrong, it delays a read; the
- * mark does not move, so nothing is lost (log.md, "Owed").
+ * step that cannot hold evidence, the plugin's own for certain, or its round as stamped when
+ * written (analysis.md). The same rule decides whether a quiet log may go (log.md, "Owed").
  */
 export function nothingNew(all, added) {
   if (!added.some((r) => readable(r))) return true
   if (added.some((r) => r.k === "prompt" && !r.from)) return false
   const records = typeof all === "function" ? all() : all
   const own = ownSteps(records).steps
-  const exchange = pluginExchange(records)
-  return added.every((r) => !readable(r, exchange) || own.has(r.n))
+  return added.every((r) => !readable(r, { skipRound: true }) || own.has(r.n))
 }
 
 /**
@@ -220,7 +210,6 @@ export function composeOrder({
   /** The plugin's own rounds in the log, `[first, last]` each, for the reader to leave out. */
   rounds = [],
   /** Texts that answer the plugin's hand-overs, from the whole log — one rule with `nothingNew`. */
-  exchange = null,
 }) {
   // Skip only a session that cannot contain evidence of anything: one instruction, one
   // answer, nothing done. Everything else is analysed.
@@ -247,13 +236,13 @@ export function composeOrder({
   // answered in turn — a call per `/retro`, spent on the plugin talking to itself. Found by a
   // stranger's run. Only replies to a person's prompt count; tool calls always do.
   const reread = analysedUpTo > 0
-  // The same guess as `nothingNew`'s, and for the same kind of decision — whether a read is
-  // worth paying for. A skip moves no step mark, so a wrong one costs a read later, not a step.
-  const plugin = exchange ?? pluginExchange(records)
-  // On `readable`, the one rule `nothingNew` and `lastReadable` use too (forty-sixth review).
-  const asked = records.filter((r) => r.k === "prompt" && readable(r, plugin) && (!reread || r.n > analysedUpTo)).length
-  const toolCalls = records.filter((r) => r.k === "tool").length
-  const newReply = records.some((r) => r.k === "text" && readable(r, plugin))
+  // The same rule as `nothingNew`'s, and for the same kind of decision — whether a read is
+  // worth paying for: the plugin's round, as stamped, is no reason to pay. A skip moves no step
+  // mark, so a skip wrongly made costs a read later, not a step.
+  const material = (r) => readable(r, { skipRound: true })
+  const asked = records.filter((r) => r.k === "prompt" && material(r) && (!reread || r.n > analysedUpTo)).length
+  const toolCalls = records.filter((r) => r.k === "tool" && material(r)).length
+  const newReply = records.some((r) => r.k === "text" && material(r))
   if (reread ? asked === 0 && toolCalls === 0 && !newReply : asked <= 1 && toolCalls === 0) {
     return { ok: true, skipped: true, detail: "nothing to extract (one exchange, nothing done)" }
   }

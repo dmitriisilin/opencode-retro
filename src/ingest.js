@@ -220,7 +220,9 @@ export function createIngest({
       const s = sessions.get(owner(sessionID))
       if (!s) return
       s.pending.clear()
-      s.completed.clear()
+      // Not `completed`: Code Mode's wrapper reports a call again after the inner tool, and may
+      // do so after the turn's end. Kept, and trimmed once it is long.
+      if (s.completed.size > 512) s.completed.clear()
       s.seq.clear()
       s.counts = freshCounts()
       s.countedHandovers = new Set()

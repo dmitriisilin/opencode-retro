@@ -1843,7 +1843,7 @@ test("a hand-over that was never delivered leaves the rest of the turn the perso
 })
 
 test("the person speaking before a waiting hand-over's turn makes that turn theirs", async () => {
-  const { pluginExchange, lastReadable } = await import("../src/extract.js")
+  const { lastReadable } = await import("../src/extract.js")
   const records = [
     { n: 1, k: "prompt", text: "fix bug" },
     { n: 2, k: "session", event: "start" },
@@ -1856,7 +1856,7 @@ test("the person speaking before a waiting hand-over's turn makes that turn thei
     { n: 9, k: "text", text: "you are right, X is done differently" },
     { n: 10, k: "session", event: "end" },
   ]
-  assert.ok(!pluginExchange(records).has(9), "the answer to the person is theirs")
+  assert.ok(!records.find((r) => r.n === 9).round, "the answer to the person is theirs")
   assert.equal(lastReadable(records), 9)
 })
 
@@ -2203,7 +2203,6 @@ test("what the plugin names as its own is certain, and never the person's work a
 })
 
 test("a hand-over that never arrived opens no exchange", async () => {
-  const { pluginExchange } = await import("../src/extract.js")
   const records = [
     { n: 1, k: "prompt", text: "fix bug" },
     { n: 2, k: "session", event: "start" },
@@ -2211,7 +2210,7 @@ test("a hand-over that never arrived opens no exchange", async () => {
     { n: 4, k: "handover", about: "notice", undelivered: true, of: 3, text: "could not be delivered" },
     { n: 5, k: "tool", tool: "shell", input: { command: "npm test" }, exit: 2 },
   ]
-  assert.ok(!pluginExchange(records).has(5))
+  assert.ok(!records.find((r) => r.n === 5).round)
 })
 
 test("the contract names the certain steps and leaves the round to the reader", async () => {
@@ -2297,7 +2296,7 @@ test("a hand-over marks whether it resumes the session only when this process kn
 })
 
 test("a hand-over not known to resume the session takes nothing of the person's for the plugin's", async () => {
-  const { pluginExchange, nothingNew } = await import("../src/extract.js")
+  const { nothingNew } = await import("../src/extract.js")
   // A reload mid-turn: no start logged, the /retro sent into the running turn.
   const reload = [
     { n: 1, k: "prompt", text: "fix it" },
@@ -2307,7 +2306,7 @@ test("a hand-over not known to resume the session takes nothing of the person's 
     { n: 5, k: "text", text: "fixed" },
     { n: 6, k: "session", event: "end" },
   ]
-  assert.equal(pluginExchange(reload).size, 0)
+  assert.ok(!reload.some((r) => r.round != null))
   assert.equal(nothingNew(reload, reload.slice(2)), false)
   // A lesson sent into the person's running turn: their agent's answer there is theirs.
   const running = [
@@ -2317,10 +2316,12 @@ test("a hand-over not known to resume the session takes nothing of the person's 
     { n: 4, k: "text", text: "answer to the person" },
     { n: 5, k: "session", event: "end" },
   ]
-  assert.equal(pluginExchange(running).size, 0)
+  assert.ok(!running.some((r) => r.round != null))
 })
 
 /* The round, stamped as it is written. */
+
+const stamped = (records) => new Set(records.filter((r) => r.round != null).map((r) => r.n))
 
 const stamping = async () => {
   const { createIngest } = await import("../src/ingest.js")
@@ -2345,8 +2346,8 @@ test("the turn a work hand-over resumed is stamped as the plugin's round, to its
   turn(() => ev("session.text.ended", "s", { assistantMessageID: "t", text: "starting readers" }))
   ev("session.execution.started") // a later turn, begun by something else
   ingest.toolAfter({ sessionID: "s", id: "b", tool: "edit", input: {}, status: "completed", result: { output: "y" } })
-  const { pluginExchange, turnHandovers } = await import("../src/extract.js")
-  const x = pluginExchange(out)
+  const { turnHandovers } = await import("../src/extract.js")
+  const x = stamped(out)
   assert.equal(out.find((r) => r.k === "handover").resumes, true)
   assert.ok(out.filter((r) => r.round === w).some((r) => r.k === "text"), "the round's text")
   assert.ok(!x.has(out.find((r) => r.id === "a").n) && !x.has(out.find((r) => r.id === "b").n), "neither the turn before nor the turn after")
@@ -2375,14 +2376,14 @@ test("a lesson's turn stamps only the agent relaying it, and its start", async (
   ingest.prompt({ sessionID: "s", messageID: "m1", prompt: { text: "go" } })
   turn()
   ingest.handover("s", "a lesson", "lesson", { sent: true })
-  turn(() => {
-    ev("session.text.ended", "s", { assistantMessageID: "t", text: "here is the lesson" })
-    ingest.toolAfter({ sessionID: "s", id: "c", tool: "read", input: {}, status: "completed", result: { output: "x" } })
-  })
   const { turnHandovers } = await import("../src/extract.js")
+  ev("session.execution.started")
+  ev("session.text.ended", "s", { assistantMessageID: "t", text: "here is the lesson" })
+  ingest.toolAfter({ sessionID: "s", id: "c", tool: "read", input: {}, status: "completed", result: { output: "x" } })
+  assert.equal(turnHandovers(out), 1, "while it runs, the turn began with the hand-over")
+  ev("session.execution.succeeded")
   assert.ok(out.find((r) => r.k === "text").round != null)
   assert.equal(out.find((r) => r.id === "c").round, undefined)
-  assert.equal(turnHandovers(out), 1, "the turn began with the hand-over")
 })
 
 test("a hand-over that never arrived opens no round", async () => {
@@ -2431,4 +2432,39 @@ test("a hand-over to a session not seen running counts as a turn's input when it
   ingest.handover("s", "go", "work", { sent: true })
   assert.equal(out[0].resumes, undefined)
   assert.equal(ingest.counts("s").handovers, 1)
+})
+
+test("a turn whose start is not logged yet is not excused by the stamp on the turn before", async () => {
+  const { turnHandovers } = await import("../src/extract.js")
+  const records = [
+    { n: 1, k: "handover", about: "work", sent: true, resumes: true, text: "the logs come first" },
+    { n: 2, k: "session", event: "start", round: 1 },
+    { n: 3, k: "session", event: "end", round: 1 },
+    { n: 4, k: "tool", tool: "read", input: { path: "a.js" } }, // the next turn's first hook, its start still on the way
+  ]
+  assert.equal(turnHandovers(records), 0)
+  assert.equal(turnHandovers(records.slice(0, 2)), 1)
+})
+
+test("a skip decision does not count the plugin's round as tool calls", async () => {
+  const { composeOrder } = await import("../src/extract.js")
+  const { createStore } = await import("../src/lessons.js")
+  const { createState } = await import("../src/state.js")
+  const { createPrompts } = await import("../src/prompts.js")
+  const root = mkdtempSync(join(tmpdir(), "retro-skip-"))
+  const order = composeOrder({
+    records: [
+      { n: 1, k: "prompt", text: "do a thing" },
+      { n: 3, k: "handover", about: "work", text: "the logs come first" },
+      { n: 4, k: "tool", tool: "glob", input: { pattern: ".retro/work/*" }, round: 3 },
+    ],
+    session: "ses_x",
+    logPath: join(root, "x.jsonl"),
+    lastN: 4,
+    analysedUpTo: 2,
+    prompts: createPrompts({ dir: join(root, "prompts"), updates: join(root, "u"), global: join(root, "g") }),
+    store: createStore({ dir: join(root, "lessons"), archive: join(root, "archive") }),
+    state: createState({ path: join(root, "state.json") }),
+  })
+  assert.ok(order.skipped, order.detail)
 })

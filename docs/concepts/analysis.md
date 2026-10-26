@@ -259,6 +259,7 @@ stretch of log is the reader's job).*
   `a hand-over that never arrived opens no round`
   `a fresh session /retro is run in first is idle, a log ending mid-turn is not`
   `the review of a lesson handed over inside a round is the person's work, its relay the plugin's`
+  `a skip decision does not count the plugin's round as tool calls`
   `a hand-over marks whether it resumes the session only when this process knows it idle`
   `a hand-over not known to resume the session takes nothing of the person's for the plugin's`
   `the contract counts the plugin's stretches a reader left out as read`

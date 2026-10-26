@@ -139,6 +139,7 @@ last analysis of the session whichever path ran it.
   `a turn whose start went unlogged is not excused by the hand-over that began the one before`
   `a lesson's turn stamps only the agent relaying it, and its start`
   `a hand-over to a session not seen running counts as a turn's input when it cannot be stamped`
+  `a turn whose start is not logged yet is not excused by the stamp on the turn before`
   `only a hand-over sent to start a turn is counted as one`
   `a hand-over whose send failed is taken back from the count`
   `a failed send takes back only the hand-over it names, in the turn it was counted`

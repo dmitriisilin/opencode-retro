@@ -8,7 +8,7 @@ import { createState } from "./src/state.js"
 import { concludedIn, createStore, score } from "./src/lessons.js"
 import { assessCurrency, fingerprintOf } from "./src/currency.js"
 import { writeAtomic } from "./src/atomic.js"
-import { composeOrder, isWorkLine, lastReadable, nothingNew, ownSteps, pluginExchange, recordAnswer, recordedLessons, refreshLessons, turnHandovers } from "./src/extract.js"
+import { composeOrder, isWorkLine, lastReadable, nothingNew, ownSteps, recordAnswer, recordedLessons, refreshLessons, turnHandovers } from "./src/extract.js"
 import { RECORD_INPUT } from "./src/contract.js"
 import {
   PROPOSE_INPUT,
@@ -1340,14 +1340,12 @@ export default {
       // The plugin's own rounds are not new material: a log that grew by nothing but a round
       // takes no order (analysis.md, "The plugin's own work").
       const own = ownSteps(records)
-      const exchange = pluginExchange(records)
       const fresh = (mark.n > 0 ? records.filter((r) => r.n > mark.n || r.k === "prompt") : records).filter(
         (r) => !own.steps.has(r.n),
       )
       const composed = composeOrder({
         records: fresh,
         rounds: own.ranges,
-        exchange,
         analysedUpTo: mark.n,
         concluded: concludedFrom(sessionID),
         session: sessionID,
