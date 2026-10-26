@@ -79,7 +79,7 @@ function answerStarts(sorted) {
   let inTurn = false
   let waiting = []
   let spoke = false
-    for (let i = 0; i < sorted.length; i++) {
+  for (let i = 0; i < sorted.length; i++) {
     const r = sorted[i]
     if (r.from) continue
     // The person speaking before a waiting hand-over's turn begins makes that turn theirs: it
