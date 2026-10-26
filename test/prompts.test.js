@@ -91,7 +91,7 @@ test("the news file is written once, and keeps being reported", () => {
   writeFileSync(join(s.dir, "extract.md"), "---\nprompt: extract\nbase: 0\n---\n\nmine\n")
 
   assert.ok(s.prompts.checkForUpdate("extract"))
-  const first = readdirSync(s.updates)
+  const first = readdirSync(s.updates).filter((n) => n.endsWith(".md"))
   writeFileSync(join(s.updates, first[0]), "edited by hand")
 
   assert.ok(s.prompts.checkForUpdate("extract"), "still named in the report")
@@ -259,4 +259,16 @@ test("a news file the person read and deleted is not written again", () => {
   for (const f of s.prompts.pendingUpdates()) rmSync(join(s.updates, f))
   assert.equal(s.prompts.checkForUpdate("extract"), null, "the next load says nothing")
   assert.deepEqual(s.prompts.pendingUpdates(), [], "and writes nothing")
+})
+
+test("a news file already there before it was remembered stays deleted once deleted", () => {
+  const s = sandbox()
+  mkdirSync(s.updates, { recursive: true })
+  writeFileSync(join(s.dir, "extract.md"), "---\nprompt: extract\nbase: 0\n---\n\nmine\n")
+  s.prompts.checkForUpdate("extract")
+  rmSync(join(s.updates, ".delivered"))
+  // As a notice written before notices were remembered: present, and on no list.
+  assert.ok(s.prompts.checkForUpdate("extract"), "named while it is there")
+  for (const f of s.prompts.pendingUpdates()) rmSync(join(s.updates, f))
+  assert.equal(s.prompts.checkForUpdate("extract"), null, "and not written back")
 })

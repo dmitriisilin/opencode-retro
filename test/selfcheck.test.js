@@ -316,7 +316,9 @@ test("the report's times are the reader's own, with their offset", () => {
     check.verify(healthy, Date.parse("2026-10-26T04:12:00Z"))
     assert.match(check.render(), /verified\s+2026-10-26 11:12 \+07:00/)
   } finally {
-    process.env.TZ = tz
+    // Unset stays unset: assigned `undefined`, it becomes the zone "undefined".
+    if (tz === undefined) delete process.env.TZ
+    else process.env.TZ = tz
   }
 })
 

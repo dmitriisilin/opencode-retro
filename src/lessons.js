@@ -435,7 +435,7 @@ export function createStore({ dir, archive, cap = DEFAULT_CAP, halfLife = DEFAUL
             // so the baseline from its first recording stands.
             targetFingerprint: evicted
               ? (buried.targetFingerprint ?? fingerprint?.(buried.proposal?.target))
-              : (fingerprint?.(lesson.proposal?.target ?? buried.proposal?.target) ?? undefined),
+              : (fingerprint?.(lesson.proposal?.target) ?? undefined),
             file: freeName(dir, buried.file ?? `${buried.id}.md`),
           }
           if (write(back)) {
@@ -477,11 +477,15 @@ export function createStore({ dir, archive, cap = DEFAULT_CAP, halfLife = DEFAUL
             // argument for revisiting it, not grounds for silently reopening it.
             status: target.status ?? "new",
             proposal: target.proposal ?? lesson.proposal ?? undefined,
+            // A lesson with no proposal that gains one here is measured against the file it now
+            // names, from now — never against a hash of some other file it once named.
             lastSeen: already ? (target.lastSeen ?? seen) : seen,
             // Only the baseline taken at creation, never a fresh one: a lesson whose target did
             // not exist then has no baseline, and filling it in later would present a check of
             // "changed since the recurrence" as "changed since the lesson was recorded".
-            targetFingerprint: target.targetFingerprint ?? undefined,
+            targetFingerprint: target.proposal?.target
+              ? (target.targetFingerprint ?? undefined)
+              : (fingerprint?.(lesson.proposal?.target) ?? undefined),
           }
           if (write(updated)) result.merged.push(updated.id)
           byId.set(updated.id, updated)

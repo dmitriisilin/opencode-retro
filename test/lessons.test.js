@@ -729,3 +729,16 @@ test("a lesson reopened by a reader that told no story keeps no story from befor
   assert.doesNotMatch(back.body ?? "", /build line/)
   assert.match(back.decisions[0].body, /build line failed at step 9/, "kept with the decision it led to, not deleted")
 })
+
+test("a fix named for the first time after a reopening is measured against its own file", () => {
+  const s = sandbox()
+  const store = s.store()
+  const fingerprint = (t) => (t ? `hash-of-${t}` : undefined)
+  store.record([lesson({ proposal: { target: "A.md", change: "x" } })], { session: "s1", fingerprint })
+  store.close("lint-skill-no-config", "accepted", { note: "done" })
+  store.record([lesson({ id: "q", matches: "lint-skill-no-config", statement: "Again.", proposal: null })], { session: "s2", fingerprint })
+  store.record([lesson({ id: "r", matches: "lint-skill-no-config", statement: "Again.", proposal: { target: "B.md", change: "y" } })], { session: "s3", fingerprint })
+  const [back] = store.list()
+  assert.equal(back.proposal.target, "B.md")
+  assert.equal(back.targetFingerprint, "hash-of-B.md")
+})

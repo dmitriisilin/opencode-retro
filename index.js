@@ -980,7 +980,7 @@ export default {
 
       if (all) {
         const open = pickOpen(lessons, { sessions: state.sessions, halfLife: config.halfLife })
-        if (!open.length) return { text: renderNothing({ queued: left, extracted, dir: retroDir, decided: decidedCount(), evicted: store.listArchive().filter((l) => l.status === "new").length }), about: "notice" }
+        if (!open.length) return { text: renderNothing({ queued: left, extracted, dir: retroDir, ...archiveCounts() }), about: "notice" }
         const currencies = new Map()
         for (const lesson of open.slice(0, config.proposeLimit)) currencies.set(lesson.id, currencyOf(lesson))
         // A failed analysis is news in a batch exactly as it is in a single hand-over.
@@ -1000,7 +1000,7 @@ export default {
       // One invocation, one lesson: the top of the list. Deciding is the user's business, in
       // this session, with the agent that is already here.
       const lesson = pickLesson(lessons, { sessions: state.sessions, halfLife: config.halfLife })
-      if (!lesson) return { text: renderNothing({ queued: left, extracted, dir: retroDir, decided: decidedCount(), evicted: store.listArchive().filter((l) => l.status === "new").length }), about: "notice" }
+      if (!lesson) return { text: renderNothing({ queued: left, extracted, dir: retroDir, ...archiveCounts() }), about: "notice" }
       const open = lessons.filter((l) => ["new", "later", undefined, null].includes(l.status)).length
       const text =
         renderFailures(extracted) +
@@ -1077,7 +1077,16 @@ export default {
      * (decision 17), and two counts of "decided" in two files had drifted apart.
      */
     function decidedCount() {
-      return store.listArchive().filter((l) => l.status && l.status !== "new").length
+      return archiveCounts().decided
+    }
+
+    /** The archive in two numbers, from one read of it: decided, and pushed out by the cap. */
+    function archiveCounts() {
+      const archived = store.listArchive()
+      return {
+        decided: archived.filter((l) => l.status && l.status !== "new").length,
+        evicted: archived.filter((l) => l.status === "new").length,
+      }
     }
 
     /**

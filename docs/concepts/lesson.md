@@ -96,6 +96,7 @@ told to the extractor and filters its answer, and the store refuses to reopen an
   `a lesson that comes back with no fix named does not bring back the fix already made`
   `a lesson that comes back aimed at another file is measured against that file`
   `a lesson reopened by a reader that told no story keeps no story from before`
+  `a fix named for the first time after a reopening is measured against its own file`
   `evidence from before a fix does not reopen it, and evidence from after does`
   `undated evidence reopens a decision, because nothing says it is old`
   `evidence is dated by the range it cites, not by whatever came after it in the log`

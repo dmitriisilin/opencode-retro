@@ -112,10 +112,10 @@ export function createPrompts({
       if (current === null || live.base === null || current <= live.base) return null
 
       const file = join(updates, `${name}.v${current}.md`)
-      if (existsSync(file)) return note(name, live, current, file)
       // Delivered once: a notice the person read and deleted is theirs to have deleted, and
       // writing it again at the next load made it impossible to dismiss (decision 15; the
-      // review after the stranger's hour).
+      // review after the stranger's hour). Remembered before the notice is written, and for
+      // one already there, so a failure to remember never brings one back.
       const delivered = join(updates, ".delivered")
       const sent = (() => {
         try {
@@ -124,11 +124,22 @@ export function createPrompts({
           return []
         }
       })()
+      const remember = () => {
+        if (!sent.includes(basename(file))) appendFileSync(delivered, `${basename(file)}\n`)
+      }
+      if (existsSync(file)) {
+        try {
+          remember()
+        } catch (err) {
+          onError?.(`prompts.update ${name}`, err)
+        }
+        return note(name, live, current, file)
+      }
       if (sent.includes(basename(file))) return null
       try {
         mkdirSync(updates, { recursive: true })
+        remember()
         writeFileSync(file, header(name, live, current) + text)
-        appendFileSync(delivered, `${basename(file)}\n`)
       } catch (err) {
         onError?.(`prompts.update ${name}`, err)
         return null

@@ -56,6 +56,8 @@ hand-over degrades to a terse built-in text rather than to silence.
 - A newer default is news, never a change: a news file beside the prompts, the live file
   untouched, the news written once and reported until the user deletes it.
   `an older base gets a news file, and the live file is left alone`
+  `a news file the person read and deleted is not written again`
+  `a news file already there before it was remembered stays deleted once deleted`
   `a current base produces no news`
   `the news file is written once, and keeps being reported`
   `update notices land beside the prompts, including when the directory is overridden`
