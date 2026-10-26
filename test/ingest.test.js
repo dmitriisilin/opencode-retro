@@ -472,8 +472,15 @@ test("any event delivered again is taken in once, a subagent's sequence apart fr
   assert.equal(out.filter((r) => r.k === "session" && r.event === "start").length, 1)
   assert.equal(out.filter((r) => r.k === "text" && !r.from).length, 1)
   assert.equal(out.filter((r) => r.k === "text" && r.from === "c").length, 1)
-  // Two ends for one turn, different events: one end.
-  ingest.event({ type: "session.execution.failed", durable: { seq: 5 }, data: { sessionID: "p" } })
-  ingest.event({ type: "session.execution.interrupted", durable: { seq: 6 }, data: { sessionID: "p" } })
-  assert.equal(out.filter((r) => r.k === "session" && r.event === "end").length, 1)
+})
+
+test("a turn whose start went unlogged keeps its end, told apart by its seq", () => {
+  const { out, ingest } = collector()
+  ingest.prompt({ sessionID: "s", messageID: "m1", prompt: { text: "go" } })
+  ingest.event({ type: "session.execution.started", durable: { seq: 1 }, data: { sessionID: "s" } })
+  ingest.event({ type: "session.execution.succeeded", durable: { seq: 2 }, data: { sessionID: "s" } })
+  ingest.prompt({ sessionID: "s", messageID: "m2", prompt: { text: "and stop" } })
+  // Its start dropped, nothing else written: interrupted at once.
+  ingest.event({ type: "session.execution.interrupted", durable: { seq: 4 }, data: { sessionID: "s" } })
+  assert.equal(out.filter((r) => r.k === "session" && r.event === "end").length, 2)
 })

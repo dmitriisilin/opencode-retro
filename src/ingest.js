@@ -376,9 +376,10 @@ export function createIngest({
           // Known by the event's own place in the session's sequence where it has one — every
           // event carries `durable.seq`, monotonic per session — and only without it by whether
           // a turn has gone on since the last end written.
-          // And a second end with no turn gone on since — `failed`, then `interrupted` — is not a
-          // second turn either, whatever its place in the sequence.
-          if (s.endWritten) return "repeated"
+          // Without a `seq` to go by, a second end with no turn gone on since is taken for the same
+          // one. Not with one: a real turn whose start went unlogged has nothing else to show for
+          // itself, and judged by records it lost its end.
+          if (seq == null && s.endWritten) return "repeated"
           for (const call of s.pending.values()) {
             // Counted, because it is the one honest reason an event has no after-hook: the turn
             // ended (an interrupt, usually) while the call was still running.

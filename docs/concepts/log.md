@@ -104,14 +104,15 @@ keeps everything.
 - An event is taken in once: one delivered again, or late, is known by its `durable.seq` — at
   or before the last one seen for its own session, a subagent's sequence being its own — and
   writes nothing. A repeated start or end would be a turn boundary that never happened, a
-  repeated text something said twice. And one turn has one end record: a second end with no
-  turn gone on since is none, whatever its place in the sequence. The report acts on a turn's
-  start or end only when the log took it in.
+  repeated text something said twice. Only an event with no `seq` is judged otherwise: a second
+  end with no turn gone on since is taken for the same one. The report acts on a turn's start
+  or end only when the log took it in.
   `a turn's end delivered twice is written once, a hand-over between them notwithstanding`
   `a child's end folded into its parent's log does not swallow the parent's own end`
   `a turn's end delivered again after the next prompt is no end to the report either`
   `a turn's end delivered again after the next turn started is known by its place in the sequence`
   `any event delivered again is taken in once, a subagent's sequence apart from its parent's`
+  `a turn whose start went unlogged keeps its end, told apart by its seq`
 - The event stream may annotate a log, never open one.
   `a session no hook ever fired for is not ours, and gets no log at all`
   `once a hook has fired, the event stream annotates that same session`
