@@ -323,7 +323,7 @@ export function renderFailures(extracted) {
   )
 }
 
-export function renderNothing({ queued = 0, extracted = null, dir = DEFAULTS.dir, decided = 0 } = {}) {
+export function renderNothing({ queued = 0, extracted = null, dir = DEFAULTS.dir, decided = 0, evicted = 0 } = {}) {
   const failures = extracted?.failures ?? []
   const lines = ["# retro", "", "Nothing to review."]
   for (const f of failures) {
@@ -356,9 +356,11 @@ export function renderNothing({ queued = 0, extracted = null, dir = DEFAULTS.dir
   } else {
     lines.push(
       "",
-      decided && !queued
-        ? `Every lesson recorded so far has been decided — ${decided} in \`${dir}/archive/\` — and nothing new has come up since.`
-        : "Either the sessions have been going straight, or nothing is recorded yet.",
+      evicted
+        ? `Nothing is open. ${evicted} lesson${evicted === 1 ? " was" : "s were"} pushed out to \`${dir}/archive/\` by the cap without being decided, and come${evicted === 1 ? "s" : ""} back if the problem recurs.`
+        : decided && !queued
+          ? `Every lesson recorded so far has been decided — ${decided} in \`${dir}/archive/\` — and nothing new has come up since.`
+          : "Either the sessions have been going straight, or nothing is recorded yet.",
       `\`${dir}/selfcheck.md\` says whether the plugin is actually watching.`,
     )
   }

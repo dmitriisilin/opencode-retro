@@ -1,5 +1,5 @@
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs"
-import { dirname, join, resolve } from "node:path"
+import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs"
+import { basename, dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { homedir } from "node:os"
 import { parseFrontmatter } from "./frontmatter.js"
@@ -113,9 +113,22 @@ export function createPrompts({
 
       const file = join(updates, `${name}.v${current}.md`)
       if (existsSync(file)) return note(name, live, current, file)
+      // Delivered once: a notice the person read and deleted is theirs to have deleted, and
+      // writing it again at the next load made it impossible to dismiss (decision 15; the
+      // review after the stranger's hour).
+      const delivered = join(updates, ".delivered")
+      const sent = (() => {
+        try {
+          return readFileSync(delivered, "utf8").split("\n")
+        } catch {
+          return []
+        }
+      })()
+      if (sent.includes(basename(file))) return null
       try {
         mkdirSync(updates, { recursive: true })
         writeFileSync(file, header(name, live, current) + text)
+        appendFileSync(delivered, `${basename(file)}\n`)
       } catch (err) {
         onError?.(`prompts.update ${name}`, err)
         return null

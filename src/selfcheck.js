@@ -510,7 +510,7 @@ export const REQUIRED_SURFACE = [
 /**
  * The checks a passing session cannot make (AGENTS.md decision 19).
  *
- * Free, so it runs on every `/retro`. It used to also ask the model whether it answers and
+ * Free, so it runs every time the report is written. It used to also ask the model whether it answers and
  * whether the output contract still round-trips, which cost two calls nobody requested —
  * and both questions are answered for free by the analysis itself, every time, with the
  * model's own words when it fails.

@@ -349,3 +349,9 @@ test("nothing to review with logs still unread does not say nothing new has come
   assert.doesNotMatch(text, /nothing new has come up/)
   assert.match(text, /2 logs/)
 })
+
+test("nothing open with lessons the cap pushed out does not call them decided", () => {
+  const text = renderNothing({ decided: 1, evicted: 5 })
+  assert.match(text, /5 lessons were pushed out to `\.retro\/archive\/` by the cap without being decided/)
+  assert.doesNotMatch(text, /Every lesson recorded so far has been decided/)
+})

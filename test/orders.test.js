@@ -7,6 +7,10 @@ import { isAbsolute, join } from "node:path"
 import plugin from "../index.js"
 import { fakeOpenCode } from "./fake-opencode.js"
 
+// The report's times are the reader's local time (selfcheck.md); these tests spell them out in
+// UTC, so they read in UTC whatever zone the machine running them is in.
+process.env.TZ = "UTC"
+
 /**
  * Work orders and records (docs/concepts/analysis.md). The plugin makes no model call:
  * `/retro` writes a work order per owed log and asks the agent in its session to have each

@@ -51,6 +51,7 @@ closed. Accepting or rejecting moves the file to `archive/`; `later` keeps it op
   has been decided, when it has, rather than that nothing is recorded.
   `nothing to review after every lesson was decided says so, not that nothing is recorded`
   `nothing to review with logs still unread does not say nothing new has come up`
+  `nothing open with lessons the cap pushed out does not call them decided`
 - One invocation delivers one lesson, the top of the open set by score.
   `the top open lesson is picked by score`
   `one invocation delivers exactly one lesson, the top of the open set`

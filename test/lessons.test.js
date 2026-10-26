@@ -727,4 +727,5 @@ test("a lesson reopened by a reader that told no story keeps no story from befor
   store.record([{ ...lesson({ id: "w", matches: "lint-skill-no-config", statement: "The lint line now." }), why: undefined }], { session: "ses_b" })
   const [back] = store.list()
   assert.doesNotMatch(back.body ?? "", /build line/)
+  assert.match(back.decisions[0].body, /build line failed at step 9/, "kept with the decision it led to, not deleted")
 })

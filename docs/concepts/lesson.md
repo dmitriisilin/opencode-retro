@@ -39,8 +39,9 @@ decision was taken**, comes back with `reopenedFrom: accepted` — the news that
 not hold, or not all of it. It says what the session that brought it back found: its
 statement, proposal, ask and narrative are that reading's, since what is wrong now is what a
 person has to act on. What was decided before is not written over but kept, oldest first, in
-`decisions` — each with its status, when, the statement it was about, and the note, the
-session it was decided in, the files changed and what was found on the way — and the
+`decisions` — each with its status, when, the statement, proposal, ask and narrative it was
+about, and the note, the session it was decided in, the files changed and what was found on
+the way — and the
 hand-over shows it. *The stranger's hour after the ten rounds found the old form: a lesson
 reopened over the part of it that was not fixed still said the part that was had failed,
 and the second decision wrote over the first.*

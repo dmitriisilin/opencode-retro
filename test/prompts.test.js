@@ -1,6 +1,6 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { mkdtempSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs"
+import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { createPrompts } from "../src/prompts.js"
@@ -70,7 +70,7 @@ test("an older base gets a news file, and the live file is left alone", () => {
 
   assert.match(readFileSync(join(s.dir, "extract.md"), "utf8"), /my own version/, "live file untouched")
 
-  const [file] = readdirSync(s.updates)
+  const [file] = readdirSync(s.updates).filter((n) => n.endsWith(".md"))
   assert.match(file, /^extract\.v\d+\.md$/)
   const update = readFileSync(join(s.updates, file), "utf8")
   assert.match(update, /This file is NOT in use/)
@@ -249,4 +249,14 @@ test("an untouched prompt is not called edited after a newer default ships", () 
   writeFileSync(live, readFileSync(live, "utf8").replace(/^base: \d+$/m, "base: 1"))
 
   assert.equal(prompts.isEdited("extract"), null, "unknown, not edited")
+})
+
+test("a news file the person read and deleted is not written again", () => {
+  const s = sandbox()
+  mkdirSync(s.dir, { recursive: true })
+  writeFileSync(join(s.dir, "extract.md"), "---\nprompt: extract\nbase: 0\n---\n\nmy own version\n")
+  s.prompts.checkForUpdate("extract")
+  for (const f of s.prompts.pendingUpdates()) rmSync(join(s.updates, f))
+  assert.equal(s.prompts.checkForUpdate("extract"), null, "the next load says nothing")
+  assert.deepEqual(s.prompts.pendingUpdates(), [], "and writes nothing")
 })

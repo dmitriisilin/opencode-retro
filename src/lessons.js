@@ -388,6 +388,7 @@ export function createStore({ dir, archive, cap = DEFAULT_CAP, halfLife = DEFAUL
                   // What was proposed and asked then, which is what the decision answered.
                   ...(buried.proposal ? { proposal: buried.proposal } : {}),
                   ...(buried.ask ? { ask: buried.ask } : {}),
+                  ...(buried.body?.trim() ? { body: buried.body.trim() } : {}),
                   ...(note ? { note } : {}),
                   ...(decidedIn ? { decidedIn } : {}),
                   ...(changed ? { changed } : {}),
@@ -427,15 +428,11 @@ export function createStore({ dir, archive, cap = DEFAULT_CAP, halfLife = DEFAUL
             reopenedFrom: evicted ? buried.reopenedFrom : (buried.status ?? "closed"),
             closedAt: undefined,
             lastSeen: already ? (buried.lastSeen ?? seen) : seen,
-            // The baseline is the one taken when the problem was first recorded. A recurrence
-            // that moves it makes "changed since" compare the file with itself, and the review
-            // after a reopen is exactly when the human needs to know the target moved.
-            // A reopened lesson whose new proposal names another file is measured against that
-            // file from now: compared with the old target's hash, it read as changed when it was
-            // not (checks after the stranger's hour).
-            // Taken afresh, after the fix, of whatever it now names: compared with the hash from
-            // before the fix, the fix itself read as "changed since this lesson was recorded"
-            // and pointed the agent at "probably resolved" for a problem just seen again.
+            // Reopened: taken afresh, after the fix, of whatever it now names — compared with the
+            // hash from before the fix, or with another file's, the fix itself read as "changed
+            // since this lesson was recorded" and pointed the agent at "probably resolved" for a
+            // problem just seen again (checks after the stranger's hour). Evicted: never decided,
+            // so the baseline from its first recording stands.
             targetFingerprint: evicted
               ? (buried.targetFingerprint ?? fingerprint?.(buried.proposal?.target))
               : (fingerprint?.(lesson.proposal?.target ?? buried.proposal?.target) ?? undefined),
