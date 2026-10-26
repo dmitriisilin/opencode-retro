@@ -1,7 +1,7 @@
 import { score, staleSessions } from "./lessons.js"
 import { DEFAULTS } from "./config.js"
 import { SET_ASIDE } from "./selfcheck.js"
-import { WORK_LINE } from "./extract.js"
+import { WORK_LINE, utcMinute } from "./extract.js"
 
 /**
  * `/retro` (AGENTS.md decision 9, as amended).
@@ -209,12 +209,6 @@ export function renderProposal(
   return lines.join("\n")
 }
 
-/** A stored moment in UTC, from the moment rather than the string, which may carry an offset. */
-const utc = (at) => {
-  const ms = Date.parse(at)
-  return Number.isFinite(ms) ? `${new Date(ms).toISOString().slice(0, 16).replace("T", " ")} UTC` : String(at)
-}
-
 /** What was decided before a lesson came back: its history, oldest first, a few lines each. */
 function previousLines(lesson) {
   const decisions = Array.isArray(lesson.decisions) ? lesson.decisions : []
@@ -223,7 +217,7 @@ function previousLines(lesson) {
   const item = (label, text) => `  ${label}: ${String(text).trim().replaceAll("\n", "\n    ")}`
   return decisions.flatMap((d) => [
     "",
-    `- ${d.status ?? "closed"}${d.closedAt ? ` on ${utc(d.closedAt)}` : ""}` +
+    `- ${d.status ?? "closed"}${d.closedAt ? ` on ${utcMinute(d.closedAt)}` : ""}` +
       `${d.decidedIn ? ` in \`${d.decidedIn}\`` : ""}: ${String(d.statement ?? "").trim().replaceAll("\n", "\n  ")}`,
     ...(d.proposal?.change ? [item(`Proposed then${d.proposal.target ? ` (${d.proposal.target})` : ""}`, d.proposal.change)] : []),
     ...(d.note ? [item("Decided", d.note)] : []),

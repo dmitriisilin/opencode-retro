@@ -477,17 +477,15 @@ export function createStore({ dir, archive, cap = DEFAULT_CAP, halfLife = DEFAUL
             // argument for revisiting it, not grounds for silently reopening it.
             status: target.status ?? "new",
             proposal: target.proposal ?? lesson.proposal ?? undefined,
-            // A lesson with no proposal that gains one here is measured against the file it now
-            // names, from now — never against a hash of some other file it once named.
             lastSeen: already ? (target.lastSeen ?? seen) : seen,
             // Only the baseline taken at creation, never a fresh one: a lesson whose target did
             // not exist then has no baseline, and filling it in later would present a check of
             // "changed since the recurrence" as "changed since the lesson was recorded".
-            targetFingerprint: target.proposal?.target
-              ? (target.targetFingerprint ?? undefined)
-              : target.proposal
-                ? undefined // the proposal kept names no file, so there is nothing to measure
-                : (fingerprint?.(lesson.proposal?.target) ?? undefined),
+            // Only a baseline taken when the lesson was recorded: one taken now, under a
+            // `recordedAt` from before, would say the file had not changed since a date it was
+            // never measured at — and a change between then and now, maybe the fix, would be
+            // invisible. A lesson that gains its first proposal here stays unmeasured (unknown).
+            targetFingerprint: target.proposal?.target ? (target.targetFingerprint ?? undefined) : undefined,
           }
           if (write(updated)) result.merged.push(updated.id)
           byId.set(updated.id, updated)

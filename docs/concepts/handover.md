@@ -103,6 +103,7 @@ closed. Accepting or rejecting moves the file to `archive/`; `later` keeps it op
   `a merge keeps the fingerprint taken when the lesson was first recorded`
   `a reopened lesson is measured from its reopening, an evicted one from its first recording`
   `a lesson whose target had no fingerprint at record time stays unknown, rather than faking a baseline`
+  `a lesson that gains its first proposal on a merge stays unmeasured, not measured from the merge`
 - A decision records what was done, not what was proposed, and where it was taken.
   `the decision records what was actually done, not what was proposed`
   `the archive records which session decided it`

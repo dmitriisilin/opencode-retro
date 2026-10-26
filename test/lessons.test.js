@@ -730,7 +730,7 @@ test("a lesson reopened by a reader that told no story keeps no story from befor
   assert.match(back.decisions[0].body, /build line failed at step 9/, "kept with the decision it led to, not deleted")
 })
 
-test("a fix named for the first time after a reopening is measured against its own file", () => {
+test("a fix named for the first time after a reopening is not measured against a file it no longer names", () => {
   const s = sandbox()
   const store = s.store()
   const fingerprint = (t) => (t ? `hash-of-${t}` : undefined)
@@ -740,7 +740,9 @@ test("a fix named for the first time after a reopening is measured against its o
   store.record([lesson({ id: "r", matches: "lint-skill-no-config", statement: "Again.", proposal: { target: "B.md", change: "y" } })], { session: "s3", fingerprint })
   const [back] = store.list()
   assert.equal(back.proposal.target, "B.md")
-  assert.equal(back.targetFingerprint, "hash-of-B.md")
+  // No baseline for B.md from when this reading was recorded, so none: unknown, not a false
+  // "unchanged since" measured later, and not A.md's hash either.
+  assert.equal(back.targetFingerprint, undefined)
 })
 
 test("a kept proposal that names no file is not measured against a file another reading named", () => {
@@ -751,5 +753,15 @@ test("a kept proposal that names no file is not measured against a file another 
   store.record([lesson({ proposal: { target: "OTHER.md", change: "y" } })], { session: "b", fingerprint })
   const [l] = store.list()
   assert.equal(l.proposal.target, undefined)
+  assert.equal(l.targetFingerprint, undefined)
+})
+
+test("a lesson that gains its first proposal on a merge stays unmeasured, not measured from the merge", () => {
+  const s = sandbox()
+  const store = s.store()
+  const fingerprint = (t) => (t ? `hash-of-${t}` : undefined)
+  store.record([lesson({ proposal: null })], { session: "a", fingerprint })
+  store.record([lesson({ proposal: { target: "AGENTS.md", change: "y" } })], { session: "b", fingerprint })
+  const [l] = store.list()
   assert.equal(l.targetFingerprint, undefined)
 })

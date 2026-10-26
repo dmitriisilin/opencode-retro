@@ -210,15 +210,13 @@ export function ownRounds(records) {
     // And to the end of the turn it is answered in, which it takes with it: a round lasts its
     // turn, and one whose agent never called `retro_propose` took every later turn begun with
     // no prompt seen.
-    let started = sorted[from]?.k === "session" && sorted[from].event === "start"
+    // The first end after it is that turn's: the round begins at a turn's start, or at a
+    // hand-over that came between turns and whose turn follows, logged or not.
     for (let j = from; j < sorted.length; j++) {
       const r = sorted[j]
       if (j > from && ((!r.from && r.k === "prompt") || begins.has(j))) break
       steps.add(r.n)
-      if (!r.from && r.k === "session") {
-        if (r.event === "start") started = true
-        else if (r.event === "end" && started) break
-      }
+      if (!r.from && r.k === "session" && r.event === "end") break
     }
   }
   // A delegated session that began inside a round — a reader worded its own way — is ours in
@@ -456,6 +454,15 @@ export function composeOrder({
   return { ok: true, text, lastN }
 }
 
+/**
+ * A stored moment, to the minute, in UTC — from the moment rather than the string, which may have
+ * been written by hand with an offset. One for every text that shows a decision's time.
+ */
+export function utcMinute(at) {
+  const ms = Date.parse(at)
+  return Number.isFinite(ms) ? `${new Date(ms).toISOString().slice(0, 16).replace("T", " ")} UTC` : String(at)
+}
+
 /** The lessons an order lists as already recorded: the open set, the rejected aside. */
 const currentLessons = (store) => store.list().filter((l) => l.status !== "rejected")
 
@@ -617,8 +624,7 @@ function renderFixed(archived) {
       // To the minute: a backlog and its fix are often on the same day, and a date alone left
       // the reader to work out from raw timestamps which side of the fix a session was on.
       const ms = Date.parse(l.closedAt)
-      // From the moment, not the string: a time edited by hand with an offset is still shown in UTC.
-      const when = Number.isFinite(ms) ? `${new Date(ms).toISOString().slice(0, 16).replace("T", " ")} UTC, t ${ms}` : String(l.closedAt)
+      const when = Number.isFinite(ms) ? `${utcMinute(l.closedAt)}, t ${ms}` : String(l.closedAt)
       const changed = Array.isArray(l.changed) && l.changed.length ? ` — changed ${l.changed.join(", ")}` : ""
       return `- \`${l.id}\` (fixed ${when}): ${l.statement}${changed}`
     }),

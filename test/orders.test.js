@@ -2538,3 +2538,18 @@ test("a reply and a round each last their turn, and take nothing of a turn after
   ])
   assert.ok(replies.has(4) && !replies.has(7))
 })
+
+test("a round whose turn start went unlogged still ends with that turn", async () => {
+  const { ownRounds } = await import("../src/extract.js")
+  const records = [
+    { n: 1, k: "handover", about: "work", sent: true, text: "the logs come first" },
+    { n: 2, k: "tool", tool: "subagent", input: { prompt: "opencode-retro work order: read /x.md and do what it says." } },
+    { n: 3, k: "text", text: "done" },
+    { n: 4, k: "session", event: "end" },
+    { n: 5, k: "session", event: "start" },
+    { n: 6, k: "tool", tool: "shell", input: { command: "npm test" }, exit: 2 },
+    { n: 7, k: "session", event: "end" },
+  ]
+  const { steps } = ownRounds(records)
+  assert.ok(steps.has(3) && !steps.has(6))
+})
