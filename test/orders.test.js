@@ -2553,3 +2553,25 @@ test("a round whose turn start went unlogged still ends with that turn", async (
   const { steps } = ownRounds(records)
   assert.ok(steps.has(3) && !steps.has(6))
 })
+
+test("a /retro sent in the moment before the person's turn starts has its round in the turn after", async () => {
+  const { ownRounds, nothingNew } = await import("../src/extract.js")
+  const records = [
+    { n: 1, k: "prompt", text: "fix bug" },
+    { n: 2, k: "session", event: "start" },
+    { n: 3, k: "session", event: "end" },
+    { n: 4, k: "prompt", text: "quick question" },
+    { n: 5, k: "handover", about: "work", sent: true, text: "the logs come first" },
+    { n: 6, k: "session", event: "start" },
+    { n: 7, k: "text", text: "the answer is 42" },
+    { n: 8, k: "session", event: "end" },
+    { n: 9, k: "session", event: "start" },
+    { n: 10, k: "text", text: "Starting readers now" },
+    { n: 11, k: "tool", tool: "glob", input: { pattern: ".retro/work/*" } },
+    { n: 12, k: "session", event: "end" },
+  ]
+  const { steps } = ownRounds(records)
+  assert.ok(!steps.has(7), "the person's turn is theirs")
+  assert.ok(steps.has(10) && steps.has(11), "and the turn after is the round")
+  assert.equal(nothingNew(records, records.slice(8)), true)
+})

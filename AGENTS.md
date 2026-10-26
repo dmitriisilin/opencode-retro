@@ -1054,7 +1054,8 @@ Known, listed so nobody discovers them as surprises:
   round again. Not guarded against: no provider OpenCode drives has been seen doing it, and a
   finer key risks splitting a Code Mode wrapper from what it wraps.
 - **What the person's agent does inside a round is left out with it.** A round — from the
-  `work` hand-over to the next hand-over of another kind or the person's next prompt — is the
+  `work` hand-over to the end of the turn it is answered in, the next hand-over of another kind
+  or the person's next prompt — is the
   plugin's own, and the reader of the next order is told to leave it out (analysis.md). The
   hand-over asks the agent to start readers and nothing else, so the only thing lost is work it
   did of its own accord in between. *This replaces thirteen review rounds of deciding, call by

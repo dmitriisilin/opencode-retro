@@ -78,6 +78,8 @@ function answerStarts(sorted) {
   const at = new Map()
   let inTurn = false
   let waiting = []
+  // Sent after the person spoke and before the turn they opened: they wait past that turn.
+  let behind = []
   let spoke = false
   for (let i = 0; i < sorted.length; i++) {
     const r = sorted[i]
@@ -95,7 +97,8 @@ function answerStarts(sorted) {
     if (r.k === "session") {
       inTurn = r.event === "start"
       if (inTurn) for (const h of waiting) spoke ? at.delete(h) : at.set(h, i)
-      if (inTurn) waiting = []
+      if (inTurn) waiting = behind
+      if (inTurn) behind = []
       spoke = false
       continue
     }
@@ -113,7 +116,13 @@ function answerStarts(sorted) {
     // Sent after the person has spoken and before the turn they opened is logged as started —
     // the moment between a prompt and its turn's start: that turn answers them (checks after
     // the ten rounds).
-    if (sent && !inTurn && spoke) continue
+    if (sent && !inTurn && spoke) {
+      // ...but it is still in the inbox, and the turn after theirs may take it up: it waits for
+      // that one (the review after the stranger's hour).
+      at.set(i, null)
+      behind.push(i)
+      continue
+    }
     if (sent && inTurn) {
       at.set(i, null)
       waiting.push(i)
@@ -173,9 +182,9 @@ export function turnHandovers(records) {
  * The plugin's own rounds in a log, as step ranges (analysis.md, "The plugin's own work").
  *
  * A round is answered by the turn its `handover` with `about: "work"` starts, and runs to the
- * next `handover` of another kind or the next `prompt`, whichever comes first — neither part of
- * it, and only the person's session's (no `from`) counts: a delegated one's opens nothing and
- * ends nothing.
+ * end of that turn, the next `prompt`, or where a `handover` of another kind is answered,
+ * whichever comes first — only the person's session's (no `from`) counts: a delegated one's
+ * opens nothing and ends nothing.
  * A call to one of the plugin's own tools is the plugin's wherever it is. One definition,
  * read two ways: the order lists the rounds for its reader to leave out, and the plugin does
  * not count them as new material.

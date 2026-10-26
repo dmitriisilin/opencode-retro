@@ -478,9 +478,6 @@ export function createStore({ dir, archive, cap = DEFAULT_CAP, halfLife = DEFAUL
             status: target.status ?? "new",
             proposal: target.proposal ?? lesson.proposal ?? undefined,
             lastSeen: already ? (target.lastSeen ?? seen) : seen,
-            // Only the baseline taken at creation, never a fresh one: a lesson whose target did
-            // not exist then has no baseline, and filling it in later would present a check of
-            // "changed since the recurrence" as "changed since the lesson was recorded".
             // Only a baseline taken when the lesson was recorded: one taken now, under a
             // `recordedAt` from before, would say the file had not changed since a date it was
             // never measured at — and a change between then and now, maybe the fix, would be
