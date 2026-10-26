@@ -1,3 +1,4 @@
+import { join, relative } from "node:path"
 /**
  * The self-check (AGENTS.md decisions 16-17).
  *
@@ -552,7 +553,9 @@ export function activeCheck({ ctx, config, prompts, store }) {
       : { status: BROKEN, name: "extract prompt", detail: "could not be resolved at any layer" },
   )
   for (const file of prompts.pendingUpdates()) {
-    notes.push(`prompts/updates/${file} is a newer default waiting to be read. Nothing was changed for you.`)
+    // Where it really is — inside an overridden prompts directory too — as a path from this file.
+    const where = config?.updates && config?.dir ? relative(config.dir, join(config.updates, file)) : `prompts/updates/${file}`
+    notes.push(`${where} is a newer default waiting to be read. Nothing was changed for you.`)
   }
 
   // 3. Stock, so the answer to "is it doing anything" is in the same place.

@@ -93,6 +93,7 @@ told to the extractor and filters its answer, and the store refuses to reopen an
   `a lesson that was accepted and comes back is reopened, because the fix did not hold`
   `a reopened lesson says what is wrong now, and keeps every decision taken on it`
   `a lesson that came back is handed over with what was decided before`
+  `a lesson that came back does not claim the session that brought it back ran after the fix`
   `a lesson that comes back with no fix named does not bring back the fix already made`
   `a lesson that comes back aimed at another file is measured against that file`
   `a lesson reopened by a reader that told no story keeps no story from before`

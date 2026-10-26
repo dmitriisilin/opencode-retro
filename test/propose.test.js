@@ -374,3 +374,8 @@ test("a decision's time is shown in UTC from the moment, whatever offset the fil
   const back = lesson({ reopenedFrom: "accepted", decisions: [{ status: "accepted", closedAt: "2026-10-26T13:00+07:00", statement: "s" }] })
   assert.match(renderProposal(back, { total: 1, remaining: 0 }), /accepted on 2026-10-26 06:00 UTC/)
 })
+
+test("a lesson that came back does not claim the session that brought it back ran after the fix", () => {
+  const text = renderProposal(lesson({ reopenedFrom: "accepted" }), { total: 1, remaining: 0 })
+  assert.match(text, /unless its log could not say when/)
+})

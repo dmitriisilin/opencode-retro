@@ -145,9 +145,11 @@ export function renderProposal(
   }
   if (lesson.reopenedFrom) {
     lines.push(
-      `**This came back.** It was closed as ${lesson.reopenedFrom}, and a session after that ran ` +
-        "into it again. What it says above is what was found then; what was decided before is " +
-        "below. The earlier fix may have held for part of it — check which part still stands.",
+      `**This came back.** It was closed as ${lesson.reopenedFrom}, and a session read since ran ` +
+        "into it again — after the decision, unless its log could not say when, in which case " +
+        "it may be older than the fix. What it says above is what was found then; what was " +
+        "decided before is below. The earlier fix may have held for part of it — check which " +
+        "part still stands.",
       ...previousLines(lesson),
       "",
     )

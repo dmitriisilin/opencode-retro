@@ -2604,3 +2604,8 @@ test("a hand-over waiting past the person's turn is cancelled by its failed send
   const { steps } = ownRounds(unlogged)
   assert.ok(steps.has(9) && !steps.has(13) && !steps.has(5), "the round is the turn after the person's")
 })
+
+test("the contract counts a subagent started to answer a notice as the plugin's exchange, as the plugin does", async () => {
+  const { OUTPUT_CONTRACT } = await import("../src/contract.js")
+  assert.match(OUTPUT_CONTRACT, /what a subagent it started for that answer was told and said/)
+})

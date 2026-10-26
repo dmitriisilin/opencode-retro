@@ -98,7 +98,8 @@ Rules:
   session's problems, and they are that session's. Where the order names none, there are none.
   A \`handover\` with \`"about": "notice"\` is this plugin saying something else — nothing to
   review, a command that failed — and what follows it is ordinary work, but for the agent's
-  text in answer to it, which is the plugin's exchange and holds nothing of the session's.
+  text in answer to it, and what a subagent it started for that answer was told and said:
+  those are the plugin's exchange and hold nothing of the session's.
 - \`proposal\` is optional. Omit it, or use \`null\`, when you can name the problem but not
   the fix — that is a normal and useful answer.
 - \`ask\` is optional and is for when the fix depends on something only the human knows.

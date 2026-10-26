@@ -2,7 +2,7 @@ import { test } from "node:test"
 import assert from "node:assert/strict"
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { join, relative } from "node:path"
 import { SET_ASIDE, assess, activeCheck, createSelfCheck, STATUS } from "../src/selfcheck.js"
 import { createPrompts } from "../src/prompts.js"
 import { createStore } from "../src/lessons.js"
@@ -339,4 +339,14 @@ test("a note about a file that is gone goes with it", () => {
   assert.match(check.render(), /extract\.v7\.md/)
   check.notes([])
   assert.doesNotMatch(check.render(), /extract\.v7\.md/)
+})
+
+test("a pending update is named where it really is, an overridden prompts directory included", async () => {
+  const r = activeRig()
+  mkdirSync(r.dir, { recursive: true })
+  writeFileSync(join(r.dir, "extract.md"), "---\nprompt: extract\nbase: 0\n---\n\nmine\n")
+  r.prompts.checkForUpdate("extract")
+  const report = await activeCheck({ ...r, config: { dir: r.root, updates: r.updates } })
+  const where = report.notes[0]
+  assert.ok(where.startsWith(`${relative(r.root, r.updates)}/extract.v`), where)
 })
