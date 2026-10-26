@@ -16,7 +16,8 @@ import { join } from "node:path"
 export const GITIGNORE = `# Written once by opencode-retro. Yours to edit from here on.
 #
 # lessons/ and archive/ are deliberately NOT ignored: they are what this plugin
-# produces, they are meant to be read, reviewed and kept with the project.
+# produces, they are meant to be read, reviewed and kept with the project. So is
+# README.md, which says what this directory is to whoever opens it.
 # Everything below is machine state.
 
 sessions/

@@ -496,3 +496,12 @@ test("a call written as unfinished at an interrupt is not written again when its
   assert.equal(out.filter((r) => r.k === "tool" && r.id === "c1").length, 1)
   assert.equal(ingest.counts("s").toolHook, 0, "and the next turn's counts are not its")
 })
+
+test("an event that arrives out of order is not taken for a repeat", () => {
+  const { out, ingest } = collector()
+  ingest.prompt({ sessionID: "s", messageID: "m1", prompt: { text: "go" } })
+  ingest.event({ type: "session.execution.started", durable: { seq: 1 }, data: { sessionID: "s" } })
+  ingest.event({ type: "session.text.ended", durable: { seq: 41 }, data: { sessionID: "s", assistantMessageID: "a", text: "late text first" } })
+  assert.equal(ingest.event({ type: "session.execution.succeeded", durable: { seq: 40 }, data: { sessionID: "s" } }), "ended")
+  assert.equal(out.filter((r) => r.k === "session" && r.event === "end").length, 1)
+})

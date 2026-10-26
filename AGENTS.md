@@ -56,6 +56,7 @@ Motivating example: a project carries a `lint` skill borrowed from another harne
 ├── work/<sessionID>.md        # a work order, while an analysis is owed (decision 5)
 ├── lessons/<lessonID>.md      # YAML frontmatter + body, one per lesson
 ├── archive/                   # evicted lessons
+├── README.md                  # what this directory is, for an agent that opens it
 ├── selfcheck.md               # is the plugin actually working (decision 19)
 ├── state.json                 # rejected ids, marks, orders issued, etc.
 └── plugin.log                 # hook errors; never thrown at the user's session
@@ -1159,7 +1160,8 @@ Known, listed so nobody discovers them as surprises:
   applies a `.gitignore` to the directory holding it, so everything can be decided from
   inside the one directory this plugin owns, and the user never edits theirs. Ignored:
   sessions, state, the self-check, the plugin log, prompt update notices. Not ignored:
-  `lessons/`, `archive/` and the prompts — the product and the configuration.
+  `lessons/`, `archive/` and the prompts — the product and the configuration — and
+  `README.md`, which says what the directory is.
 - **`npm test` expands its glob in the shell, not in Node.** `node --test "test/*.test.js"`
   needs Node's own glob support, which is 21+, while `engines` allows 18 — so a contributor on
   18 saw the suite find nothing. The quotes are gone, so a POSIX shell expands it. A directory

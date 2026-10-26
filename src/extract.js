@@ -138,39 +138,57 @@ export function ownSteps(records) {
 }
 
 /**
- * The plugin's exchange, as far as the order of the log suggests — a guess, and used only to
- * decide whether growth is worth an order (`nothingNew`), never to tell a reader what to skip:
- * after a `work` hand-over that was delivered, what the agent does until the person next
- * speaks; after a hand-over of another kind, what the agent says until then. A subagent first
- * told something in such a stretch goes with it.
+ * The plugin's exchange, as far as the order of the log suggests — a guess, used only to decide
+ * whether growth is worth an order and whether a quiet log may go (`nothingNew`), never to tell
+ * a reader what to skip, and kept narrow enough not to take the person's work for the plugin's:
+ * - a turn a delivered `work` hand-over resumed — one sent between turns, which is the only way
+ *   a hand-over starts a turn (one sent into a running turn waits, and is not taken up when the
+ *   turn ends; measured, cycle 9) — to its end, or until the person speaks in it;
+ * - what the agent says after a hand-over of another kind, to the end of the turn it lands in,
+ *   or until the person speaks.
+ * A subagent first told something in such a stretch goes with it.
  */
 export function pluginExchange(records) {
   const sorted = byStep(records)
   const lost = undelivered(sorted)
   const out = new Set()
   let mode = null // "work" | "reply" | null
-  // Whether a turn has started since the hand-over: the stretch lasts to the end of that turn
-  // at most — the one the hand-over is taken up in — and never into the turns after it, which
-  // something else began (a form answered, a resume from elsewhere).
-  let started = false
+  let inTurn = false
+  // Whether the stretch's own turn has begun: its end closes it.
+  let begun = false
   const with_ = new Set()
+  const close = () => {
+    mode = null
+    with_.clear()
+  }
   for (const r of sorted) {
     if (r.from) {
       if (r.k === "prompt" && mode) with_.add(r.from)
       if (with_.has(r.from) && (mode === "work" || r.k === "text" || r.k === "prompt")) out.add(r.n)
       continue
     }
-    if (r.k === "prompt") {
-      mode = null
-      with_.clear()
-    } else if (r.k === "handover" && !r.undelivered && !lost.has(r.n)) {
-      mode = isWorkHandover(r) ? "work" : "reply"
-      started = false
-    } else if (r.k === "session") {
-      if (r.event === "start") started = true
-      else if (r.event === "end" && started) {
-        mode = null
-        with_.clear()
+    if (r.k === "session") {
+      if (r.event === "start") {
+        inTurn = true
+        begun = true
+      } else if (r.event === "end") {
+        inTurn = false
+        if (begun) close()
+      }
+      continue
+    }
+    if (r.k === "prompt") close()
+    else if (r.k === "handover" && !r.undelivered && !lost.has(r.n)) {
+      if (isWorkHandover(r)) {
+        // Into a running turn it starts nothing; what the turn goes on with is the person's.
+        if (inTurn) close()
+        else {
+          mode = "work"
+          begun = false
+        }
+      } else {
+        mode = "reply"
+        begun = inTurn
       }
     } else if (mode === "work") out.add(r.n)
     else if (mode === "reply" && r.k === "text") out.add(r.n)

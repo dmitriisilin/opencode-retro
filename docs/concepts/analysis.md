@@ -148,14 +148,15 @@ work, not the person's, and an analysis must never be analysed. Two kinds, handl
    hand-over waits in the inbox, a send fails. So the contract describes the round and the
    reader, who sees the hand-overs and the prompts, judges it — keeping for the person
    anything their own task needed in that stretch.
-4. **A guess is used only where it cannot lose a step**: whether a log that grew is worth an
-   order. Growth that the order of the log suggests is the plugin's exchange — after a
-   delivered `work` hand-over, what the agent did until the person spoke; after a hand-over of
-   another kind, what it said — takes no order. Wrong, the mark stays where it was, and the
-   material is read with whatever comes next; the person speaking again always makes the log
-   owed. A stretch lasts to the end of the turn it is taken up in at most. Nothing is credited
-   as read on a guess, and nothing is pruned on one: pruning, which is for good, asks whether
-   the log was read to its end without it (log.md).
+4. **A guess is used only for cost, and kept narrow enough to be right**: whether a log that
+   grew is worth an order, and — the same rule — whether a quiet log may go. Growth the order of
+   the log shows to be the plugin's exchange takes no order: a turn that a `work` hand-over sent
+   between turns resumed, to its end or until the person speaks in it — the only way a
+   hand-over starts a turn, since one sent into a running turn waits and is not taken up when
+   the turn ends (measured, cycle 9), so what that turn goes on with is the person's; and what
+   the agent says after a hand-over of another kind, to the end of its turn or until the person
+   speaks. Nothing is credited as read on a guess, and the person speaking always makes the log
+   owed.
 
 *Replaces two dozen review rounds of inferring the round from the order of the log, in three
 functions and the contract's prose at once. Each round found an ordering the rules had not
@@ -249,6 +250,7 @@ stretch of log is the reader's job).*
   `a hand-over that never arrived opens no exchange`
   `the contract names the certain steps and leaves the round to the reader`
   `a log is not pruned on a guess: work after a hand-over that nobody read is kept`
+  `a session that ended with a /retro and its answer goes once it is quiet`
   `a stretch of the plugin's exchange lasts to the end of the turn it is taken up in`
   `the contract counts the plugin's stretches a reader left out as read`
   `a re-read names every one of the plugin's own steps, those before the mark included`

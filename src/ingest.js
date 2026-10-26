@@ -88,7 +88,7 @@ export function createIngest({
     return current
   }
 
-  /** sessionID -> the last `durable.seq` taken in, so a repeat is known (`event`). */
+  /** sessionID -> the `durable.seq`s recently taken in, so a repeat is known (`event`). */
   const lastSeq = new Map()
 
   function append(sessionID, record) {
@@ -329,10 +329,15 @@ export function createIngest({
       // every event carries `durable.seq`, monotonic per session — the event's own session, a
       // subagent's having one of its own. One guard for every kind: a repeated start or end read
       // as a turn boundary that never happened, a repeated text as said twice.
+      // Only the same event again: one that arrives out of order is still news, and dropped it
+      // would lose a turn's end. The seqs kept are a session's recent ones, which is where a
+      // repeat comes from.
       if (seq != null) {
-        const last = lastSeq.get(sessionID)
-        if (last != null && seq <= last) return "repeated"
-        lastSeq.set(sessionID, seq)
+        let seen = lastSeq.get(sessionID)
+        if (!seen) lastSeq.set(sessionID, (seen = new Set()))
+        if (seen.has(seq)) return "repeated"
+        seen.add(seq)
+        if (seen.size > 512) seen.delete(seen.values().next().value)
       }
 
       switch (e.type) {

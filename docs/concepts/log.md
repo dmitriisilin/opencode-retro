@@ -65,10 +65,10 @@ not make a log owed: a hand-over, a turn's start or end, a reply to the plugin's
 hand-over, and the plugin's own rounds (analysis.md, "The plugin's own work"). It stays in the
 log, and the next read carries it along with whatever follows.
 
-**Read to its end.** Its mark covers it, with neither flag set, but for growth that holds
-nothing to read or is the plugin's own for certain — decided without the guess "Owed" may use,
-since pruning is for good. Not permanent: a session prompted again grows past its mark by
-something to read and is owed again.
+**Read to its end.** Not owed: its mark covers it, with neither flag set, but for growth that
+holds nothing to read — the plugin's own, or its exchange as narrowly as analysis.md draws it.
+Not permanent: a session prompted again grows past its mark by something to read and is owed
+again.
 
 **Retired.** A log with three failed reads at the same size — a file that could not be opened
 or parsed, a work order that could not be written (no `extract.md` resolving is one way), or a
@@ -103,9 +103,9 @@ keeps everything.
   the root's turn ends is logged as unfinished with that subagent as its `from`.
   `a delegation's call left open at the root's end is written with its origin`
   `a call written as unfinished at an interrupt is not written again when its after-hook comes late`
-- An event is taken in once: one delivered again, or late, is known by its `durable.seq` — at
-  or before the last one seen for its own session, a subagent's sequence being its own — and
-  writes nothing. A repeated start or end would be a turn boundary that never happened, a
+- An event is taken in once: one delivered again is known by its `durable.seq` — one already
+  seen for its own session, a subagent's sequence being its own — and writes nothing. One that
+  arrives out of order is not a repeat, and is taken in. A repeated start or end would be a turn boundary that never happened, a
   repeated text something said twice. Only an event with no `seq` is judged otherwise: a second
   end with no turn gone on since is taken for the same one. The report acts on a turn's start
   or end only when the log took it in.
@@ -115,6 +115,7 @@ keeps everything.
   `a turn's end delivered again after the next turn started is known by its place in the sequence`
   `any event delivered again is taken in once, a subagent's sequence apart from its parent's`
   `a turn whose start went unlogged keeps its end, told apart by its seq`
+  `an event that arrives out of order is not taken for a repeat`
 - The event stream may annotate a log, never open one.
   `a session no hook ever fired for is not ours, and gets no log at all`
   `once a hook has fired, the event stream annotates that same session`

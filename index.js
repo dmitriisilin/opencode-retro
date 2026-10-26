@@ -696,52 +696,6 @@ export default {
       return Boolean(mark.failed && (mark.attempts ?? 0) < 3)
     }
 
-    /**
-     * Read to its end, for pruning — decided without the guess `isOwed` may use. A log is gone
-     * once pruned, so what decides it must not be able to take the person's work for the
-     * plugin's: every byte past the mark has been sent, or what was added since is the plugin's
-     * own for certain or holds nothing to read at all (log.md, "Read to its end").
-     */
-    function readToEnd(id) {
-      const mark = markOf(id)
-      if (mark.open || (mark.failed && (mark.attempts ?? 0) < 3)) return false
-      const size = log.stat(id).size
-      if (size <= mark.size) return true
-      try {
-        const records = log.read(id)
-        // A mark inside a line would cut a record off unseen: not read to its end, then.
-        if (mark.size > 0) {
-          const fd0 = openSync(log.path(id), "r")
-          const at = Buffer.alloc(1)
-          try {
-            readSync(fd0, at, 0, 1, mark.size - 1)
-          } finally {
-            closeSync(fd0)
-          }
-          if (at[0] !== 0x0a) return false
-        }
-        const own = ownSteps(records).steps
-        const fd = openSync(log.path(id), "r")
-        let tail
-        try {
-          const buf = Buffer.alloc(Math.max(0, size - mark.size))
-          readSync(fd, buf, 0, buf.length, mark.size)
-          tail = parseShadowLog(buf.toString("utf8"))
-        } finally {
-          closeSync(fd)
-        }
-        const readable = (r) => r.k === "prompt" || r.k === "tool" || r.k === "text" || (r.k === "step" && r.files?.length > 0)
-        return tail.every((r) => !readable(r) || own.has(r.n))
-      } catch {
-        return false // cannot tell: kept
-      }
-    }
-
-    /**
-     * Whether a log grew past its mark by nothing an analysis could read — the plugin's own
-     * round, a hand-over, a turn's end (`nothingNew`). Remembered by size, because the report
-     * asks about every log each time it is written.
-     */
     function grewByNothing(id, from, size, records) {
       // Keyed by the file's identity too: a log pruned and written again under the same id can
       // reach the same size as the one that was cached (thirty-fourth review).
@@ -881,7 +835,7 @@ export default {
       if (config.keepSessions) return
       const cited = citedSessions(store.list())
       for (const id of log.list()) {
-        if (cited.has(id) || !readToEnd(id) || !isQuiet(id)) continue
+        if (cited.has(id) || isOwed(id) || !isQuiet(id)) continue
         if (log.remove(id)) {
           state.forget(id)
           grown.delete(id)

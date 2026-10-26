@@ -2395,6 +2395,10 @@ test("a log is not pruned on a guess: work after a hand-over that nobody read is
   await retro(fake)
   await record(fake, "ses_a", [], { dir }) // read to its end
   await work(fake, "ses_b")
+  // ses_a's turn is running when the /retro is posted into it: the hand-over waits in the inbox,
+  // and what the agent goes on with is the person's task.
+  fake.emit({ type: "session.execution.started", durable: { seq: 700 }, data: { sessionID: "ses_a" } })
+  await new Promise((r) => setTimeout(r, 10))
   await retro(fake, { invoker: "ses_a" }) // a work hand-over lands in ses_a…
   const call = { sessionID: "ses_a", id: "k9", tool: "edit", input: { path: "src/app.js" } }
   await fake.hooks.get("tool.execute.before")(call) // …and the person's agent goes on with their task
@@ -2426,4 +2430,26 @@ test("a stretch of the plugin's exchange lasts to the end of the turn it is take
 test("the contract counts the plugin's stretches a reader left out as read", async () => {
   const { OUTPUT_CONTRACT } = await import("../src/contract.js")
   assert.match(OUTPUT_CONTRACT, /Steps you went\s+over and left out as the plugin's own count as read/)
+})
+
+test("a session that ended with a /retro and its answer goes once it is quiet", async () => {
+  // The guess that a log holds nothing new and the decision to let it go are one rule: a log
+  // whose last growth was the plugin's exchange is neither owed nor kept for ever.
+  const { utimesSync } = await import("node:fs")
+  const dir = sandbox()
+  const fake = fakeOpenCode({ directory: dir, agent: false })
+  const cleanup = await plugin.setup(fake.ctx)
+  await work(fake, "ses_a")
+  await retro(fake)
+  await record(fake, "ses_a", [], { dir }) // read to its end
+  await retro(fake, { invoker: "ses_a" }) // nothing owed: a notice, between turns
+  fake.emit({ type: "session.execution.started", durable: { seq: 800 }, data: { sessionID: "ses_a" } })
+  fake.emit({ type: "session.text.ended", durable: { seq: 801 }, data: { sessionID: "ses_a", assistantMessageID: "a9", text: "Nothing to review, then." } })
+  fake.emit({ type: "session.execution.succeeded", durable: { seq: 802 }, data: { sessionID: "ses_a" } })
+  await new Promise((r) => setTimeout(r, 20))
+  const old = new Date(Date.now() - 9 * 24 * 3600 * 1000)
+  utimesSync(logOf(dir, "ses_a"), old, old)
+  await fake.tools.get("retro_decide").execute({ id: "no-such", status: "rejected" }, { sessionID: "ses_review" })
+  assert.equal(existsSync(logOf(dir, "ses_a")), false)
+  await cleanup?.()
 })
