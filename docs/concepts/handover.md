@@ -35,9 +35,11 @@ what changes when several lessons arrive at once.
 **Currency.** Whether a lesson is still true. The plugin offers two facts — when the
 lesson was recorded, and whether its target file's content hash has changed since — and
 puts the question to the agent, which has the repository. A changed target is a reason
-to look, never a verdict. The hash is the baseline taken when the lesson was first recorded;
-recurrence, reopening and restoring never move it, or "changed since" would compare the file
-with itself.
+to look, never a verdict. The hash is the baseline taken when what the lesson says was
+recorded: when it was first recorded, and again when it is reopened — a reopening records what
+is wrong now, after the fix, and is measured from then. Recurrence and restoring never move it,
+or "changed since" would compare the file with itself; and a lesson with no baseline from its
+recording stays unknown rather than gaining one later under its old date.
 
 **Decision.** The third artifact, written by the `retro_decide` tool: `status`
 (`accepted` / `rejected` / `later`), `note`, `decidedIn` (the session it was taken in),
@@ -104,6 +106,7 @@ closed. Accepting or rejecting moves the file to `archive/`; `later` keeps it op
   `a reopened lesson is measured from its reopening, an evicted one from its first recording`
   `a lesson whose target had no fingerprint at record time stays unknown, rather than faking a baseline`
   `a lesson that gains its first proposal on a merge stays unmeasured, not measured from the merge`
+  `a lesson the cap pushed out comes back with the baseline it had, none included`
 - A decision records what was done, not what was proposed, and where it was taken.
   `the decision records what was actually done, not what was proposed`
   `the archive records which session decided it`

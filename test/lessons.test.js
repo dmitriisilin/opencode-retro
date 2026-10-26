@@ -765,3 +765,16 @@ test("a lesson that gains its first proposal on a merge stays unmeasured, not me
   const [l] = store.list()
   assert.equal(l.targetFingerprint, undefined)
 })
+
+test("a lesson the cap pushed out comes back with the baseline it had, none included", () => {
+  const s = sandbox()
+  const store = s.store(1)
+  const fingerprint = (t) => (t ? `hash-of-${t}` : undefined)
+  store.record([lesson({ id: "big", statement: "big", cost: 100 })], { session: "a" })
+  store.record([lesson({ proposal: { target: "LATER.md", change: "x" } })], { session: "a" }) // no fingerprint given
+  assert.equal(store.listArchive().length, 1, "pushed out by the cap")
+  store.record([lesson()], { session: "b", fingerprint })
+  const back = [...store.list(), ...store.listArchive()].find((l) => l.id === "lint-skill-no-config")
+  assert.equal(back.recurrence, 2, "restored, and counted")
+  assert.equal(back.targetFingerprint, undefined, "not a baseline taken now under its old date")
+})

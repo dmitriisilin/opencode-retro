@@ -283,6 +283,7 @@ rare, since the hand-over asks it to start readers and nothing else — is left 
   `prompts posted into a running turn, queued or steered, are answered in that turn`
   `a /retro sent between the person's prompt and the turn it opens takes nothing of that turn`
   `a /retro sent in the moment before the person's turn starts has its round in the turn after`
+  `a hand-over waiting past the person's turn is cancelled by its failed send, and survives an unlogged start`
   `a reply and a round each last their turn, and take nothing of a turn after begun with no prompt seen`
   `a round whose turn start went unlogged still ends with that turn`
   `a prompt that opens the next turn, after a turn whose end was lost, is the person's turn`

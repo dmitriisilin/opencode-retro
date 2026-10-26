@@ -2139,7 +2139,7 @@ test("the contract tells the reader to leave out exactly the steps the order nam
   const { OUTPUT_CONTRACT } = await import("../src/contract.js")
   assert.match(OUTPUT_CONTRACT, /Leave exactly those steps out/)
   assert.match(OUTPUT_CONTRACT, /Where the order names none, there are none/)
-  assert.doesNotMatch(OUTPUT_CONTRACT, /between turns|session` start|undelivered/, "and no second account of how they are found")
+  assert.doesNotMatch(OUTPUT_CONTRACT, /between turns|session` start/, "and no second account of how they are found")
 })
 
 test("the askings add up in the session /retro runs in, which its own rounds lengthen", async () => {
@@ -2574,4 +2574,33 @@ test("a /retro sent in the moment before the person's turn starts has its round 
   assert.ok(!steps.has(7), "the person's turn is theirs")
   assert.ok(steps.has(10) && steps.has(11), "and the turn after is the round")
   assert.equal(nothingNew(records, records.slice(8)), true)
+})
+
+test("a hand-over waiting past the person's turn is cancelled by its failed send, and survives an unlogged start", async () => {
+  const { ownRounds } = await import("../src/extract.js")
+  const failed = [
+    { n: 1, k: "prompt", text: "fix bug" },
+    { n: 2, k: "handover", about: "work", sent: true, text: "the logs come first" },
+    { n: 3, k: "handover", about: "notice", undelivered: true, of: 2, text: "could not be delivered" },
+    { n: 4, k: "session", event: "start" },
+    { n: 6, k: "session", event: "end" },
+    { n: 8, k: "session", event: "start" },
+    { n: 9, k: "tool", tool: "edit", input: { path: "a.js" } },
+    { n: 11, k: "session", event: "end" },
+  ]
+  assert.ok(!ownRounds(failed).steps.has(9), "a send that failed opens nothing, later or not")
+  const unlogged = [
+    { n: 1, k: "prompt", text: "fix bug" },
+    { n: 2, k: "handover", about: "work", sent: true, text: "the logs come first" },
+    { n: 5, k: "tool", tool: "read", input: { path: "a.js" } }, // the person's turn, its start unlogged
+    { n: 6, k: "session", event: "end" },
+    { n: 8, k: "session", event: "start" },
+    { n: 9, k: "tool", tool: "subagent", input: { prompt: "please read it" } },
+    { n: 11, k: "session", event: "end" },
+    { n: 12, k: "session", event: "start" },
+    { n: 13, k: "tool", tool: "edit", input: { path: "b.js" } },
+    { n: 14, k: "session", event: "end" },
+  ]
+  const { steps } = ownRounds(unlogged)
+  assert.ok(steps.has(9) && !steps.has(13) && !steps.has(5), "the round is the turn after the person's")
 })

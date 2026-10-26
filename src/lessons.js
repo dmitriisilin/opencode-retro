@@ -434,7 +434,7 @@ export function createStore({ dir, archive, cap = DEFAULT_CAP, halfLife = DEFAUL
             // problem just seen again (checks after the stranger's hour). Evicted: never decided,
             // so the baseline from its first recording stands.
             targetFingerprint: evicted
-              ? (buried.targetFingerprint ?? fingerprint?.(buried.proposal?.target))
+              ? (buried.targetFingerprint ?? undefined)
               : (fingerprint?.(lesson.proposal?.target) ?? undefined),
             file: freeName(dir, buried.file ?? `${buried.id}.md`),
           }

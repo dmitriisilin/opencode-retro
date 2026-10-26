@@ -221,7 +221,7 @@ export default {
           topScore: lessons.length ? store.score(lessons[0]) : null,
           ...stockFacts(ids),
           cited: ids.filter((id) => cited.has(id)).length,
-          decided: decidedCount(),
+          decided: archiveCounts().decided,
           unreadable: store.unreadable(),
         })
         mkdirSync(config.dir, { recursive: true })
@@ -1081,14 +1081,9 @@ export default {
     }
 
     /**
-     * Lessons decided: in the archive by a decision, not by the cap — an eviction is no decision
-     * (decision 17), and two counts of "decided" in two files had drifted apart.
+     * The archive in two numbers, from one read of it: decided — by a decision, not by the cap,
+     * since an eviction is no decision (decision 17) — and pushed out by the cap.
      */
-    function decidedCount() {
-      return archiveCounts().decided
-    }
-
-    /** The archive in two numbers, from one read of it: decided, and pushed out by the cap. */
     function archiveCounts() {
       const archived = store.listArchive()
       return {

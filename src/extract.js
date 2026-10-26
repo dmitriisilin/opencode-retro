@@ -77,9 +77,10 @@ function isIndentedWorkLine(text) {
 function answerStarts(sorted) {
   const at = new Map()
   let inTurn = false
+  // Hand-overs in the inbox, one queue: each waits for a turn start, and one sent after the
+  // person spoke but before their turn began waits past that turn first (`past` false until it
+  // has gone by — at its start, or at its end when the start went unlogged).
   let waiting = []
-  // Sent after the person spoke and before the turn they opened: they wait past that turn.
-  let behind = []
   let spoke = false
   for (let i = 0; i < sorted.length; i++) {
     const r = sorted[i]
@@ -96,9 +97,17 @@ function answerStarts(sorted) {
     }
     if (r.k === "session") {
       inTurn = r.event === "start"
-      if (inTurn) for (const h of waiting) spoke ? at.delete(h) : at.set(h, i)
-      if (inTurn) waiting = behind
-      if (inTurn) behind = []
+      const still = []
+      for (const w of waiting) {
+        if (!w.past) {
+          w.past = true // the person's own turn, going by
+          still.push(w)
+        } else if (inTurn) {
+          if (spoke) at.delete(w.h)
+          else at.set(w.h, i)
+        } else still.push(w)
+      }
+      waiting = still
       spoke = false
       continue
     }
@@ -109,23 +118,17 @@ function answerStarts(sorted) {
       let h = -1
       if (Number.isFinite(r.of)) for (h = i - 1; h >= 0 && sorted[h].n !== r.of; h--);
       if (h >= 0) at.delete(h)
-      waiting = waiting.filter((w) => w !== h)
+      waiting = waiting.filter((w) => w.h !== h)
       continue
     }
     const sent = isSent(r)
-    // Sent after the person has spoken and before the turn they opened is logged as started —
-    // the moment between a prompt and its turn's start: that turn answers them (checks after
-    // the ten rounds).
-    if (sent && !inTurn && spoke) {
-      // ...but it is still in the inbox, and the turn after theirs may take it up: it waits for
-      // that one (the review after the stranger's hour).
+    if (sent && (inTurn || spoke)) {
+      // Into a running turn, it waits for that turn to end. Sent after the person has spoken
+      // and before the turn they opened is logged as started — the moment between a prompt and
+      // its start — it waits past their turn too: that turn answers them, and the one after may
+      // take it up (checks after the ten rounds, and the review after the stranger's hour).
       at.set(i, null)
-      behind.push(i)
-      continue
-    }
-    if (sent && inTurn) {
-      at.set(i, null)
-      waiting.push(i)
+      waiting.push({ h: i, past: inTurn })
     } else at.set(i, i)
   }
   return at

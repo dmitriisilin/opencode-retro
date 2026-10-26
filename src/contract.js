@@ -85,7 +85,9 @@ Rules:
   lesson it handed over is the review of that lesson, not the problem happening again: do not
   report it as a recurrence, and do not count its steps as cost. Counting it would make every
   lesson that gets reviewed look more important for having been reviewed. Only
-  \`"about": "lesson"\` means that.
+  \`"about": "lesson"\` means that — and not a hand-over that a later notice with
+  \`"undelivered": true\` names by its step (\`of\`): that one never arrived, and what follows it
+  is ordinary work.
 - **The plugin's own work is not the session's — leave it out.** A \`handover\` with
   \`"about": "work"\` asks for a round of this plugin's own: the agent starting readers like
   you, their records coming back, \`retro_propose\`. The order names, step by step, everything
