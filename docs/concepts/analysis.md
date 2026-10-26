@@ -254,6 +254,7 @@ rare, since the hand-over asks it to start readers and nothing else — is left 
   round takes no order, and the order tells the reader to leave rounds out.
   `a round of the plugin's own is logged, and a log grown by nothing else takes no order`
   `the order tells the reader where the plugin's own work is and to leave it out`
+  `a re-read names only the plugin's own steps it is asked to read`
   `a reworded reader is folded into the person's log inside the round`
   `a reader whose prompt OpenCode prefixed with its own line is still not logged`
   `a /retro posted into a turn still running leaves the rest of that turn the person's`

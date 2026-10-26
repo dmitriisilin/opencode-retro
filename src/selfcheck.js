@@ -200,7 +200,12 @@ export function assess(session) {
 
   const log = session.log ?? { exists: false, size: 0 }
   checks.push(
-    log.exists && log.size > 0
+    // Nothing written yet is not a broken writer: the first hook of a session can be one that
+    // writes no record — `execute.before` — and the report measured then said BROKEN about a
+    // plugin a moment from writing its first line (the review after the stranger's hour).
+    !log.exists && !(c.records > 0)
+      ? { status: SKIPPED, name: "shadow log", detail: "nothing written to it yet" }
+      : log.exists && log.size > 0
       ? {
           status: OK,
           name: "shadow log",

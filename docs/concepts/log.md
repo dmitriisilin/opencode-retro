@@ -49,8 +49,9 @@ rendered as one.
   this has nothing new in it.
 - `open` — the analysis reported reading only part of the log. Owed now.
 - `failed` — the plugin's last read of this log failed. Owed now, while attempts are left.
-- `attempts` — reads the plugin could not complete at this `size`. Growth resets it: new
-  material has not failed anywhere yet. An unanswered order is not counted here — it is
+- `attempts` — reads the plugin could not complete on this input. Growth by something an
+  analysis could read resets it: new material has not failed anywhere yet. Growth by nothing
+  to read — the plugin's own round, a hand-over, a turn's end — is the same input, and does not. An unanswered order is not counted here — it is
   counted on the order, as an asking (analysis.md).
 - `id` — the identity of the file the mark describes (see state.md). A mark about a
   different file is void. A mark written before identities existed is voided by the one
@@ -64,8 +65,9 @@ not make a log owed: a hand-over, a turn's start or end, a reply to the plugin's
 hand-over, and the plugin's own rounds (analysis.md, "The plugin's own work"). It stays in the
 log, and the next read carries it along with whatever follows.
 
-**Read to its end.** A log whose mark covers its whole size with neither flag set. Not
-permanent: a session prompted again grows past its mark and is owed again.
+**Read to its end.** A log that is not owed: its mark covers it, with neither flag set, but for
+growth that holds nothing to read (see "Owed"). Not permanent: a session prompted again grows
+past its mark by something to read and is owed again.
 
 **Retired.** A log with three failed reads at the same size — a file that could not be opened
 or parsed, a work order that could not be written (no `extract.md` resolving is one way), or a

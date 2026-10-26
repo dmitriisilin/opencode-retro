@@ -350,3 +350,11 @@ test("a pending update is named where it really is, an overridden prompts direct
   const where = report.notes[0]
   assert.ok(where.startsWith(`${relative(r.root, r.updates)}/extract.v`), where)
 })
+
+test("a session whose first hook wrote nothing yet is not a broken shadow log", () => {
+  const checks = assess({ ...healthy, counts: { ...healthy.counts, records: 0 }, log: { exists: false, size: 0 } })
+  const line = checks.find((c) => c.name === "shadow log")
+  assert.equal(line.status, STATUS.SKIPPED)
+  const broken = assess({ ...healthy, counts: { ...healthy.counts, records: 3 }, log: { exists: false, size: 0 } })
+  assert.equal(broken.find((c) => c.name === "shadow log").status, STATUS.BROKEN, "records written and no file is")
+})

@@ -410,3 +410,10 @@ test("a rejection reason quoting the list's mark does not stop the list being br
   const list = text.slice(text.indexOf("## Lessons already recorded"), text.indexOf("## Rejected"))
   assert.match(list, /`fresh-one`/)
 })
+
+test("a re-read names only the plugin's own steps it is asked to read", () => {
+  const r = rig()
+  const { order } = analyse(r, { analysedUpTo: 10, rounds: [[3, 5], [12, 14]] })
+  assert.match(order.text, /all of it: steps 12–14\./)
+  assert.doesNotMatch(order.text, /steps 3–5/)
+})
