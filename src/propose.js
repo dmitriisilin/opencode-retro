@@ -212,14 +212,17 @@ export function renderProposal(
 /** What was decided before a lesson came back: its history, oldest first, a few lines each. */
 function previousLines(lesson) {
   const decisions = Array.isArray(lesson.decisions) ? lesson.decisions : []
+  // Every line of a block indented under its item: a proposal or a discovery of several lines
+  // otherwise broke out of the list and read as part of the current proposal.
+  const item = (label, text) => `  ${label}: ${String(text).trim().replaceAll("\n", "\n    ")}`
   return decisions.flatMap((d) => [
     "",
     `- ${d.status ?? "closed"}${d.closedAt ? ` on ${String(d.closedAt).slice(0, 16).replace("T", " ")} UTC` : ""}` +
-      `${d.decidedIn ? ` in \`${d.decidedIn}\`` : ""}: ${d.statement ?? ""}`,
-    ...(d.proposal?.change ? [`  Proposed then${d.proposal.target ? ` (${d.proposal.target})` : ""}: ${String(d.proposal.change).trim()}`] : []),
-    ...(d.note ? [`  Decided: ${d.note}`] : []),
+      `${d.decidedIn ? ` in \`${d.decidedIn}\`` : ""}: ${String(d.statement ?? "").trim().replaceAll("\n", "\n  ")}`,
+    ...(d.proposal?.change ? [item(`Proposed then${d.proposal.target ? ` (${d.proposal.target})` : ""}`, d.proposal.change)] : []),
+    ...(d.note ? [item("Decided", d.note)] : []),
     ...(Array.isArray(d.changed) && d.changed.length ? [`  Changed: ${d.changed.join(", ")}`] : []),
-    ...(d.discovered ? [`  Found on the way: ${String(d.discovered).trim()}`] : []),
+    ...(d.discovered ? [item("Found on the way", d.discovered)] : []),
   ])
 }
 
@@ -356,11 +359,16 @@ export function renderNothing({ queued = 0, extracted = null, dir = DEFAULTS.dir
   } else {
     lines.push(
       "",
-      evicted
-        ? `Nothing is open. ${evicted} lesson${evicted === 1 ? " was" : "s were"} pushed out to \`${dir}/archive/\` by the cap without being decided, and come${evicted === 1 ? "s" : ""} back if the problem recurs.`
-        : decided && !queued
-          ? `Every lesson recorded so far has been decided — ${decided} in \`${dir}/archive/\` — and nothing new has come up since.`
-          : "Either the sessions have been going straight, or nothing is recorded yet.",
+      (decided || evicted) && !queued
+        ? `Nothing is open. In \`${dir}/archive/\`: ` +
+            [
+              decided ? `${decided} decided` : null,
+              evicted ? `${evicted} pushed out by the cap without being decided, which come${evicted === 1 ? "s" : ""} back if the problem recurs` : null,
+            ]
+              .filter(Boolean)
+              .join("; ") +
+            ". Nothing new has come up since."
+        : "Either the sessions have been going straight, or nothing is recorded yet.",
       `\`${dir}/selfcheck.md\` says whether the plugin is actually watching.`,
     )
   }

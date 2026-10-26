@@ -485,7 +485,9 @@ export function createStore({ dir, archive, cap = DEFAULT_CAP, halfLife = DEFAUL
             // "changed since the recurrence" as "changed since the lesson was recorded".
             targetFingerprint: target.proposal?.target
               ? (target.targetFingerprint ?? undefined)
-              : (fingerprint?.(lesson.proposal?.target) ?? undefined),
+              : target.proposal
+                ? undefined // the proposal kept names no file, so there is nothing to measure
+                : (fingerprint?.(lesson.proposal?.target) ?? undefined),
           }
           if (write(updated)) result.merged.push(updated.id)
           byId.set(updated.id, updated)

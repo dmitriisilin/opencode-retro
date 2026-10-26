@@ -742,3 +742,14 @@ test("a fix named for the first time after a reopening is measured against its o
   assert.equal(back.proposal.target, "B.md")
   assert.equal(back.targetFingerprint, "hash-of-B.md")
 })
+
+test("a kept proposal that names no file is not measured against a file another reading named", () => {
+  const s = sandbox()
+  const store = s.store()
+  const fingerprint = (t) => (t ? `hash-of-${t}` : undefined)
+  store.record([lesson({ proposal: { change: "do something" } })], { session: "a", fingerprint })
+  store.record([lesson({ proposal: { target: "OTHER.md", change: "y" } })], { session: "b", fingerprint })
+  const [l] = store.list()
+  assert.equal(l.proposal.target, undefined)
+  assert.equal(l.targetFingerprint, undefined)
+})

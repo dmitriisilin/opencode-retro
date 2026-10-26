@@ -139,7 +139,13 @@ export function createPrompts({
       try {
         mkdirSync(updates, { recursive: true })
         remember()
-        writeFileSync(file, header(name, live, current) + text)
+        try {
+          writeFileSync(file, header(name, live, current) + text)
+        } catch (err) {
+          // Not written, so not delivered: forgotten again, to be tried at the next load.
+          writeFileSync(delivered, sent.filter(Boolean).map((n) => `${n}\n`).join(""))
+          throw err
+        }
       } catch (err) {
         onError?.(`prompts.update ${name}`, err)
         return null

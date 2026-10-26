@@ -340,7 +340,7 @@ test("a lesson that came back is handed over with what was decided before", () =
 
 test("nothing to review after every lesson was decided says so, not that nothing is recorded", () => {
   const text = renderNothing({ decided: 2 })
-  assert.match(text, /Every lesson recorded so far has been decided — 2 in `\.retro\/archive\/`/)
+  assert.match(text, /Nothing is open\. In `\.retro\/archive\/`: 2 decided\. Nothing new has come up since\./)
   assert.doesNotMatch(text, /nothing is recorded yet/)
 })
 
@@ -352,6 +352,14 @@ test("nothing to review with logs still unread does not say nothing new has come
 
 test("nothing open with lessons the cap pushed out does not call them decided", () => {
   const text = renderNothing({ decided: 1, evicted: 5 })
-  assert.match(text, /5 lessons were pushed out to `\.retro\/archive\/` by the cap without being decided/)
-  assert.doesNotMatch(text, /Every lesson recorded so far has been decided/)
+  assert.match(text, /1 decided; 5 pushed out by the cap without being decided/, "both, told apart")
+})
+
+test("a decision's several-line proposal stays inside its item in the hand-over", () => {
+  const back = lesson({
+    reopenedFrom: "accepted",
+    decisions: [{ status: "accepted", statement: "s", proposal: { target: "SKILL.md", change: "Add a precondition:\n1. check for .eslintrc\n2. skip otherwise" } }],
+  })
+  const text = renderProposal(back, { total: 1, remaining: 0 })
+  assert.match(text, /\n {4}1\. check for \.eslintrc\n {4}2\. skip otherwise/)
 })
