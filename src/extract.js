@@ -124,6 +124,10 @@ function answerStarts(sorted) {
   return at
 }
 
+/** A delegation whose prompt is a work order's line: a reader's start. */
+const isReaderCall = (r) =>
+  r.k === "tool" && r.tool === "subagent" && typeof r.input?.prompt === "string" && isIndentedWorkLine(r.input.prompt)
+
 /** Sent to start a turn. A `work` hand-over always is: `/retro` is its one writer, never a tool result. */
 const isSent = (r) => Boolean(r.sent) || isWorkHandover(r)
 
@@ -216,6 +220,9 @@ export function ownRounds(records) {
   // the round while the reader is still reading (thirty-fourth review).
   const readers = new Set()
   for (const r of sorted) if (r.k === "prompt" && r.from && steps.has(r.n)) readers.add(r.from)
+  // And a session a `subagent` call with a work order's line started, wherever that call is:
+  // a reader the plugin did not recognise by its prompt is still one by its delegation.
+  for (const r of sorted) if (isReaderCall(r) && r.child) readers.add(r.child)
   for (const r of sorted) {
     if (r.from && readers.has(r.from)) steps.add(r.n)
     // And the delegation that started one, wherever it lands — after an early `retro_propose`.
@@ -225,7 +232,7 @@ export function ownRounds(records) {
     // which an early `retro_propose` puts after the round has closed (thirty-second review).
     // A delegation's own text is the agent's, never the person's, so an indent is allowed — and
     // OpenCode's own line is never in it: that is added to the child's prompt, not the call's.
-    if (OWN_TOOLS.has(r.tool) || (r.tool === "subagent" && typeof r.input?.prompt === "string" && isIndentedWorkLine(r.input.prompt))) steps.add(r.n)
+    if (OWN_TOOLS.has(r.tool) || isReaderCall(r)) steps.add(r.n)
   }
   // The ranges the order names are the steps themselves, run by run, so a reader is told about
   // everything that is ours — a reworded reader's records after its round included, and a
@@ -459,7 +466,11 @@ export function refreshLessons(text, { store, lessonsDir, block = lessonsBlock(c
 /** The list as `refreshLessons` writes it, built once for every order a record leaves waiting. */
 export const recordedLessons = ({ store, lessonsDir }) => lessonsBlock(currentLessons(store), lessonsDir)
 
-const lessonsBlock = (lessons, dir) => `${LESSONS_OPEN}\n${renderExisting(lessons, dir).trim()}\n${LESSONS_CLOSE}`
+// A statement is the model's prose and may quote anything, the marks included (this repository
+// runs the plugin on itself): inside the block a comment opener is broken, so the only marks
+// there are the two around it.
+const lessonsBlock = (lessons, dir) =>
+  `${LESSONS_OPEN}\n${renderExisting(lessons, dir).trim().replaceAll("<!--", "<!\u200b--")}\n${LESSONS_CLOSE}`
 
 /**
  * A record, folded into the store: the rejected filtered out, the rest recorded by problem.

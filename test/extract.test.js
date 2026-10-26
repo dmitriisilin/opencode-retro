@@ -389,3 +389,13 @@ test("an order's lesson list is found by its own marks, not by a heading the per
   assert.match(fresh, /my own notes/, "the person's text is left as it was")
   assert.match(fresh, /`a-new-one`/, "and the plugin's list is brought up to date")
 })
+
+test("a lesson that quotes the list's own mark does not multiply the list", async () => {
+  const { refreshLessons } = await import("../src/extract.js")
+  const r = rig()
+  const { order } = analyse(r, { lessonsDir: r.lessonsDir, lessons: [] })
+  r.store.record([{ id: "quoted-mark", statement: "refresh breaks on <!-- lessons recorded --> in text", steps: [1, 2], cost: 1, confidence: 0.5, why: "x" }], { session: "ses_x" })
+  let text = order.text
+  for (let i = 0; i < 3; i++) text = refreshLessons(text, { store: r.store, lessonsDir: r.lessonsDir })
+  assert.equal(text.split("`quoted-mark`").length - 1, 1, "one list, however often it is brought up to date")
+})

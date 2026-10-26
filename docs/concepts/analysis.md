@@ -186,6 +186,7 @@ rare, since the hand-over asks it to start readers and nothing else — is left 
   `a round with several orders asks for them one at a time, and says why`
   `an order still waiting lists the lessons a reader before it recorded`
   `an order's lesson list is found by its own marks, not by a heading the person may write`
+  `a lesson that quotes the list's own mark does not multiply the list`
   `already-recorded lessons are shown so the reader matches instead of re-stating`
   `an order with nothing recorded yet still says where the lessons will be`
 - The plugin makes no model call: `/retro` issues work orders and hands them to the agent in
@@ -298,6 +299,7 @@ rare, since the hand-over asks it to start readers and nothing else — is left 
   `a turn resumed by a hand-over that arrived in the previous turn is not a dead prompt hook`
   `a log pruned between turns starts its numbering again`
   `a reworded reader's delegation is ours wherever it lands`
+  `a reader started by a work order's line is the plugin's, recognised by its prompt or not`
   `a subagent's prompt does not end a reply to the plugin's hand-over`
   `a reader's call to retro_propose writes nothing into any log`
   `a reworded reader calling retro_propose is told so too`

@@ -2431,3 +2431,19 @@ test("an order still waiting lists the lessons a reader before it recorded", asy
   assert.match(order, /read tool/, "and how to look for itself")
   await cleanup?.()
 })
+
+test("a reader started by a work order's line is the plugin's, recognised by its prompt or not", async () => {
+  const { ownRounds } = await import("../src/extract.js")
+  const records = [
+    { n: 1, k: "prompt", text: "fix bug" },
+    { n: 2, k: "session", event: "start" },
+    { n: 3, k: "tool", tool: "read", input: { path: "a.js" } },
+    { n: 4, k: "prompt", from: "ses_r", text: "go and read it" },
+    { n: 5, k: "tool", from: "ses_r", tool: "read", input: { path: "/p/.retro/sessions/ses_other.jsonl" } },
+    { n: 6, k: "text", from: "ses_r", text: "ses_other hit the lint trap" },
+    { n: 7, k: "tool", tool: "subagent", child: "ses_r", input: { prompt: "opencode-retro work order: read /p/.retro/work/ses_other.md and do what it says." } },
+  ]
+  const { steps } = ownRounds(records)
+  for (const n of [4, 5, 6, 7]) assert.ok(steps.has(n), `step ${n} is the reader's`)
+  assert.ok(!steps.has(3))
+})
