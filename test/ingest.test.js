@@ -422,3 +422,16 @@ test("a delegation's call left open at the root's end is written with its origin
   const open = out.find((r) => r.status === "unfinished")
   assert.equal(open.from, "c", "the subagent's call, not the agent's")
 })
+
+test("a turn's end delivered twice is written once, a hand-over between them notwithstanding", () => {
+  const { out, ingest } = collector()
+  ingest.prompt({ sessionID: "s", messageID: "m1", prompt: { text: "go" } })
+  ingest.event({ type: "session.execution.started", durable: { seq: 1 }, data: { sessionID: "s" } })
+  ingest.event({ type: "session.execution.succeeded", durable: { seq: 2 }, data: { sessionID: "s" } })
+  ingest.handover("s", "the logs come first", "work", { sent: true })
+  ingest.event({ type: "session.execution.succeeded", durable: { seq: 2 }, data: { sessionID: "s" } })
+  assert.equal(out.filter((r) => r.k === "session" && r.event === "end").length, 1)
+  ingest.event({ type: "session.execution.started", durable: { seq: 3 }, data: { sessionID: "s" } })
+  ingest.event({ type: "session.execution.succeeded", durable: { seq: 4 }, data: { sessionID: "s" } })
+  assert.equal(out.filter((r) => r.k === "session" && r.event === "end").length, 2, "the next turn's end is news")
+})

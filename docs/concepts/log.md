@@ -101,6 +101,9 @@ keeps everything.
 - A delegation's record says so wherever it is written: a call of a subagent's still open when
   the root's turn ends is logged as unfinished with that subagent as its `from`.
   `a delegation's call left open at the root's end is written with its origin`
+- One turn, one end record: an end delivered again, or late, with no turn going on since, is not
+  written — read in log order it would be a turn boundary that never happened.
+  `a turn's end delivered twice is written once, a hand-over between them notwithstanding`
 - The event stream may annotate a log, never open one.
   `a session no hook ever fired for is not ours, and gets no log at all`
   `once a hook has fired, the event stream annotates that same session`

@@ -92,6 +92,10 @@ export function createIngest({
     const target = owner(sessionID)
     const s = session(target)
     s.counts.records++
+    // A turn going on again — a start, or work being done — makes its end news; a prompt or a
+    // hand-over written between turns does not, since neither is a turn yet.
+    if (record.k === "session") s.endWritten = record.event === "end"
+    else if (record.k !== "prompt" && record.k !== "handover") s.endWritten = false
     // A record of a delegation's own session says so: its prompt is the delegation's
     // instruction, not the person's, and the log alone could not tell the two apart.
     // Read from the file again after a turn ended: another process may have written the turns
@@ -349,6 +353,11 @@ export function createIngest({
         default:
           if (!isTurnEnd(e)) return
           if (parentOf(sessionID)) return // the parent is still working
+          // A second end for the same turn — the event repeated, or a late one — writes nothing:
+          // read in log order, it was a turn boundary that never happened, and cut the round
+          // that follows a hand-over short at it (the review after the stranger's hour). The
+          // session stays ours across turns, so nothing else stops it any more.
+          if (s.endWritten) return
           for (const call of s.pending.values()) {
             // Counted, because it is the one honest reason an event has no after-hook: the turn
             // ended (an interrupt, usually) while the call was still running.
