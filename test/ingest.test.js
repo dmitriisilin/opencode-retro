@@ -393,3 +393,10 @@ test("a turn after another process wrote the session numbers on from the file", 
   write({ sessionID: "s", messageID: "m2", prompt: { text: "again" } })
   assert.equal(out.at(-1).n, 41)
 })
+
+test("a hand-over whose send failed is taken back from the count", () => {
+  const { ingest } = collector()
+  ingest.handover("s", "the logs come first", "work", { sent: true })
+  ingest.handover("s", "could not be delivered", "notice", { undelivered: true, of: 1 })
+  assert.equal(ingest.counts("s").handovers, 0)
+})

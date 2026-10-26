@@ -8,7 +8,7 @@ import { createState } from "./src/state.js"
 import { concludedIn, createStore, score } from "./src/lessons.js"
 import { assessCurrency, fingerprintOf } from "./src/currency.js"
 import { writeAtomic } from "./src/atomic.js"
-import { composeOrder, isWorkLine, lastReadable, nothingNew, ownRounds, recordAnswer, refreshLessons, repliesToPlugin, turnHandovers } from "./src/extract.js"
+import { composeOrder, isWorkLine, lastReadable, nothingNew, ownRounds, recordAnswer, recordedLessons, refreshLessons, repliesToPlugin, turnHandovers } from "./src/extract.js"
 import { RECORD_INPUT } from "./src/contract.js"
 import {
   PROPOSE_INPUT,
@@ -719,7 +719,10 @@ export default {
         } finally {
           closeSync(fd)
         }
-      } catch {
+      } catch (err) {
+        // Owed, the side that loses nothing — and said, since a log that cannot be read is
+        // asked about on every report for a reason somebody should be able to find.
+        if (err?.code !== "ENOENT") onError("extract.growth", err)
         nothing = false
       }
       grown.set(id, { from, size, file, nothing })
@@ -1375,11 +1378,14 @@ export default {
      * not at all, so a reader opening it at that moment reads one whole order.
      */
     function refreshOpenOrders() {
-      for (const order of state.openOrders()) {
+      const open = state.openOrders()
+      if (!open.length) return
+      const block = recordedLessons({ store, lessonsDir: config.lessons })
+      for (const order of open) {
         const path = workPath(order.session)
         try {
           const text = readFileSync(path, "utf8")
-          const fresh = refreshLessons(text, { store, lessonsDir: config.lessons })
+          const fresh = refreshLessons(text, { block })
           if (fresh === text) continue
           writeAtomic(path, fresh)
         } catch (err) {

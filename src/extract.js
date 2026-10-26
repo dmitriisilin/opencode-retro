@@ -449,12 +449,15 @@ const LESSONS_CLOSE = "<!-- /lessons recorded -->"
  * nothing was there. An order rewritten after every record lists them whatever the reader
  * does (checks after the ten rounds). Returns the text unchanged when it has no such section.
  */
-export function refreshLessons(text, { store, lessonsDir }) {
+export function refreshLessons(text, { store, lessonsDir, block = lessonsBlock(currentLessons(store), lessonsDir) }) {
   const start = text.lastIndexOf(LESSONS_OPEN)
   const end = text.lastIndexOf(LESSONS_CLOSE)
   if (start < 0 || end < start) return text
-  return text.slice(0, start) + lessonsBlock(currentLessons(store), lessonsDir) + text.slice(end + LESSONS_CLOSE.length)
+  return text.slice(0, start) + block + text.slice(end + LESSONS_CLOSE.length)
 }
+
+/** The list as `refreshLessons` writes it, built once for every order a record leaves waiting. */
+export const recordedLessons = ({ store, lessonsDir }) => lessonsBlock(currentLessons(store), lessonsDir)
 
 const lessonsBlock = (lessons, dir) => `${LESSONS_OPEN}\n${renderExisting(lessons, dir).trim()}\n${LESSONS_CLOSE}`
 

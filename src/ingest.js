@@ -263,6 +263,8 @@ export function createIngest({
       // Only one sent to start a turn, and delivered: a tool result, or a notice that a send
       // failed, started nothing — as `turnHandovers` reads the log, for when it cannot be read.
       if (sent && !undelivered) s.counts.handovers++
+      // And one counted before its send failed is taken back by the notice that says so.
+      if (undelivered && s.counts.handovers > 0) s.counts.handovers--
       // `about` separates the two hand-overs the plugin writes: a lesson put to the human,
       // and a request for the analyses that have to run first. They read identically in a
       // log and mean different things — the extraction contract discounts work that reviews
