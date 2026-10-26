@@ -299,7 +299,8 @@ test("a reply to the plugin's own hand-over, with nothing done, takes no work or
     records: [
       { k: "prompt", n: 1, text: "do a thing" },
       { k: "handover", n: 3, text: "opencode-retro handed a lesson over" },
-      { k: "text", n: 4, text: "Thanks — nothing to do about that one." },
+      // Stamped as the hand-over's when it was written: the turn it resumed (ingest).
+      { k: "text", n: 4, round: 3, text: "Thanks — nothing to do about that one." },
     ],
     session: "ses_selftalk",
     analysedUpTo: 2,

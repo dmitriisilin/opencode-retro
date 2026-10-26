@@ -126,7 +126,8 @@ function parseBlockScalar(lines, start, indent, stated = null) {
     const line = lines[i]
     if (line.trim() && indentOf(line) <= indent) break
     if (inner === null && line.trim()) inner = indentOf(line)
-    body.push(line.trim() ? line.slice(inner ?? indent + 2) : "")
+    // A line of spaces alone keeps the spaces past the block's indent: they may be content.
+    body.push(line.trim() ? line.slice(inner ?? indent + 2) : line.slice(inner ?? indent + 2))
     i++
   }
   while (body.length && !body.at(-1).trim()) body.pop()

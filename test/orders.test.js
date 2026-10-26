@@ -1644,18 +1644,6 @@ test("a reader's call to retro_propose writes nothing into any log", async () =>
 
 /* Whole-series review over 4112915..85657f4. */
 
-test("a subagent's prompt does not end a reply to the plugin's hand-over", async () => {
-  const { nothingNew } = await import("../src/extract.js")
-  const all = [
-    { n: 1, k: "prompt", text: "go" },
-    { n: 2, k: "handover", about: "notice", text: "nothing to review" },
-    { n: 3, k: "prompt", from: "ses_x", text: "You are a subagent.\nexplore" },
-    { n: 4, k: "text", text: "ok, nothing to do then" },
-  ]
-  // The reply at 4 still answers the notice; the subagent's prompt in between changes nothing.
-  assert.equal(nothingNew(all, [all[3]]), true)
-})
-
 test("a session stays the plugin's across turns, so a turn resumed by a hand-over is logged from its start", async () => {
   // Forty-third pre-release review: forgetting a session at its turn's end dropped the next
   // turn's start, and anything before its first hook, whenever that turn began with no hook.
@@ -1674,18 +1662,6 @@ test("a session stays the plugin's across turns, so a turn resumed by a hand-ove
   await cleanup?.()
 })
 
-test("a subagent's text, delegated in answer to a plugin notice, is part of that reply", async () => {
-  const { nothingNew } = await import("../src/extract.js")
-  const all = [
-    { n: 1, k: "prompt", text: "go" },
-    { n: 2, k: "handover", about: "notice", text: "nothing to review" },
-    { n: 3, k: "prompt", from: "ses_x", text: "You are a subagent.\nexplore" },
-    { n: 4, k: "text", from: "ses_x", text: "there is nothing here" },
-  ]
-  // Its instruction and its text arrive together, as they do live (forty-fourth review).
-  assert.equal(nothingNew(all, all.slice(2)), true)
-})
-
 test("a subagent of the person's already running when a hand-over arrives stays theirs", async () => {
   const { nothingNew } = await import("../src/extract.js")
   const all = [
@@ -1695,27 +1671,6 @@ test("a subagent of the person's already running when a hand-over arrives stays 
     { n: 4, k: "text", from: "ses_x", text: "found three config files that disagree" },
   ]
   assert.equal(nothingNew(all, [all[3]]), false, "its findings are something to read")
-})
-
-test("a turn resumed by a hand-over that arrived in the previous turn is not a dead prompt hook", async () => {
-  // Forty-fourth pre-release review: the turn's end reset the hand-over count, and the resumed
-  // turn — no prompt of its own — read as a dead prompt hook.
-  const dir = sandbox()
-  const fake = fakeOpenCode({ directory: dir, agent: false })
-  const cleanup = await plugin.setup(fake.ctx)
-  await work(fake, "ses_a")
-  await fake.hooks.get("session.prompt")({ sessionID: "ses_p", messageID: "p1", prompt: { text: "fix the build" } })
-  fake.emit({ type: "session.execution.started", durable: { seq: 1 }, data: { sessionID: "ses_p" } })
-  await new Promise((r) => setImmediate(r))
-  await fake.commands.get("retro").execute({ sessionID: "ses_p", prompt: { text: "" } })
-  fake.emit({ type: "session.execution.succeeded", durable: { seq: 5 }, data: { sessionID: "ses_p" } })
-  fake.emit({ type: "session.execution.started", durable: { seq: 6 }, data: { sessionID: "ses_p" } })
-  await new Promise((r) => setImmediate(r))
-  const d = { sessionID: "ses_p", id: "d1", tool: "read", input: { path: "x" } }
-  await fake.hooks.get("tool.execute.before")(d)
-  await fake.hooks.get("tool.execute.after")({ ...d, status: "completed", result: { output: "y" } })
-  assert.doesNotMatch(readFileSync(join(dir, ".retro", "selfcheck.md"), "utf8"), /BROKEN\s+prompt hook/)
-  await cleanup?.()
 })
 
 test("a log pruned between turns starts its numbering again", async () => {
@@ -1928,44 +1883,6 @@ test("the askings add up in the session /retro runs in, which its own rounds len
 
 /* After the ten rounds: the self-check reads a hand-over's turn as rounds and replies do. */
 
-test("the self-check reads which turn a hand-over started as rounds and replies do", async () => {
-  const { turnHandovers } = await import("../src/extract.js")
-  const turn = (extra) => [
-    { n: 1, k: "prompt", text: "fix bug" },
-    { n: 2, k: "session", event: "start" },
-    { n: 3, k: "handover", about: "lesson", sent: true, text: "a lesson" },
-    { n: 4, k: "text", text: "fixed" },
-    { n: 5, k: "session", event: "end" },
-    ...extra,
-    { n: 9, k: "session", event: "start" },
-  ]
-  assert.equal(turnHandovers(turn([])), 1, "waiting in the inbox, it is the next turn's input")
-  assert.equal(turnHandovers(turn([{ n: 6, k: "prompt", text: "no, do X" }])), 0, "the person spoke first: their turn")
-  assert.equal(
-    turnHandovers([
-      { n: 1, k: "prompt", text: "fix bug" },
-      { n: 2, k: "session", event: "start" },
-      { n: 3, k: "session", event: "end" },
-      { n: 4, k: "handover", about: "work", sent: true, text: "the logs come first" },
-      { n: 5, k: "handover", about: "notice", undelivered: true, of: 4, text: "could not be delivered" },
-      { n: 6, k: "session", event: "start" },
-    ]),
-    0,
-    "one never delivered started nothing",
-  )
-  assert.equal(
-    turnHandovers([
-      { n: 1, k: "prompt", text: "fix bug" },
-      { n: 2, k: "session", event: "start" },
-      { n: 3, k: "handover", about: "lesson", text: "a lesson" },
-      { n: 4, k: "session", event: "end" },
-      { n: 5, k: "session", event: "start" },
-    ]),
-    0,
-    "one handed back as a tool result answered the turn it was in",
-  )
-})
-
 test("a prompt that opens the next turn, after a turn whose end was lost, is the person's turn", async () => {
   const { ownSteps } = await import("../src/extract.js")
   const records = [
@@ -1981,24 +1898,6 @@ test("a prompt that opens the next turn, after a turn whose end was lost, is the
 })
 
 /* Checks after the ten rounds. */
-
-test("an undelivered notice cancels the hand-over it names, not the latest one", async () => {
-  const { ownSteps, pluginExchange } = await import("../src/extract.js")
-  const records = [
-    { n: 1, k: "prompt", text: "fix bug" },
-    { n: 2, k: "session", event: "start" },
-    { n: 3, k: "handover", about: "work", sent: true, text: "the logs come first" },
-    // Logged while the send above was still being awaited: the agent's own `retro_propose`.
-    { n: 4, k: "handover", about: "lesson", text: "a lesson" },
-    { n: 5, k: "handover", about: "notice", undelivered: true, of: 3, text: "could not be delivered" },
-    { n: 6, k: "text", text: "here is the lesson" },
-    { n: 7, k: "session", event: "end" },
-    { n: 8, k: "session", event: "start" },
-    { n: 9, k: "tool", tool: "shell", input: { command: "npm test" }, exit: 2 },
-  ]
-  assert.ok(pluginExchange(records).has(6), "the proposal handed back is still answered")
-  assert.ok(!ownSteps(records).steps.has(9), "and the failed /retro opens no round")
-})
 
 test("a notice of a failed send names the hand-over by its step", async () => {
   const dir = sandbox()
@@ -2134,21 +2033,6 @@ test("the session's line reports an asking nobody answered, not just that the lo
   await cleanup?.()
 })
 
-test("a log with no turn start at all is not excused by hand-overs from turns long gone", async () => {
-  const { turnHandovers } = await import("../src/extract.js")
-  const records = [
-    // Every start dropped: the prompt hook dead, so a session owned only from its first tool call.
-    { n: 1, k: "tool", tool: "read", input: { path: "a.js" } },
-    { n: 2, k: "session", event: "end" },
-    { n: 3, k: "handover", about: "lesson", sent: true, text: "a lesson" },
-    { n: 4, k: "text", text: "the lesson says…" },
-    { n: 5, k: "session", event: "end" },
-    { n: 6, k: "tool", tool: "read", input: { path: "b.js" } },
-  ]
-  assert.equal(turnHandovers(records), 0)
-  assert.equal(turnHandovers(records.slice(0, 4)), 1, "while its own turn runs, the hand-over is its input")
-})
-
 test("a /retro sent between the person's prompt and the turn it opens takes nothing of that turn", async () => {
   const { ownSteps } = await import("../src/extract.js")
   const records = [
@@ -2242,28 +2126,6 @@ test("a log passed over as one exchange, grown since by the plugin's round, says
   }
 })
 
-test("a subagent started to answer a hand-over is the person's again in a turn after", async () => {
-  const { pluginExchange } = await import("../src/extract.js")
-  const records = [
-    { n: 1, k: "prompt", text: "fix bug" },
-    { n: 2, k: "session", event: "start" },
-    { n: 3, k: "session", event: "end" },
-    { n: 4, k: "handover", about: "lesson", text: "a lesson" },
-    { n: 5, k: "session", event: "start" },
-    { n: 6, k: "prompt", from: "c1", text: "check the lesson" },
-    { n: 7, k: "text", from: "c1", text: "it holds" },
-    { n: 8, k: "session", event: "end" },
-    { n: 9, k: "prompt", text: "now ask it to do Y" },
-    { n: 10, k: "session", event: "start" },
-    { n: 11, k: "prompt", from: "c1", text: "now do Y" },
-    { n: 12, k: "text", from: "c1", text: "did Y, and Y failed twice" },
-    { n: 13, k: "session", event: "end" },
-  ]
-  const plugin = pluginExchange(records)
-  assert.ok(plugin.has(7), "its answer to the hand-over is the plugin's exchange")
-  assert.ok(!plugin.has(12), "its work for the person later is the person's")
-})
-
 test("a turn's end delivered again after the next prompt is no end to the report either", async () => {
   const dir = sandbox()
   const fake = fakeOpenCode({ directory: dir, agent: false })
@@ -2340,30 +2202,6 @@ test("what the plugin names as its own is certain, and never the person's work a
   for (const n of [1, 4, 5, 17]) assert.ok(!steps.has(n), `step ${n} is the person's`)
 })
 
-test("a growth that is the plugin's exchange takes no order, and a guess wrong that way loses nothing", async () => {
-  // The one place the order of the log is still read for the round: whether a log that grew
-  // is worth paying a reader for. Wrong, it waits — the mark does not move — and is read with
-  // whatever comes next; the person speaking again always makes it owed.
-  const { nothingNew, pluginExchange, lastReadable } = await import("../src/extract.js")
-  const records = [
-    { n: 1, k: "prompt", text: "fix bug" },
-    { n: 2, k: "session", event: "start" },
-    { n: 3, k: "session", event: "end" },
-    { n: 4, k: "handover", about: "work", sent: true, resumes: true, text: "the logs come first" },
-    { n: 5, k: "session", event: "start" },
-    { n: 6, k: "text", text: "starting readers" },
-    { n: 7, k: "tool", tool: "glob", input: { pattern: ".retro/work/*" } },
-    { n: 8, k: "handover", about: "lesson", text: "a lesson" },
-    { n: 9, k: "text", text: "here is the lesson" },
-    { n: 10, k: "session", event: "end" },
-  ]
-  assert.ok([6, 7, 9].every((n) => pluginExchange(records).has(n)))
-  assert.equal(nothingNew(records, records.slice(3)), true, "a round and a reply take no order")
-  const more = [...records, { n: 11, k: "prompt", text: "now fix the build" }, { n: 12, k: "tool", tool: "shell", input: {} }]
-  assert.equal(nothingNew(more, more.slice(3)), false, "the person speaking again does")
-  assert.equal(lastReadable(records), 9, "and nothing is credited as read on a guess")
-})
-
 test("a hand-over that never arrived opens no exchange", async () => {
   const { pluginExchange } = await import("../src/extract.js")
   const records = [
@@ -2408,23 +2246,6 @@ test("a log is not pruned on a guess: work after a hand-over that nobody read is
   await fake.tools.get("retro_decide").execute({ id: "no-such", status: "rejected" }, { sessionID: "ses_a" }) // runs the pruning
   assert.equal(existsSync(logOf(dir, "ses_a")), true, "the edit was never read, so the log stays")
   await cleanup?.()
-})
-
-test("a stretch of the plugin's exchange lasts to the end of the turn it is taken up in", async () => {
-  const { pluginExchange } = await import("../src/extract.js")
-  const records = [
-    { n: 1, k: "prompt", text: "fix bug" },
-    { n: 2, k: "session", event: "start" },
-    { n: 3, k: "session", event: "end" },
-    { n: 4, k: "handover", about: "work", sent: true, resumes: true, text: "the logs come first" },
-    { n: 5, k: "session", event: "start" },
-    { n: 6, k: "text", text: "starting readers" },
-    { n: 7, k: "session", event: "end" },
-    { n: 8, k: "session", event: "start" }, // begun by a form answered, no prompt hook
-    { n: 9, k: "tool", tool: "edit", input: { path: "AGENTS.md" } },
-  ]
-  const x = pluginExchange(records)
-  assert.ok(x.has(6) && !x.has(9))
 })
 
 test("the contract counts the plugin's stretches a reader left out as read", async () => {
@@ -2497,4 +2318,89 @@ test("a hand-over not known to resume the session takes nothing of the person's 
     { n: 5, k: "session", event: "end" },
   ]
   assert.equal(pluginExchange(running).size, 0)
+})
+
+/* The round, stamped as it is written. */
+
+const stamping = async () => {
+  const { createIngest } = await import("../src/ingest.js")
+  const out = []
+  const parents = new Map()
+  const ingest = createIngest({ maxOutput: 8000, now: () => 1, emit: (_, r) => out.push(r), parentOf: (id) => parents.get(id) ?? null, startAt: () => out.length ? out.at(-1).n : 0 })
+  let seq = 0
+  const ev = (type, sessionID = "s", data = {}) => ingest.event({ type, durable: { seq: ++seq }, data: { sessionID, ...data } })
+  const turn = (fn) => {
+    ev("session.execution.started")
+    fn?.()
+    ev("session.execution.succeeded")
+  }
+  return { ingest, out, ev, turn, parents }
+}
+
+test("the turn a work hand-over resumed is stamped as the plugin's round, to its end", async () => {
+  const { ingest, out, ev, turn } = await stamping()
+  ingest.prompt({ sessionID: "s", messageID: "m1", prompt: { text: "fix the build" } })
+  turn(() => ingest.toolAfter({ sessionID: "s", id: "a", tool: "shell", input: {}, status: "completed", result: { output: "x" } }))
+  const w = ingest.handover("s", "the logs come first", "work", { sent: true })
+  turn(() => ev("session.text.ended", "s", { assistantMessageID: "t", text: "starting readers" }))
+  ev("session.execution.started") // a later turn, begun by something else
+  ingest.toolAfter({ sessionID: "s", id: "b", tool: "edit", input: {}, status: "completed", result: { output: "y" } })
+  const { pluginExchange, turnHandovers } = await import("../src/extract.js")
+  const x = pluginExchange(out)
+  assert.equal(out.find((r) => r.k === "handover").resumes, true)
+  assert.ok(out.filter((r) => r.round === w).some((r) => r.k === "text"), "the round's text")
+  assert.ok(!x.has(out.find((r) => r.id === "a").n) && !x.has(out.find((r) => r.id === "b").n), "neither the turn before nor the turn after")
+  assert.equal(turnHandovers(out), 0, "and the turn after began with no hand-over")
+})
+
+test("the person speaking ends a round, and a hand-over not known to resume starts none", async () => {
+  const { ingest, out, ev, turn } = await stamping()
+  ingest.prompt({ sessionID: "s", messageID: "m1", prompt: { text: "fix it" } })
+  ev("session.execution.started") // running
+  ingest.handover("s", "into a running turn", "work", { sent: true })
+  ingest.toolAfter({ sessionID: "s", id: "a", tool: "edit", input: {}, status: "completed", result: { output: "x" } })
+  ev("session.execution.succeeded")
+  ingest.handover("s", "between turns", "work", { sent: true })
+  ev("session.execution.started")
+  ingest.prompt({ sessionID: "s", messageID: "m2", prompt: { text: "and stop" }, delivery: "steer" })
+  ingest.toolAfter({ sessionID: "s", id: "b", tool: "shell", input: {}, status: "completed", result: { output: "y" } })
+  ev("session.execution.succeeded")
+  assert.equal(out.find((r) => r.id === "a").round, undefined, "the person's turn, a hand-over waiting in it")
+  assert.equal(out.find((r) => r.id === "b").round, undefined, "after the person spoke")
+})
+
+test("a lesson's turn stamps only the agent relaying it, and its start", async () => {
+  // Reviewing a lesson is real work, and may turn up friction: only the relay is the plugin's.
+  const { ingest, out, ev, turn } = await stamping()
+  ingest.prompt({ sessionID: "s", messageID: "m1", prompt: { text: "go" } })
+  turn()
+  ingest.handover("s", "a lesson", "lesson", { sent: true })
+  turn(() => {
+    ev("session.text.ended", "s", { assistantMessageID: "t", text: "here is the lesson" })
+    ingest.toolAfter({ sessionID: "s", id: "c", tool: "read", input: {}, status: "completed", result: { output: "x" } })
+  })
+  const { turnHandovers } = await import("../src/extract.js")
+  assert.ok(out.find((r) => r.k === "text").round != null)
+  assert.equal(out.find((r) => r.id === "c").round, undefined)
+  assert.equal(turnHandovers(out), 1, "the turn began with the hand-over")
+})
+
+test("a hand-over that never arrived opens no round", async () => {
+  const { ingest, out, ev, turn } = await stamping()
+  ingest.prompt({ sessionID: "s", messageID: "m1", prompt: { text: "go" } })
+  turn()
+  const w = ingest.handover("s", "the logs come first", "work", { sent: true })
+  ingest.handover("s", "could not be delivered", "notice", { undelivered: true, of: w })
+  turn(() => ingest.toolAfter({ sessionID: "s", id: "d", tool: "edit", input: {}, status: "completed", result: { output: "x" } }))
+  assert.equal(out.find((r) => r.id === "d").round, undefined)
+})
+
+test("a fresh session /retro is run in first is idle, a log ending mid-turn is not", async () => {
+  const { createIngest } = await import("../src/ingest.js")
+  const fresh = []
+  createIngest({ emit: (_, r) => fresh.push(r), lastRecord: () => null }).handover("f", "go", "work", { sent: true })
+  assert.equal(fresh[0].resumes, true)
+  const midTurn = []
+  createIngest({ emit: (_, r) => midTurn.push(r), lastRecord: () => ({ n: 9, k: "tool" }), startAt: () => 9 }).handover("m", "go", "work", { sent: true })
+  assert.equal(midTurn[0].resumes, undefined)
 })

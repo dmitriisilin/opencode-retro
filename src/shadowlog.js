@@ -83,6 +83,11 @@ export function createShadowLog({ dir, onError }) {
      * hand to see which. Reading the tail once per session per process is cheaper than that.
      */
     lastN(sessionID) {
+      return this.last(sessionID)?.n ?? 0
+    },
+
+    /** The last whole record in the log, or null: what the numbering and the idle check read. */
+    last(sessionID) {
       // From the tail, widening until a whole record is found: this is read at the start of
       // every turn, inside the first hook, and a log left open for weeks is large.
       let fd
@@ -104,8 +109,8 @@ export function createShadowLog({ dir, onError }) {
             const line = lines[i].trim()
             if (!line) continue
             try {
-              const n = JSON.parse(line)?.n
-              if (Number.isFinite(n)) return n
+              const record = JSON.parse(line)
+              if (Number.isFinite(record?.n)) return record
             } catch {
               /* a half-written last line: keep looking back */
             }
@@ -117,7 +122,7 @@ export function createShadowLog({ dir, onError }) {
       } finally {
         if (fd !== undefined) closeSync(fd)
       }
-      return 0
+      return null
     },
 
     /**

@@ -22,6 +22,12 @@ delegation's, folded into the task that delegated it — carries that session's 
 `prompt` with `from` is the delegation's instruction; one without it is the person's. Without
 it the log could not tell the two apart.
 
+**`round`.** On a record written during a turn the plugin's own hand-over resumed, the
+hand-over's step: every record of the turn for a `work` hand-over, the agent's text and the
+turn's start for a lesson or a notice. Written at the moment of writing, from what ingest knew
+then, and ended by the turn's end or the person's prompt (analysis.md). A hand-over that
+resumed a session carries `resumes`.
+
 **Step number (`n`).** The plugin's own counter, one per owner, continuous for the life of
 the file. It is the coordinate a lesson's evidence uses, so it must be unique within a
 file and must not restart when a new process appends to an existing log. The plugin is

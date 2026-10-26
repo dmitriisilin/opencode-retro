@@ -105,6 +105,7 @@ told to the extractor and filters its answer, and the store refuses to reopen an
   after it.
   `a block of text whose first line is indented comes back as it went in`
   `a text opening on an empty line, and indicators in either order, read back as written`
+  `a line of spaces alone inside a block keeps its spaces`
   `a decision's time is shown in UTC from the moment, whatever offset the file was written with`
   `evidence from before a fix does not reopen it, and evidence from after does`
   `undated evidence reopens a decision, because nothing says it is old`

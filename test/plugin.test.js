@@ -1591,6 +1591,9 @@ test("a review session driven by a hand-over is not reported as a dead prompt ho
   const cleanup = await plugin.setup(fake.ctx)
 
   await fake.commands.get("retro").execute({ sessionID: "ses_reviewer", prompt: { text: "" } })
+  // The hand-over resumes the fresh session: its turn starts.
+  fake.emit({ type: "session.execution.started", durable: { seq: 1 }, data: { sessionID: "ses_reviewer" } })
+  await new Promise((r) => setTimeout(r, 10))
 
   // The agent in that session starts working, which is what re-evaluates the report.
   await fake.hooks.get("tool.execute.before")({ sessionID: "ses_reviewer", id: "c1", tool: "read", input: { path: "a.js" } })
@@ -2482,16 +2485,22 @@ test("a reply to the plugin's own hand-over, with nothing done, is not owed an a
   const session = "ses_reviewing"
   const fake = fakeOpenCode({ directory, reply: () => JSON.stringify({ lessons: [] }) })
   const cleanup = await plugin.setup(fake.ctx)
+  fake.emit({ type: "session.execution.started", durable: { seq: 1 }, data: { sessionID: session } })
+  await tick()
   await workSession(fake, session)
+  fake.emit({ type: "session.execution.succeeded", durable: { seq: 30 }, data: { sessionID: session } })
+  await tick()
   await fake.commands.get("retro").execute({ sessionID: session, prompt: { text: "" } })
   assert.equal(fake.generated.length, 1)
 
-  // The agent answers the hand-over, and does nothing else.
+  // The hand-over resumes the idle session; the agent answers it, and does nothing else.
+  fake.emit({ type: "session.execution.started", durable: { seq: 39 }, data: { sessionID: session } })
   fake.emit({
     type: "session.text.ended",
     durable: { seq: 40 },
     data: { sessionID: session, assistantMessageID: "m40", text: "Nothing to review — the sessions went straight." },
   })
+  fake.emit({ type: "session.execution.succeeded", durable: { seq: 41 }, data: { sessionID: session } })
   await tick()
   await fake.commands.get("retro").execute({ sessionID: session, prompt: { text: "" } })
   await fake.commands.get("retro").execute({ sessionID: session, prompt: { text: "" } })

@@ -152,3 +152,8 @@ test("a text opening on an empty line, and indicators in either order, read back
   assert.equal(hand.a, "  x\ny")
   assert.equal(hand.b, "  x\ny")
 })
+
+test("a line of spaces alone inside a block keeps its spaces", () => {
+  const back = parseFrontmatter(stringifyFrontmatter({ change: "x\n   \ny" }, "")).data
+  assert.equal(back.change.replace(/\n$/, ""), "x\n   \ny")
+})

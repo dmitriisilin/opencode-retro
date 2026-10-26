@@ -98,7 +98,8 @@ Rules:
   (a \`prompt\` without \`from\`), what the agent does to start readers, wait for them and
   hand the results over is the plugin's too. Take no lesson from any of it, count none of it
   as cost, read nothing in it as a recurrence — but anything the person's own task needed in
-  that stretch is still theirs. A \`handover\` with \`"about": "notice"\` is this plugin
+  that stretch is still theirs. A record that carries \`round\` was written in a turn the
+  plugin's own hand-over resumed (the hand-over's step): it is that round's. A \`handover\` with \`"about": "notice"\` is this plugin
   saying something else — nothing to review, a command that failed — and what follows it is
   ordinary work, but for the agent's text in answer to it, and what a subagent it started for
   that answer was told and said: those are the plugin's exchange and hold nothing of the

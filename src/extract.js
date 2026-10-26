@@ -138,92 +138,28 @@ export function ownSteps(records) {
 }
 
 /**
- * The plugin's exchange — used only to decide whether growth is worth an order and whether a
- * quiet log may go (`nothingNew`), never to tell a reader what to skip, and drawn from what the
- * plugin knew when it wrote, not from the order of the log afterwards:
- * - the turn a `work` hand-over marked `resumes` began — sent to a session this process knew
- *   to be idle, so the turn that follows is the hand-over's — to its end, or until the person
- *   speaks in it;
- * - what the agent says after a hand-over of another kind that it was handed in its own turn
- *   (a tool result: `retro_propose`'s), or that resumed the session, to the end of that turn or
- *   until the person speaks.
- * A hand-over sent into a turn running — or not known to be idle — opens nothing: it waits in
- * the inbox and starts nothing by itself (measured, cycle 9), and when unsure the plugin pays
- * for a read rather than risk a step. A subagent first told something in such a stretch goes
- * with it.
+ * The plugin's round, as it was stamped when written (`round` on a record: ingest). Used to
+ * decide whether growth is worth an order and whether a quiet log may go (`nothingNew`), never
+ * to tell a reader what to skip — though a reader sees the stamp too. A round is only ever a
+ * turn that a hand-over sent to a session known to be idle resumed, to its end or until the
+ * person speaks: when unsure, nothing is stamped, and the plugin pays for a read rather than
+ * risk a step.
  */
 export function pluginExchange(records) {
-  const sorted = byStep(records)
-  const lost = undelivered(sorted)
   const out = new Set()
-  let mode = null // "work" | "reply" | null
-  // Whether the stretch's own turn has begun: its end closes it.
-  let begun = false
-  const with_ = new Set()
-  const close = () => {
-    mode = null
-    with_.clear()
-  }
-  for (const r of sorted) {
-    if (r.from) {
-      if (r.k === "prompt" && mode) with_.add(r.from)
-      if (with_.has(r.from) && (mode === "work" || r.k === "text" || r.k === "prompt")) out.add(r.n)
-      continue
-    }
-    if (r.k === "session") {
-      if (r.event === "start") begun = true
-      else if (r.event === "end" && begun) close()
-      continue
-    }
-    if (r.k === "prompt") close()
-    else if (r.k === "handover" && !r.undelivered && !lost.has(r.n)) {
-      if (r.resumes) {
-        mode = isWorkHandover(r) ? "work" : "reply"
-        begun = false
-      } else if (!r.sent && !isWorkHandover(r)) {
-        mode = "reply" // handed back inside the turn it answers
-        begun = true
-      } else close()
-    } else if (mode === "work") out.add(r.n)
-    else if (mode === "reply" && r.k === "text") out.add(r.n)
-  }
+  for (const r of records) if (r.round != null) out.add(r.n)
   return out
 }
 
 /**
  * How many of the plugin's hand-overs the latest turn of the person's session began with — 0 or
- * 1. A turn's input is the last input written before it began: the person's prompt, or a sent,
- * delivered hand-over — one sent into the turn before waits in the inbox (measured, cycle 9),
- * so the turn after is the first it can begin. Read back from the current turn's start to the
- * previous one's. The current turn is the last one logged as started, unless the log went on
- * after that turn ended: then this one's start is not logged, and it is what came after.
+ * 1: whether that turn's start was stamped as a round's (ingest). A turn the plugin cannot be
+ * sure it began is not claimed.
  */
 export function turnHandovers(records) {
-  const sorted = byStep(records)
-  const lost = undelivered(sorted)
-  const isStart = (r) => !r.from && r.k === "session" && r.event === "start"
-  let last = -1
-  for (let i = sorted.length - 1; i >= 0 && last < 0; i--) if (isStart(sorted[i])) last = i
-  // Where the current turn begins, and how far back its input can lie: to the previous turn's
-  // start — or, for a turn whose start is not logged, to the end of the turn before it.
-  let from = last < 0 ? sorted.length : last
-  let floor = -1
-  let end = -1
-  for (let i = last + 1; i < sorted.length; i++) {
-    const r = sorted[i]
-    if (r.from) continue
-    if (r.k === "session" && r.event === "end") end = i
-    else if (end >= 0 && r.k !== "prompt" && r.k !== "handover") {
-      from = i
-      floor = end
-      end = -1
-    }
-  }
-  for (let i = from - 1; i > floor; i--) {
-    const r = sorted[i]
-    if (r.from) continue
-    if (isStart(r) || r.k === "prompt") return 0
-    if (r.k === "handover" && isSent(r) && !r.undelivered && !lost.has(r.n)) return 1
+  for (let i = records.length - 1; i >= 0; i--) {
+    const r = records[i]
+    if (!r.from && r.k === "session" && r.event === "start") return r.round != null ? 1 : 0
   }
   return 0
 }

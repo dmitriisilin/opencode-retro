@@ -36,6 +36,8 @@ export function createIngest({
   // process appending to an existing log starts again at 1 and a lesson's step range stops
   // resolving to one record. Measured on real logs: three and four such blocks in one file.
   startAt = () => 0,
+  /** The last record already in a session's log, if any: whether its last turn has ended. */
+  lastRecord = () => null,
 }) {
   /**
    * sessionID -> { n, pending: Map<callID, started>, completed: Set<callID>,
@@ -95,6 +97,25 @@ export function createIngest({
     const target = owner(sessionID)
     const s = session(target)
     s.counts.records++
+    const root = target === sessionID
+    // The plugin's round, stamped as it is written (analysis.md): from the start of the turn a
+    // hand-over resumed to that turn's end, or until the person speaks. Known here, at the
+    // moment of writing, so nothing has to infer it from the order of the log afterwards.
+    if (root && record.k === "prompt") {
+      s.round = null
+      s.pendingRound = null
+    } else if (root && record.k === "session" && record.event === "start" && s.pendingRound != null) {
+      s.round = s.pendingRound
+      s.roundKind = s.pendingKind
+      s.pendingRound = null
+    }
+    // A `work` hand-over's turn is the plugin's round entire. A lesson's or a notice's is the
+    // person's — reviewing a lesson is real work, and may turn up friction — but for the agent
+    // relaying it, and for its start, which says what began the turn.
+    const round =
+      s.round != null && (s.roundKind === "work" || record.k === "text" || (root && record.k === "session" && record.event === "start"))
+        ? s.round
+        : null
     // A turn going on again — a start, or work being done — makes its end news; a prompt or a
     // hand-over written between turns does not, since neither is a turn yet.
     // Only the root's own turn: a delegation's start or end, folded in from a log it wrote before
@@ -108,7 +129,15 @@ export function createIngest({
     // Read from the file again after a turn ended: another process may have written the turns
     // in between, and numbering on from memory wrote its step numbers a second time.
     if (s.n === null) s.n = startAt(target) ?? 0
-    emit(target, { v: 1, n: ++s.n, t: now(), ...(target !== sessionID ? { from: sessionID } : {}), ...record })
+    emit(target, { v: 1, n: ++s.n, t: now(), ...(target !== sessionID ? { from: sessionID } : {}), ...record, ...(round != null ? { round } : {}) })
+    // Idle: this process wrote the end of the session's last turn, and nothing has come since
+    // but the plugin's own hand-overs — a prompt means a turn is on its way.
+    if (root) {
+      if (record.k === "session" && record.event === "end") {
+        s.round = null
+        s.idle = true
+      } else if (record.k !== "handover") s.idle = false
+    }
     return s.n
   }
 
@@ -295,7 +324,16 @@ export function createIngest({
       // end of the last turn itself, and nothing has happened since. Known at the moment of
       // sending, not inferred from the log's order later; after a reload, or with a turn whose
       // start was never seen, it is not known, and not claimed (analysis.md).
-      const resumes = sent && !undelivered && s.endWritten === true
+      const target = owner(sessionID)
+      // Not seen by this process: idle if its log ends with a turn's end, or if it has no log at
+      // all — a fresh session, where `/retro` is the first thing done, has nothing running. A
+      // log that ends any other way is a turn this process came into the middle of.
+      let idle = s.idle
+      if (idle === undefined && !(s.n > 0)) {
+        const last = lastRecord(target)
+        idle = last == null || (last.k === "session" && last.event === "end" && !last.from)
+      }
+      const resumes = sent && !undelivered && target === sessionID && idle === true
       const n = append(sessionID, {
         k: "handover",
         about,
@@ -307,6 +345,12 @@ export function createIngest({
         ...(undelivered ? { undelivered: true, ...(Number.isFinite(of) ? { of } : {}) } : {}),
         text: text ?? "",
       })
+      // The turn it resumes is the plugin's round; one that never arrived opens none.
+      if (resumes) {
+        s.pendingRound = n
+        s.pendingKind = about === "work" ? "work" : "reply"
+      }
+      if (undelivered && s.pendingRound === of) s.pendingRound = null
       if (sent && !undelivered) {
         s.counts.handovers++
         ;(s.countedHandovers ??= new Set()).add(n)

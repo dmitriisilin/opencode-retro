@@ -148,18 +148,17 @@ work, not the person's, and an analysis must never be analysed. Two kinds, handl
    hand-over waits in the inbox, a send fails. So the contract describes the round and the
    reader, who sees the hand-overs and the prompts, judges it — keeping for the person
    anything their own task needed in that stretch.
-4. **What the plugin knew when it wrote decides cost, never what a reader skips**: whether a
-   log that grew is worth an order, and — the same rule — whether a quiet log may go. A
-   hand-over is marked `resumes` when it is sent to a session this process knows to be idle —
-   it wrote the end of the last turn itself, and nothing has happened since — so the turn that
-   follows is the hand-over's. That turn, to its end or until the person speaks, is the
-   plugin's exchange, and so is what the agent says after a hand-over handed back inside its
-   own turn (`retro_propose`'s) or one that resumed the session. Growth that is only that takes
-   no order. A hand-over sent into a running turn, or to a session not known to be idle — after
-   a reload, a turn whose start was never seen — opens nothing: it waits in the inbox and
-   starts nothing by itself (measured, cycle 9), and unsure, the plugin pays for a read rather
-   than risk a step. Nothing is credited as read on it, and the person speaking always makes
-   the log owed.
+4. **The round is stamped as it is written, and the stamp decides cost — never what a reader
+   skips.** A hand-over sent to a session this process knows to be idle — it wrote the end of
+   the last turn itself and nothing has come since, or the session has no log at all — is
+   marked `resumes`, and the turn it resumes is stamped `round` (the hand-over's step) as its
+   records are written: every record of it for a `work` hand-over, and only the agent's text
+   for a lesson or a notice, whose review is the person's real work. The stamp ends with the
+   turn, or when the person speaks. A hand-over sent into a running turn, or to a session not
+   known to be idle, stamps nothing: it waits in the inbox and starts nothing by itself
+   (measured, cycle 9), and unsure, the plugin pays for a read rather than risk a step. Growth
+   that is only stamped or the plugin's own takes no order, and the same rule lets a quiet log
+   go; nothing is credited as read on it, and the person speaking always makes the log owed.
 
 *Replaces two dozen review rounds of inferring the round from the order of the log, in three
 functions and the contract's prose at once. Each round found an ordering the rules had not
@@ -249,14 +248,17 @@ stretch of log is the reader's job).*
   `a round of the plugin's own is logged, and a log grown by nothing else takes no order`
   `the order tells the reader where the plugin's own work is and to leave it out`
   `what the plugin names as its own is certain, and never the person's work around it`
-  `a growth that is the plugin's exchange takes no order, and a guess wrong that way loses nothing`
   `a hand-over that never arrived opens no exchange`
   `the contract names the certain steps and leaves the round to the reader`
   `a log is not pruned on a guess: work after a hand-over that nobody read is kept`
   `a session that ended with a /retro and its answer goes once it is quiet`
+  `the turn a work hand-over resumed is stamped as the plugin's round, to its end`
+  `the person speaking ends a round, and a hand-over not known to resume starts none`
+  `a lesson's turn stamps only the agent relaying it, and its start`
+  `a hand-over that never arrived opens no round`
+  `a fresh session /retro is run in first is idle, a log ending mid-turn is not`
   `a hand-over marks whether it resumes the session only when this process knows it idle`
   `a hand-over not known to resume the session takes nothing of the person's for the plugin's`
-  `a stretch of the plugin's exchange lasts to the end of the turn it is taken up in`
   `the contract counts the plugin's stretches a reader left out as read`
   `a re-read names every one of the plugin's own steps, those before the mark included`
   `a reworded reader is folded into the person's log inside the round`
@@ -274,11 +276,9 @@ stretch of log is the reader's job).*
   `a hand-over that was never delivered leaves the rest of the turn the person's`
   `the person speaking before a waiting hand-over's turn makes that turn theirs`
   `the contract says the agent's text answering a notice is not the session's`
-  `a subagent started to answer a hand-over is the person's again in a turn after`
   `prompts posted into a running turn, queued or steered, are answered in that turn`
   `a /retro sent between the person's prompt and the turn it opens takes nothing of that turn`
   `a prompt that opens the next turn, after a turn whose end was lost, is the person's turn`
-  `an undelivered notice cancels the hand-over it names, not the latest one`
   `a notice of a failed send names the hand-over by its step`
 - `retro_propose` is not a delegated session's to call: a reader — known by its line or worded
   its own way — or any other subagent calling it is told so, with nothing recorded, nothing
@@ -290,13 +290,10 @@ stretch of log is the reader's job).*
   `/retro in a subagent's session issues nothing`
   `a work hand-over noted for a subagent opens no round`
   `a session stays the plugin's across turns, so a turn resumed by a hand-over is logged from its start`
-  `a subagent's text, delegated in answer to a plugin notice, is part of that reply`
   `a subagent of the person's already running when a hand-over arrives stays theirs`
-  `a turn resumed by a hand-over that arrived in the previous turn is not a dead prompt hook`
   `a log pruned between turns starts its numbering again`
   `a reader started by a work order's line is the plugin's, recognised by its prompt or not`
   `a delegated session that recorded an analysis is the plugin's, wherever its prompt fell`
-  `a subagent's prompt does not end a reply to the plugin's hand-over`
   `a reader's call to retro_propose writes nothing into any log`
   `a reworded reader calling retro_propose is told so too`
 - One command issues at most `extractLimit` orders; the rest stay owed and are named. A
