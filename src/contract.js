@@ -88,27 +88,15 @@ Rules:
   \`"about": "lesson"\` means that.
 - **The plugin's own work is not the session's — leave it out.** A \`handover\` with
   \`"about": "work"\` asks for a round of this plugin's own: the agent starting readers like
-  you, their records coming back, \`retro_propose\`. A hand-over with \`"sent": true\` was sent
-  to the session to start a turn; one without it — \`retro_propose\`'s — was handed back as a
-  tool result inside the running turn, and is answered there and then. The round is the turn
-  the \`work\` hand-over starts: at the hand-over itself when it came between turns, and from
-  the next \`session\` start when it landed in a turn still running — work before that is the
-  person's turn still finishing. It runs to the person's next \`prompt\`, or to where a hand-over of another kind
-  is answered, whichever comes first: a second \`work\` hand-over is the same round going on.
-  A prompt of the person's with no \`session\` record between it and the round's turn start —
-  the person opening that turn — makes the turn theirs, and a hand-over named by a
-  notice with \`"undelivered": true\` (\`of\` is its step) never arrived and does nothing. The
-  order lists the steps; where this description and that list differ, go by the list. Only
-  steps without \`from\` start or end a round: a hand-over or prompt with \`from\` is a
-  subagent's, and inside whatever round it falls in. A call to \`retro_record\` or
-  \`retro_propose\`, and a \`subagent\` call whose prompt is a work order's line, is the
-  plugin's own wherever it is. Take no lesson from any of it, count none of its steps as cost,
-  and read nothing in it as a recurrence: a reader in there
-  may be quoting another session's problems, and they are that session's. The order names the
-  rounds it knows of by their steps. A \`handover\` with \`"about": "notice"\` is this plugin
-  saying something else — nothing to review, a command that failed — and what follows it is
-  ordinary work, but for the agent's text in answer to it, which is the plugin's exchange and
-  holds nothing of the session's.
+  you, their records coming back, \`retro_propose\`. The order names, step by step, everything
+  in this log that is the plugin's own — its rounds, its calls to \`retro_record\` and
+  \`retro_propose\`, a \`subagent\` call whose prompt is a work order's line, and whatever such
+  a reader did. Leave exactly those steps out: take no lesson from them, count none of them as
+  cost, and read nothing in them as a recurrence — a reader in there may be quoting another
+  session's problems, and they are that session's. Where the order names none, there are none.
+  A \`handover\` with \`"about": "notice"\` is this plugin saying something else — nothing to
+  review, a command that failed — and what follows it is ordinary work, but for the agent's
+  text in answer to it, which is the plugin's exchange and holds nothing of the session's.
 - \`proposal\` is optional. Omit it, or use \`null\`, when you can name the problem but not
   the fix — that is a normal and useful answer.
 - \`ask\` is optional and is for when the fix depends on something only the human knows.

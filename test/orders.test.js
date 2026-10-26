@@ -410,7 +410,7 @@ test("the order tells the reader where the plugin's own work is and to leave it 
   const logged = readFileSync(logOf(dir, "ses_review"), "utf8").trim().split("\n").map((l) => JSON.parse(l))
   const named = formatRanges(ownRounds(logged).ranges)
   assert.ok(named.length > 0)
-  assert.ok(order.includes(`describe: ${named}.`), `the order names exactly the plugin's own steps: ${named}`)
+  assert.ok(order.includes(`all of it: ${named}.`), `the order names exactly the plugin's own steps: ${named}`)
   assert.match(order, /asks for a round of this plugin's own/, "and the rule that says what a round is")
   await cleanup?.()
 })
@@ -2100,7 +2100,7 @@ test("the person speaking before a waiting hand-over's turn makes that turn thei
 
 test("the contract says the agent's text answering a notice is not the session's", async () => {
   const { OUTPUT_CONTRACT } = await import("../src/contract.js")
-  assert.match(OUTPUT_CONTRACT, /ordinary work, but for the agent's text in answer to it/)
+  assert.match(OUTPUT_CONTRACT, /ordinary work, but for the agent's\s+text in answer to it/)
 })
 
 /* Round 8 of 10. */
@@ -2133,14 +2133,14 @@ test("a /retro waiting behind a round keeps its own round when the first one end
 
 /* Round 9 of 10. */
 
-test("the contract describes a round as the code reads it, and defers to the order's list", async () => {
+test("the contract tells the reader to leave out exactly the steps the order names", async () => {
+  // It used to restate how a round is found, and every change to that reading needed the prose
+  // re-worded — a mismatch found in round after round. The order names the steps; that is the rule.
   const { OUTPUT_CONTRACT } = await import("../src/contract.js")
-  assert.match(OUTPUT_CONTRACT, /at the hand-over itself when it came between turns/)
-  assert.match(OUTPUT_CONTRACT, /A prompt of the person's with no `session` record between it and the round's turn start —\s+the person opening that turn — makes the turn theirs/)
-  assert.match(OUTPUT_CONTRACT, /go by the list/)
+  assert.match(OUTPUT_CONTRACT, /Leave exactly those steps out/)
+  assert.match(OUTPUT_CONTRACT, /Where the order names none, there are none/)
+  assert.doesNotMatch(OUTPUT_CONTRACT, /between turns|session` start|undelivered/, "and no second account of how they are found")
 })
-
-/* Round 10 of 10. */
 
 test("the askings add up in the session /retro runs in, which its own rounds lengthen", async () => {
   const dir = sandbox()
@@ -2337,11 +2337,6 @@ test("the report's own writes do not keep the session it describes from being me
   } finally {
     Date.now = real
   }
-})
-
-test("the contract explains the field a round's start is read from", async () => {
-  const { OUTPUT_CONTRACT } = await import("../src/contract.js")
-  assert.match(OUTPUT_CONTRACT, /A hand-over with `"sent": true` was sent\s+to the session to start a turn/)
 })
 
 test("a turn whose start went unlogged is not excused by the hand-over that began the one before", async () => {

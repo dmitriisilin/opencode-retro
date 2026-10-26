@@ -143,3 +143,12 @@ test("a block of text whose first line is indented comes back as it went in", ()
   assert.equal(back.note.replace(/\n$/, ""), text)
   assert.equal(back.decisions[0].discovered.replace(/\n$/, ""), text)
 })
+
+test("a text opening on an empty line, and indicators in either order, read back as written", () => {
+  const text = "\n  indented line\nback at zero"
+  const back = parseFrontmatter(stringifyFrontmatter({ note: text }, "")).data
+  assert.equal(back.note.replace(/\n$/, ""), text)
+  const hand = parseFrontmatter("---\na: |-2\n    x\n  y\nb: |2-\n    x\n  y\n---\n").data
+  assert.equal(hand.a, "  x\ny")
+  assert.equal(hand.b, "  x\ny")
+})

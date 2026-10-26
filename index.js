@@ -1092,7 +1092,8 @@ export default {
     function archiveCounts() {
       const archived = store.listArchive()
       return {
-        decided: archived.filter((l) => l.status && l.status !== "new").length,
+        // No status in the archive is read as closed, as reopening reads it.
+        decided: archived.filter((l) => l.status !== "new").length,
         evicted: archived.filter((l) => l.status === "new").length,
       }
     }

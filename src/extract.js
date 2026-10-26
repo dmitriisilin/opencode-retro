@@ -428,11 +428,10 @@ export function composeOrder({
     rounds.length
       ? section(
           "The plugin's own work — leave it out",
-          "These steps are the plugin's own — its rounds and its own calls, as the rules below " +
-            "describe: " +
+          "These steps are the plugin's own — its rounds, its own calls and its readers' work — " +
+            "and they are all of it: " +
             formatRanges(rounds) +
-            ". So is any call to `retro_record` or `retro_propose`, and any `subagent` call whose " +
-            "prompt is a work order's line, wherever it is.",
+            ". Leave exactly these out, as the rules below say.",
         )
       : null,
     section("Already concluded from this session", renderConcluded(concluded)),

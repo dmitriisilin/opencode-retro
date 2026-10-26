@@ -162,8 +162,10 @@ work, not the person's, and an analysis must never be analysed. Two kinds, handl
    worded its own way is an ordinary child, folded into the person's log like any subagent —
    inside the round, its reading of other logs with it, and ours in full: a delegated session
    whose first prompt lies inside a round is ours to its last record, which may come after an
-   early `retro_propose` has closed the round — and so is whatever it starts, at any depth. The order tells the reader to leave a
-   round out (no lesson, no cost, no recurrence), and the plugin does not count a round as new
+   early `retro_propose` has closed the round — and so is whatever it starts, at any depth. The order names every one of the
+   plugin's own steps and tells the reader to leave exactly those out (no lesson, no cost, no
+   recurrence) — without a second account of how they were found, which drifted from the code
+   in round after round, and the plugin does not count a round as new
    material, so a log that grew by nothing but a round takes no order.
 
 *Replaces thirteen review rounds of deciding mechanically, call by call, which work was ours —
@@ -275,14 +277,13 @@ rare, since the hand-over asks it to start readers and nothing else — is left 
   `the person speaking before a waiting hand-over's turn makes that turn theirs`
   `the contract says the agent's text answering a notice is not the session's`
   `a /retro waiting behind a round keeps its own round when the first one ends first`
-  `the contract describes a round as the code reads it, and defers to the order's list`
+  `the contract tells the reader to leave out exactly the steps the order names`
   `the person steering into the running turn leaves a waiting /retro its round`
   `prompts posted into a running turn, queued or steered, are answered in that turn`
   `a /retro sent between the person's prompt and the turn it opens takes nothing of that turn`
   `a prompt that opens the next turn, after a turn whose end was lost, is the person's turn`
   `an undelivered notice cancels the hand-over it names, not the latest one`
   `a notice of a failed send names the hand-over by its step`
-  `the contract explains the field a round's start is read from`
 - `retro_propose` is not a delegated session's to call: a reader — known by its line or worded
   its own way — or any other subagent calling it is told so, with nothing recorded, nothing
   closed and no order removed; and `/retro` itself issues nothing in a delegated session, whose

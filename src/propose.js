@@ -367,8 +367,9 @@ export function renderNothing({ queued = 0, extracted = null, dir = DEFAULTS.dir
             ]
               .filter(Boolean)
               .join("; ") +
-            // With logs still unread, nothing can be said of what came up since.
-            (queued ? "." : ". Nothing new has come up since.")
+            // Nothing said of what came up since: the plugin cannot know it of a log not read,
+            // its caller's own included.
+            "."
         : queued
           ? "Nothing is recorded yet; the logs above are what there is to read."
           : "Either the sessions have been going straight, or nothing is recorded yet.",

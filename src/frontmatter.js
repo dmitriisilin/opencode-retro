@@ -61,8 +61,11 @@ function parseLines(lines, start, indent) {
     const [key, rest] = colon
     i++
 
-    const block = /^\|(\d)?(-)?$/.exec(rest)
+    // Either order of the indicators, as YAML allows: `|2-` and `|-2` alike.
+    const block = /^\|(?:(\d)(-)?|(-)(\d)?)?$/.exec(rest)
     if (block) {
+      block[1] ??= block[4]
+      block[2] ??= block[3]
       // `|2`: the content's indentation stated, for text whose first line is itself indented —
       // taken from that line, it cut every less-indented line after it.
       const [text, next] = parseBlockScalar(lines, i, indent, block[1] ? indent + Number(block[1]) : null)
@@ -200,7 +203,10 @@ function emitBlock(value, indent) {
       lines.push(`${pad}${key}:`, ...emitBlock(item, indent + 2))
     } else if (typeof item === "string" && item.includes("\n")) {
       // The indentation stated when the first line starts with a space of its own.
-      lines.push(`${pad}${key}: |${/^[ \t]/.test(item) ? "2" : ""}`)
+      // Its first line with anything on it, not its first character: a text opening on an empty
+      // line and then an indented one was read at the indented one's depth.
+      const first = item.split("\n").find((l) => l.trim()) ?? ""
+      lines.push(`${pad}${key}: |${/^[ \t]/.test(first) ? "2" : ""}`)
       for (const line of item.replace(/\n+$/, "").split("\n")) lines.push(line ? `${pad}  ${line}` : "")
     } else {
       lines.push(`${pad}${key}: ${emitScalar(item)}`)

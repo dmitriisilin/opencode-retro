@@ -340,7 +340,7 @@ test("a lesson that came back is handed over with what was decided before", () =
 
 test("nothing to review after every lesson was decided says so, not that nothing is recorded", () => {
   const text = renderNothing({ decided: 2 })
-  assert.match(text, /Nothing is open\. In `\.retro\/archive\/`: 2 decided\. Nothing new has come up since\./)
+  assert.match(text, /Nothing is open\. In `\.retro\/archive\/`: 2 decided\./)
   assert.doesNotMatch(text, /nothing is recorded yet/)
 })
 
