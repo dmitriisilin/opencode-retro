@@ -36,7 +36,14 @@ stay over the cap rather than discard a question the user asked to come back to.
 
 **Reopen.** An accepted lesson whose problem returns in a *different* session, **after the
 decision was taken**, comes back with `reopenedFrom: accepted` — the news that the fix did
-not hold.
+not hold, or not all of it. It says what the session that brought it back found: its
+statement, proposal, ask and narrative are that reading's, since what is wrong now is what a
+person has to act on. What was decided before is not written over but kept, oldest first, in
+`decisions` — each with its status, when, the statement it was about, and the note, the
+session it was decided in, the files changed and what was found on the way — and the
+hand-over shows it. *The stranger's hour after the ten rounds found the old form: a lesson
+reopened over the part of it that was not fixed still said the part that was had failed,
+and the second decision wrote over the first.*
 
 **Stale evidence.** The same problem reported from a session that ran *before* the decision.
 Discarded, and named in the outcome. A backlog is the normal case — `/retro`, accept,
@@ -83,6 +90,8 @@ told to the extractor and filters its answer, and the store refuses to reopen an
 - An accepted lesson that returns from another session, after the decision, is reopened as a
   failed fix; the same problem reported from before the decision is discarded and named.
   `a lesson that was accepted and comes back is reopened, because the fix did not hold`
+  `a reopened lesson says what is wrong now, and keeps every decision taken on it`
+  `a lesson that came back is handed over with what was decided before`
   `evidence from before a fix does not reopen it, and evidence from after does`
   `undated evidence reopens a decision, because nothing says it is old`
   `evidence is dated by the range it cites, not by whatever came after it in the log`

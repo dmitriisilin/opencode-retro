@@ -322,3 +322,18 @@ test("nothing to review does not promise another try for a log set aside", async
   assert.doesNotMatch(text, /tries again/)
   assert.match(text, /unless it grows/)
 })
+
+test("a lesson that came back is handed over with what was decided before", () => {
+  const back = lesson({
+    reopenedFrom: "accepted",
+    decisions: [
+      { status: "accepted", closedAt: "2026-10-26T04:05:00.000Z", statement: "AGENTS.md names `npm run build`.", note: "dropped the build line", decidedIn: "ses_r1", changed: ["AGENTS.md", "package.json"] },
+    ],
+  })
+  const text = renderProposal(back, { total: 1, remaining: 0 })
+  assert.match(text, /accepted on 2026-10-26 04:05 UTC in `ses_r1`: AGENTS\.md names `npm run build`\./)
+  assert.match(text, /Decided: dropped the build line/)
+  assert.match(text, /Changed: AGENTS\.md, package\.json/)
+  assert.doesNotMatch(text, /whatever was done about it did not hold/)
+  assert.match(renderBatch([back], {}), /Decided: dropped the build line/)
+})

@@ -370,8 +370,39 @@ export function createStore({ dir, archive, cap = DEFAULT_CAP, halfLife = DEFAUL
                   : e,
               )
             : [...released(evidence), { session, steps: lesson.steps }]
+          // A decision reopened is still a decision that was taken: what it was, and what was
+          // done, go into the lesson's history rather than being written over by the next one
+          // (the stranger's hour after the ten rounds). And what the lesson says is what is
+          // wrong now — the reader that brought it back says so — not what was fixed then: a
+          // reopened lesson that still read "the build line is wrong" after the build line was
+          // fixed told whoever opened it that the fix had not held, when another part of it had.
+          const { note, decidedIn, changed, discovered, ...rest } = buried
+          const decisions = evicted
+            ? asArray(buried.decisions)
+            : [
+                ...asArray(buried.decisions),
+                {
+                  status: buried.status ?? "closed",
+                  ...(buried.closedAt ? { closedAt: buried.closedAt } : {}),
+                  statement: buried.statement,
+                  ...(note ? { note } : {}),
+                  ...(decidedIn ? { decidedIn } : {}),
+                  ...(changed ? { changed } : {}),
+                  ...(discovered ? { discovered } : {}),
+                },
+              ]
+          const now = !evicted && !already
           const back = {
-            ...buried,
+            ...(evicted ? buried : rest),
+            ...(now
+              ? {
+                  statement: lesson.statement ?? buried.statement,
+                  proposal: lesson.proposal ?? buried.proposal ?? undefined,
+                  ask: lesson.ask ?? buried.ask ?? undefined,
+                  body: lesson.why ?? buried.body ?? "",
+                }
+              : {}),
+            ...(decisions.length ? { decisions } : {}),
             evidence: updatedEvidence,
             // A re-read of the same session is not a second occurrence. A cap-evicted lesson
             // seen in a new session is, and counts like any other recurrence.

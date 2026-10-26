@@ -263,7 +263,25 @@ test("a lesson that matches an archived id reopens that lesson, not a new one", 
   const [back] = store.list()
   assert.equal(back.recurrence, 2)
   assert.equal(back.reopenedFrom, "accepted")
-  assert.match(back.note, /removed the skill/, "the closing reason travels with it, as history")
+  assert.match(back.decisions[0].note, /removed the skill/, "the closing reason travels with it, as history")
+  assert.equal(back.note, undefined, "and is not left standing as if it were this lesson's decision")
+})
+
+test("a reopened lesson says what is wrong now, and keeps every decision taken on it", () => {
+  const s = sandbox()
+  const store = s.store()
+  store.record([lesson({ statement: "AGENTS.md names `npm run build`, which does not exist." })], { session: "ses_a" })
+  store.close("lint-skill-no-config", "accepted", { note: "dropped the build line", changed: ["AGENTS.md", "package.json"], decidedIn: "ses_r1" })
+  store.record([lesson({ id: "lint-rule", matches: "lint-skill-no-config", statement: "AGENTS.md still requires `npm run lint`.", why: "step 30 failed" })], { session: "ses_b" })
+  let [back] = store.list()
+  assert.match(back.statement, /npm run lint/, "what the session that brought it back found")
+  assert.match(back.body, /step 30/)
+  assert.match(back.decisions[0].statement, /npm run build/, "and what was fixed before, kept")
+  store.close("lint-skill-no-config", "accepted", { note: "dropped the lint line", changed: ["AGENTS.md"], decidedIn: "ses_r2" })
+  store.record([lesson({ id: "x", matches: "lint-skill-no-config", statement: "Third time." })], { session: "ses_c" })
+  ;[back] = store.list()
+  assert.deepEqual(back.decisions.map((d) => d.decidedIn), ["ses_r1", "ses_r2"], "every decision, in order")
+  assert.deepEqual(back.decisions[0].changed, ["AGENTS.md", "package.json"])
 })
 
 test("the store's score, freshness and staleness all use its own session counter", () => {

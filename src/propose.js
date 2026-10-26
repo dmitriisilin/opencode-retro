@@ -64,7 +64,7 @@ export function renderBatch(
       "",
     )
     if (lesson.reopenedFrom) {
-      lines.push(`**Came back** after being closed as ${lesson.reopenedFrom}.`, "")
+      lines.push(`**Came back** after being closed as ${lesson.reopenedFrom}.`, ...previousLines(lesson), "")
     }
     const currency = currencies.get(lesson.id)
     for (const line of hintLines(lesson, currency)) lines.push(line, "")
@@ -145,8 +145,10 @@ export function renderProposal(
   }
   if (lesson.reopenedFrom) {
     lines.push(
-      `**This came back.** It was closed as ${lesson.reopenedFrom} and the problem recurred, so` +
-        " whatever was done about it did not hold.",
+      `**This came back.** It was closed as ${lesson.reopenedFrom}, and a session after that ran ` +
+        "into it again. What it says above is what was found then; what was decided before is " +
+        "below. The earlier fix may have held for part of it — check which part still stands.",
+      ...previousLines(lesson),
       "",
     )
   }
@@ -212,6 +214,19 @@ export function renderProposal(
  * recorded, and whether its target has moved since. Both are facts to bound a check with,
  * not conclusions.
  */
+/** What was decided before a lesson came back: its history, oldest first, a few lines each. */
+function previousLines(lesson) {
+  const decisions = Array.isArray(lesson.decisions) ? lesson.decisions : []
+  return decisions.flatMap((d) => [
+    "",
+    `- ${d.status ?? "closed"}${d.closedAt ? ` on ${String(d.closedAt).slice(0, 16).replace("T", " ")} UTC` : ""}` +
+      `${d.decidedIn ? ` in \`${d.decidedIn}\`` : ""}: ${d.statement ?? ""}`,
+    ...(d.note ? [`  Decided: ${d.note}`] : []),
+    ...(Array.isArray(d.changed) && d.changed.length ? [`  Changed: ${d.changed.join(", ")}`] : []),
+    ...(d.discovered ? [`  Found on the way: ${String(d.discovered).trim()}`] : []),
+  ])
+}
+
 export function hintLines(lesson, currency) {
   const facts = []
   if (lesson?.recordedAt) facts.push(`recorded ${String(lesson.recordedAt).slice(0, 10)}`)
