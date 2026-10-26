@@ -329,3 +329,12 @@ test("more hook calls than events is explained, and the remedy for a dead plugin
   assert.doesNotMatch(text, /then run `\/retro`/, "a plugin that did not load has no /retro")
   assert.match(text, /then start a session/)
 })
+
+test("a note about a file that is gone goes with it", () => {
+  const check = createSelfCheck({ versions: {}, repo: "r" })
+  check.verify(healthy)
+  check.notes(["prompts/updates/extract.v7.md is a newer default waiting to be read. Nothing was changed for you."])
+  assert.match(check.render(), /extract\.v7\.md/)
+  check.notes([])
+  assert.doesNotMatch(check.render(), /extract\.v7\.md/)
+})

@@ -693,3 +693,26 @@ test("a lesson with no status that the cap evicts is archived as an open questio
   assert.equal(archived.data.status, "new")
   assert.equal(archived.body, "Mine.")
 })
+
+test("a lesson that comes back with no fix named does not bring back the fix already made", () => {
+  const s = sandbox()
+  const store = s.store()
+  store.record([lesson({ proposal: { target: "AGENTS.md", change: "drop the build line" }, ask: "drop it?" })], { session: "ses_a" })
+  store.close("lint-skill-no-config", "accepted", { note: "dropped" })
+  store.record([lesson({ id: "y", matches: "lint-skill-no-config", statement: "Still wrong elsewhere.", proposal: null, ask: null })], { session: "ses_b" })
+  const [back] = store.list()
+  assert.equal(back.proposal, undefined, "the old proposal was the fix that was made")
+  assert.equal(back.ask, undefined)
+  assert.equal(back.decisions[0].statement, lesson().statement)
+})
+
+test("a lesson that comes back aimed at another file is measured against that file", () => {
+  const s = sandbox()
+  const store = s.store()
+  const fingerprint = (t) => (t ? `hash-of-${t}` : undefined)
+  store.record([lesson({ proposal: { target: "AGENTS.md", change: "x" } })], { session: "ses_a", fingerprint })
+  store.close("lint-skill-no-config", "accepted", { note: "done" })
+  store.record([lesson({ id: "z", matches: "lint-skill-no-config", statement: "The skill now.", proposal: { target: ".opencode/skills/lint/SKILL.md", change: "y" } })], { session: "ses_b", fingerprint })
+  const [back] = store.list()
+  assert.equal(back.targetFingerprint, "hash-of-.opencode/skills/lint/SKILL.md")
+})

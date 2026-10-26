@@ -41,7 +41,7 @@ model rather than to one the plugin chose. A run that reports every trap missed 
 files in `.retro/work/` is the agent not having done the analyses, not the extractor keeping
 quiet; the script warns when any order is still unanswered.
 Use a new directory every time — recreating a project at the same path while the OpenCode
-service is up leaves the plugin unloaded there, silently (AGENTS.md Gotcha 15).
+service is up leaves the plugin unloaded there, silently (AGENTS.md Gotcha 19).
 
 What it found the first time it ran: a second session that hit the same traps was analysed
 as "nothing to learn", because the extractor read "already recorded" as "already answered";

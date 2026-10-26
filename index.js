@@ -221,7 +221,7 @@ export default {
           topScore: lessons.length ? store.score(lessons[0]) : null,
           ...stockFacts(ids),
           cited: ids.filter((id) => cited.has(id)).length,
-          decided: store.listArchive().length,
+          decided: decidedCount(),
           unreadable: store.unreadable(),
         })
         mkdirSync(config.dir, { recursive: true })
@@ -596,8 +596,9 @@ export default {
     // the user owns (AGENTS.md decisions 13 and 15).
     for (const name of ["extract", "propose"]) {
       prompts.seed(name)
-      const update = prompts.checkForUpdate(name)
-      if (update) check.note(update)
+      // Written as news in `updates/`; the report names what is waiting there each time it is
+      // written (`diagnose`), and stops naming it once it has been read and removed.
+      prompts.checkForUpdate(name)
     }
 
     writeSelfCheck()
@@ -979,7 +980,7 @@ export default {
 
       if (all) {
         const open = pickOpen(lessons, { sessions: state.sessions, halfLife: config.halfLife })
-        if (!open.length) return { text: renderNothing({ queued: left, extracted, dir: retroDir, decided: store.listArchive().filter((l) => l.status && l.status !== "new").length }), about: "notice" }
+        if (!open.length) return { text: renderNothing({ queued: left, extracted, dir: retroDir, decided: decidedCount() }), about: "notice" }
         const currencies = new Map()
         for (const lesson of open.slice(0, config.proposeLimit)) currencies.set(lesson.id, currencyOf(lesson))
         // A failed analysis is news in a batch exactly as it is in a single hand-over.
@@ -999,7 +1000,7 @@ export default {
       // One invocation, one lesson: the top of the list. Deciding is the user's business, in
       // this session, with the agent that is already here.
       const lesson = pickLesson(lessons, { sessions: state.sessions, halfLife: config.halfLife })
-      if (!lesson) return { text: renderNothing({ queued: left, extracted, dir: retroDir, decided: store.listArchive().filter((l) => l.status && l.status !== "new").length }), about: "notice" }
+      if (!lesson) return { text: renderNothing({ queued: left, extracted, dir: retroDir, decided: decidedCount() }), about: "notice" }
       const open = lessons.filter((l) => ["new", "later", undefined, null].includes(l.status)).length
       const text =
         renderFailures(extracted) +
@@ -1072,6 +1073,14 @@ export default {
     }
 
     /**
+     * Lessons decided: in the archive by a decision, not by the cap — an eviction is no decision
+     * (decision 17), and two counts of "decided" in two files had drifted apart.
+     */
+    function decidedCount() {
+      return store.listArchive().filter((l) => l.status && l.status !== "new").length
+    }
+
+    /**
      * The checks a session cannot make for itself, folded into every proposal instead of
      * hiding behind a command of its own.
      *
@@ -1093,7 +1102,7 @@ export default {
           prompts,
           store,
         })
-        for (const note of report.notes) check.note(note)
+        check.notes(report.notes)
         check.active(report.checks)
         return report
       } catch (err) {

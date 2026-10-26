@@ -92,6 +92,8 @@ told to the extractor and filters its answer, and the store refuses to reopen an
   `a lesson that was accepted and comes back is reopened, because the fix did not hold`
   `a reopened lesson says what is wrong now, and keeps every decision taken on it`
   `a lesson that came back is handed over with what was decided before`
+  `a lesson that comes back with no fix named does not bring back the fix already made`
+  `a lesson that comes back aimed at another file is measured against that file`
   `evidence from before a fix does not reopen it, and evidence from after does`
   `undated evidence reopens a decision, because nothing says it is old`
   `evidence is dated by the range it cites, not by whatever came after it in the log`

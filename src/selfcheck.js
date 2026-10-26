@@ -45,6 +45,10 @@ export function createSelfCheck({ versions, repo, loadedAt = Date.now() }) {
     note: (text) => {
       if (text && !state.notes.includes(text)) state.notes.push(text)
     },
+    /** The notes as they stand now, replacing what was there: a file read and deleted is no news. */
+    notes: (texts) => {
+      state.notes = [...new Set((texts ?? []).filter(Boolean))]
+    },
     stock: (stock) => {
       state.stock = stock
     },

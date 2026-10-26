@@ -120,6 +120,7 @@ last analysis of the session whichever path ran it.
   are evaluated anew whenever the report is written, so they never disagree with the sections
   around them.
   `the checks section agrees with the rest of the report after a decision and a prompt edit`
+  `a note about a file that is gone goes with it`
 - What it says reads true to a newcomer: more hook calls than events is explained, the remedy
   for a plugin that did not load is one that works without it, and a log passed over as one
   exchange that has grown since by the plugin's own round says so.

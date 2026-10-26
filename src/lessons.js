@@ -397,8 +397,11 @@ export function createStore({ dir, archive, cap = DEFAULT_CAP, halfLife = DEFAUL
             ...(now
               ? {
                   statement: lesson.statement ?? buried.statement,
-                  proposal: lesson.proposal ?? buried.proposal ?? undefined,
-                  ask: lesson.ask ?? buried.ask ?? undefined,
+                  // Not the old ones as a fallback: those are what was done, and put to a human
+                  // again they ask for a fix already made. A reader that names the problem and
+                  // not the fix leaves it at that, which the contract allows.
+                  proposal: lesson.proposal ?? undefined,
+                  ask: lesson.ask ?? undefined,
                   body: lesson.why ?? buried.body ?? "",
                 }
               : {}),
@@ -418,7 +421,13 @@ export function createStore({ dir, archive, cap = DEFAULT_CAP, halfLife = DEFAUL
             // The baseline is the one taken when the problem was first recorded. A recurrence
             // that moves it makes "changed since" compare the file with itself, and the review
             // after a reopen is exactly when the human needs to know the target moved.
-            targetFingerprint: buried.targetFingerprint ?? fingerprint?.(buried.proposal?.target),
+            // A reopened lesson whose new proposal names another file is measured against that
+            // file from now: compared with the old target's hash, it read as changed when it was
+            // not (checks after the stranger's hour).
+            targetFingerprint:
+              !evicted && lesson.proposal?.target && lesson.proposal.target !== buried.proposal?.target
+                ? fingerprint?.(lesson.proposal.target)
+                : (buried.targetFingerprint ?? fingerprint?.(buried.proposal?.target)),
             file: freeName(dir, buried.file ?? `${buried.id}.md`),
           }
           if (write(back)) {
