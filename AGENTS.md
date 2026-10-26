@@ -349,7 +349,9 @@ plugin needed — and it gets the `sessionID`, so it can drive the review conver
    believing a scripted review did anything. And the review it starts may stop to ask: the agent can put
    the decision to the human with its `question` tool, which headless means a form waiting on
    the session for ever. Cycle 7's stranger answered it through
-   `/api/session/<id>/form/<formID>/reply`; a scripted review that never answers is a review
+   `/api/session/<id>/form/<formID>/reply` — with the body `{"answer": {"q0": "<option value>"}}`
+   (a `{"values": …}` body is refused with `Missing key at ["answer"]`; pending forms are listed
+   by `GET /api/session/<id>/form`); a scripted review that never answers is a review
    that never decides. The command returns before any of this — it returns once the hand-over
    is delivered — so "the POST came back" says nothing about whether the review has happened.
 18. **An agent that restarts the service kills itself.** `opencode run` sessions run on the
@@ -359,6 +361,10 @@ plugin needed — and it gets the `sessionID`, so it can drive the review conver
    was closed unexpectedly`, minutes after a `service restart` in the server log. A plugin at
    a new absolute path loads fresh in a new location anyway, so there is nothing to restart
    for; audit prompts say so.
+19. **A project directory recreated at the same path loads no plugin.** With the background
+   service up, a project removed and created again at the path it had leaves the plugin unloaded
+   there, silently: measured, the bench's second run at one path recorded nothing at all. Use a
+   fresh path every time, as `bench/friction/run.sh` does.
 
 ### Still unverified
 
@@ -424,7 +430,7 @@ writeFileSync(workPath(session), userPrompt + ... + OUTPUT_CONTRACT)
 
 No "managed block", no marker comments, no region the user is told not to touch — because a
 file with a do-not-touch region is a file someone will eventually touch. The seeded prompt
-carries one line saying the output format is appended automatically and is not part of the
+carries one line saying the plugin adds the output format after it and does not keep it in the
 file.
 
 **And the machine half is a schema, not prose.** The answer is a `retro_record` call, and

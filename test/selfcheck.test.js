@@ -319,3 +319,13 @@ test("the report's times are the reader's own, with their offset", () => {
     process.env.TZ = tz
   }
 })
+
+test("more hook calls than events is explained, and the remedy for a dead plugin is one that works", () => {
+  const checks = assess({ ...healthy, counts: { ...healthy.counts, toolEvents: 2, toolHook: 3 } })
+  assert.match(checks.find((c) => c.name === "tool hook").detail, /reaches the hook twice/)
+  const check = createSelfCheck({ versions: {}, repo: "r" })
+  check.verify(healthy)
+  const text = check.render()
+  assert.doesNotMatch(text, /then run `\/retro`/, "a plugin that did not load has no /retro")
+  assert.match(text, /then start a session/)
+})

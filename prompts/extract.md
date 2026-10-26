@@ -105,5 +105,5 @@ fixing it in one project leaves it broken in the rest.
 The test is simple: would this lesson still be true in a different repository? If yes, it is
 not a lesson about this one. Say which you think it is; the human decides.
 
-The output format is appended automatically by the plugin and is not part of this file, so
-nothing here can break the parsing.
+The plugin adds the output format after this text when it writes a work order. It is not kept
+in the prompt file, so nothing you change in the prompt can break the parsing.

@@ -100,7 +100,7 @@ told to the extractor and filters its answer, and the store refuses to reopen an
   `evidence that cites no steps is dated by what its order covered, not by what came after it`
   `evidence is dated by what its order covered, not by how far the reader says it got`
   `evidence citing only steps the log does not have is undated, and reopens`
-- What a human has already fixed is named in the order, with the date, so the reading is not
+- What a human has already fixed is named in the order, with the time, to the minute, so the reading is not
   spent re-deriving an answered problem.
   `problems already fixed are named in the order, with the date they were fixed`
 - A rejected lesson never returns.

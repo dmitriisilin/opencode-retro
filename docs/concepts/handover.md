@@ -47,6 +47,9 @@ closed. Accepting or rejecting moves the file to `archive/`; `later` keeps it op
 
 ## Invariants
 
+- A `/retro` with nothing to review says what is true of the store: that every lesson so far
+  has been decided, when it has, rather than that nothing is recorded.
+  `nothing to review after every lesson was decided says so, not that nothing is recorded`
 - One invocation delivers one lesson, the top of the open set by score.
   `the top open lesson is picked by score`
   `one invocation delivers exactly one lesson, the top of the open set`

@@ -2486,3 +2486,25 @@ test("the checks section agrees with the rest of the report after a decision and
   assert.match(report, /extract prompt\s+project \(base \d+, edited\)/, report)
   await cleanup?.()
 })
+
+test("a log passed over as one exchange, grown since by the plugin's round, says so on its line", async () => {
+  const real = Date.now
+  let now = Date.parse("2026-10-26T10:00:00Z")
+  Date.now = () => now
+  try {
+    const dir = sandbox()
+    const fake = fakeOpenCode({ directory: dir, agent: false })
+    const cleanup = await plugin.setup(fake.ctx)
+    await work(fake, "ses_a")
+    await fake.hooks.get("session.prompt")({ sessionID: "ses_review", messageID: "rv", prompt: { text: "ready?" } })
+    await retro(fake)
+    now += 61_000
+    await fake.hooks.get("session.prompt")({ sessionID: "ses_reader", messageID: "r1", prompt: { text: "opencode-retro work order: read /x/.retro/work/ses_a.md and do what it says." } })
+    const report = readFileSync(join(dir, ".retro", "selfcheck.md"), "utf8")
+    assert.match(report, /measured on session\s+`ses_review`/, report)
+    assert.match(report, /one exchange[^\n]*; what it holds since is the plugin's own work/, report)
+    await cleanup?.()
+  } finally {
+    Date.now = real
+  }
+})

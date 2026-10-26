@@ -145,7 +145,10 @@ export function assess(session) {
    */
   const counted = () =>
     `${c.toolEvents} tool-call event${c.toolEvents === 1 ? "" : "s"} seen, ${c.toolHook} reached the hook` +
-    (c.unfinished ? `, ${c.unfinished} unfinished when the turn ended` : "")
+    (c.unfinished ? `, ${c.unfinished} unfinished when the turn ended` : "") +
+    // More hook calls than events is not a fault: a tool run through Code Mode's `execute`
+    // reaches the hook as itself and as the wrapper, under one id and one event.
+    (c.toolHook > c.toolEvents ? " (a tool run through `execute` reaches the hook twice)" : "")
 
   if (!c.toolEvents) {
     checks.push({
@@ -315,7 +318,8 @@ export function render(state) {
     "**If you are working right now and `heartbeat` is more than a few minutes old, this",
     "plugin is not running.** Nothing else will tell you — OpenCode does not report a plugin",
     "that failed to load. Check that `opencode.json` still names the plugin — an absolute",
-    "path if you run a checkout — then run `/retro`.",
+    "path if you run a checkout — then start a session: a plugin that loaded rewrites this",
+    "file within a minute of its first prompt.",
     "",
     "## Is it working",
     "",

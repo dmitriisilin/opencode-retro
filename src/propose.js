@@ -322,7 +322,7 @@ export function renderFailures(extracted) {
   )
 }
 
-export function renderNothing({ queued = 0, extracted = null, dir = DEFAULTS.dir } = {}) {
+export function renderNothing({ queued = 0, extracted = null, dir = DEFAULTS.dir, decided = 0 } = {}) {
   const failures = extracted?.failures ?? []
   const lines = ["# retro", "", "Nothing to review."]
   for (const f of failures) {
@@ -355,7 +355,9 @@ export function renderNothing({ queued = 0, extracted = null, dir = DEFAULTS.dir
   } else {
     lines.push(
       "",
-      "Either the sessions have been going straight, or nothing is recorded yet.",
+      decided
+        ? `Every lesson recorded so far has been decided — ${decided} in \`${dir}/archive/\` — and nothing new has come up since.`
+        : "Either the sessions have been going straight, or nothing is recorded yet.",
       `\`${dir}/selfcheck.md\` says whether the plugin is actually watching.`,
     )
   }

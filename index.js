@@ -979,7 +979,7 @@ export default {
 
       if (all) {
         const open = pickOpen(lessons, { sessions: state.sessions, halfLife: config.halfLife })
-        if (!open.length) return { text: renderNothing({ queued: left, extracted, dir: retroDir }), about: "notice" }
+        if (!open.length) return { text: renderNothing({ queued: left, extracted, dir: retroDir, decided: store.listArchive().filter((l) => l.status && l.status !== "new").length }), about: "notice" }
         const currencies = new Map()
         for (const lesson of open.slice(0, config.proposeLimit)) currencies.set(lesson.id, currencyOf(lesson))
         // A failed analysis is news in a batch exactly as it is in a single hand-over.
@@ -999,7 +999,7 @@ export default {
       // One invocation, one lesson: the top of the list. Deciding is the user's business, in
       // this session, with the agent that is already here.
       const lesson = pickLesson(lessons, { sessions: state.sessions, halfLife: config.halfLife })
-      if (!lesson) return { text: renderNothing({ queued: left, extracted, dir: retroDir }), about: "notice" }
+      if (!lesson) return { text: renderNothing({ queued: left, extracted, dir: retroDir, decided: store.listArchive().filter((l) => l.status && l.status !== "new").length }), about: "notice" }
       const open = lessons.filter((l) => ["new", "later", undefined, null].includes(l.status)).length
       const text =
         renderFailures(extracted) +
@@ -1246,6 +1246,12 @@ export default {
       // accounts of one log (checks after the ten rounds).
       const last = lastExtraction.get(sessionID) ?? state.extractionOf(sessionID)
       if (owed && last?.unanswered) return last
+      // A log passed over as one exchange that has grown since by nothing but the plugin's own
+      // work — the session `/retro` ran in — is still nothing to read, but "one exchange, nothing
+      // done" over a log with a whole round in it read as wrong (the stranger's hour).
+      if (!owed && last?.ok && last.skipped && log.stat(sessionID).size > mark.size) {
+        return { ...last, detail: `${last.detail}; what it holds since is the plugin's own work, which is not read` }
+      }
       if (owed && !mark.failed && !mark.open && (mark.size > 0 || owedIfUnknown)) return { owed: true }
       return last ?? (owed && owedIfUnknown ? { owed: true } : null)
     }

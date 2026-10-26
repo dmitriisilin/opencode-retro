@@ -337,3 +337,9 @@ test("a lesson that came back is handed over with what was decided before", () =
   assert.doesNotMatch(text, /whatever was done about it did not hold/)
   assert.match(renderBatch([back], {}), /Decided: dropped the build line/)
 })
+
+test("nothing to review after every lesson was decided says so, not that nothing is recorded", () => {
+  const text = renderNothing({ decided: 2 })
+  assert.match(text, /Every lesson recorded so far has been decided — 2 in `\.retro\/archive\/`/)
+  assert.doesNotMatch(text, /nothing is recorded yet/)
+})

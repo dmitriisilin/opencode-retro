@@ -120,6 +120,11 @@ last analysis of the session whichever path ran it.
   are evaluated anew whenever the report is written, so they never disagree with the sections
   around them.
   `the checks section agrees with the rest of the report after a decision and a prompt edit`
+- What it says reads true to a newcomer: more hook calls than events is explained, the remedy
+  for a plugin that did not load is one that works without it, and a log passed over as one
+  exchange that has grown since by the plugin's own round says so.
+  `more hook calls than events is explained, and the remedy for a dead plugin is one that works`
+  `a log passed over as one exchange, grown since by the plugin's round, says so on its line`
 - A call the turn ended in the middle of accounts for its event: an interrupted turn with a
   subagent still running is not a dead tool hook.
   `an interrupted turn with a subagent still running is not a dead tool hook`

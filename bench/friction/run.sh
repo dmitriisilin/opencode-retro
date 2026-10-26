@@ -12,7 +12,7 @@ set -u
 HERE=$(cd "$(dirname "$0")" && pwd)
 REPO=$(cd "$HERE/../.." && pwd)
 # A fresh directory every run. Recreating a project directory at the same path while the
-# OpenCode service is up leaves the plugin unloaded there, silently (AGENTS.md Gotcha 15):
+# OpenCode service is up leaves the plugin unloaded there, silently (AGENTS.md Gotcha 19):
 # measured, the second run at one path recorded nothing at all.
 WORK=${1:-/tmp/retro-friction-$(date +%s)}
 MODEL=${2:-deepseek/deepseek-flash}

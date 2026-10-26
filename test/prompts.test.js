@@ -26,7 +26,7 @@ test("the default is seeded into the project so there is something to edit", () 
   const text = readFileSync(join(s.dir, "extract.md"), "utf8")
   assert.match(text, /shorter and straighter/)
   assert.match(text, /^---\nprompt: extract\nbase: \d+/m, "it records which default it came from")
-  assert.match(text, /appended automatically by the plugin/, "and says where the output format went")
+  assert.match(text, /adds the output format after this text/, "and says where the output format went")
 })
 
 test("seeding never overwrites what is already there", () => {
