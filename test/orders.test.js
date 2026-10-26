@@ -2654,3 +2654,22 @@ test("a turn's end delivered again after the next prompt is no end to the report
   assert.doesNotMatch(report, /BROKEN\s+prompt hook/, report)
   await cleanup?.()
 })
+
+test("a delegated session that recorded an analysis is the plugin's, wherever its prompt fell", async () => {
+  const { ownRounds } = await import("../src/extract.js")
+  const records = [
+    { n: 1, k: "prompt", text: "fix bug" },
+    { n: 2, k: "session", event: "start" },
+    { n: 3, k: "session", event: "end" },
+    { n: 4, k: "handover", about: "work", sent: true, text: "the logs come first" },
+    { n: 5, k: "session", event: "start" },
+    { n: 6, k: "prompt", text: "also check the build", delivery: "steer" },
+    { n: 7, k: "prompt", from: "r1", text: "Please analyse the work order at /x.md" },
+    { n: 8, k: "tool", from: "r1", tool: "read", input: { path: "/p/.retro/sessions/other.jsonl" } },
+    { n: 9, k: "text", from: "r1", text: "session other hit the lint trap" },
+    { n: 10, k: "tool", from: "r1", tool: "retro_record", input: {} },
+    { n: 11, k: "tool", tool: "subagent", child: "r1", input: { prompt: "Please analyse the work order at /x.md" } },
+  ]
+  const { steps } = ownRounds(records)
+  for (const n of [7, 8, 9, 10, 11]) assert.ok(steps.has(n), `step ${n} is the reader's`)
+})

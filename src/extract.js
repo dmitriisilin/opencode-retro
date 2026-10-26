@@ -240,6 +240,9 @@ export function ownRounds(records) {
   // a reader the plugin did not recognise by its prompt is still one by its delegation. Then
   // whatever a reader starts, at any depth, until nothing more is found.
   for (const r of sorted) if (isReaderCall(r) && r.child) readers.add(r.child)
+  // And a delegated session that recorded an analysis, whatever it was told and wherever its
+  // first prompt fell: only a reader calls `retro_record`.
+  for (const r of sorted) if (r.from && r.k === "tool" && r.tool === "retro_record") readers.add(r.from)
   for (let grew = true; grew; ) {
     grew = false
     for (const r of sorted) {
@@ -628,7 +631,8 @@ function renderConcluded(concluded) {
 function renderFixed(archived) {
   const fixed = archived
     .filter((l) => l.status === "accepted" && l.closedAt)
-    .sort((a, b) => String(b.closedAt).localeCompare(String(a.closedAt)))
+    // By time, not by text: a time written by hand with an offset sorts wrongly as a string.
+    .sort((a, b) => (Date.parse(b.closedAt) || 0) - (Date.parse(a.closedAt) || 0))
     .slice(0, 10)
   if (!fixed.length) return null
   return [

@@ -234,6 +234,10 @@ export function createIngest({
     toolAfter(p) {
       const s = session(owner(p.sessionID))
       s.owned = true
+      // The after-hook of a call the turn's end already wrote as unfinished — an interrupt, and
+      // the aborted call reporting late: that call has its record, and this turn's counts are
+      // not its (the review after the stranger's hour).
+      if (s.flushed?.delete(p.id)) return
       s.counts.toolHook++
       const started = s.pending.get(p.id)
       s.pending.delete(p.id)
@@ -380,10 +384,13 @@ export function createIngest({
           // one. Not with one: a real turn whose start went unlogged has nothing else to show for
           // itself, and judged by records it lost its end.
           if (seq == null && s.endWritten) return "repeated"
+          // Kept past this end, so a late after-hook for one of them writes nothing a second time.
+          s.flushed = new Set()
           for (const call of s.pending.values()) {
             // Counted, because it is the one honest reason an event has no after-hook: the turn
             // ended (an interrupt, usually) while the call was still running.
             s.counts.unfinished++
+            s.flushed.add(call.id)
             append(call.session ?? sessionID, {
               k: "tool",
               seq: s.seq.get(call.id) ?? null,

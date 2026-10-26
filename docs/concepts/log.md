@@ -101,6 +101,7 @@ keeps everything.
 - A delegation's record says so wherever it is written: a call of a subagent's still open when
   the root's turn ends is logged as unfinished with that subagent as its `from`.
   `a delegation's call left open at the root's end is written with its origin`
+  `a call written as unfinished at an interrupt is not written again when its after-hook comes late`
 - An event is taken in once: one delivered again, or late, is known by its `durable.seq` — at
   or before the last one seen for its own session, a subagent's sequence being its own — and
   writes nothing. A repeated start or end would be a turn boundary that never happened, a

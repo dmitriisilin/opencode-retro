@@ -310,6 +310,7 @@ rare, since the hand-over asks it to start readers and nothing else — is left 
   `a log pruned between turns starts its numbering again`
   `a reworded reader's delegation is ours wherever it lands`
   `a reader started by a work order's line is the plugin's, recognised by its prompt or not`
+  `a delegated session that recorded an analysis is the plugin's, wherever its prompt fell`
   `what a reworded reader starts after an early retro_propose is the plugin's too`
   `a subagent's prompt does not end a reply to the plugin's hand-over`
   `a reader's call to retro_propose writes nothing into any log`
