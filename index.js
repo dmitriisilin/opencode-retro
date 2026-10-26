@@ -713,7 +713,15 @@ export default {
             }
             return buf.subarray(0, got).toString("utf8")
           }
-          const added = parseShadowLog(readAt(Math.min(from, total)))
+          // An offset inside a line — a read that caught another writer mid-record — would cut
+          // that record off and drop it unseen: owed instead, the side that loses nothing.
+          let cut = false
+          if (from > 0 && from < total) {
+            const before = Buffer.alloc(1)
+            readSync(fd, before, 0, 1, from - 1)
+            cut = before[0] !== 0x0a
+          }
+          const added = cut ? [] : parseShadowLog(readAt(Math.min(from, total)))
           // The whole log as the caller already read it, when it did: a report measures it
           // once, inside a hook. Read a moment earlier, it may lack the last of the tail, and a
           // step it lacks is counted as something to read — owed, the side that loses nothing.
@@ -1259,11 +1267,12 @@ export default {
       // Not once it has been asked again: an order out now is an asking in progress, which the
       // stock does not count as unanswered either.
       if (owed && last?.unanswered && !state.orderOf(sessionID)) return last
-      // A log passed over as one exchange that has grown since by nothing but the plugin's own
-      // work — the session `/retro` ran in — is still nothing to read, but "one exchange, nothing
-      // done" over a log with a whole round in it read as wrong (the stranger's hour).
+      // A log passed over as one exchange that has grown since by nothing to read — the plugin's
+      // own round in the session `/retro` ran in, a turn's end — is still nothing to read, but
+      // "one exchange, nothing done" over a log with a whole round in it read as wrong (the
+      // stranger's hour). Said of what is known: that the growth holds nothing to read.
       if (!owed && last?.ok && last.skipped && log.stat(sessionID).size > mark.size) {
-        return { ...last, detail: `${last.detail}; what it holds since is the plugin's own work, which is not read` }
+        return { ...last, detail: `${last.detail}; nothing it holds since is anything to read` }
       }
       if (owed && !mark.failed && !mark.open && (mark.size > 0 || owedIfUnknown)) return { owed: true }
       return last ?? (owed && owedIfUnknown ? { owed: true } : null)
@@ -1347,7 +1356,7 @@ export default {
         // A skip covers nothing: the size moves, so nothing is asked again until the log
         // grows, and the step mark does not, so when it grows it is read from the start.
         state.look(sessionID, { size: readSize, open: false, failed: false, attempts: 0, id: identity })
-        state.markExtracted(sessionID, { ok: true, detail: composed.detail })
+        state.markExtracted(sessionID, { ok: true, skipped: true, detail: composed.detail })
         lastExtraction.set(sessionID, composed)
         return composed
       }

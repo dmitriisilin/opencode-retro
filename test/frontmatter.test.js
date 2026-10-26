@@ -136,3 +136,10 @@ test("a stray deeper line with no key above it is skipped, not guessed at", () =
   const { data } = parseFrontmatter("---\nid: x\n      mystery\nstatus: new\n---\n")
   assert.deepEqual(data, { id: "x", status: "new" })
 })
+
+test("a block of text whose first line is indented comes back as it went in", () => {
+  const text = "    npm run build\nthen remove the line"
+  const back = parseFrontmatter(stringifyFrontmatter({ note: text, decisions: [{ discovered: text }] }, "")).data
+  assert.equal(back.note.replace(/\n$/, ""), text)
+  assert.equal(back.decisions[0].discovered.replace(/\n$/, ""), text)
+})

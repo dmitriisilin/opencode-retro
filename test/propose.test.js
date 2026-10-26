@@ -363,3 +363,9 @@ test("a decision's several-line proposal stays inside its item in the hand-over"
   const text = renderProposal(back, { total: 1, remaining: 0 })
   assert.match(text, /\n {4}1\. check for \.eslintrc\n {4}2\. skip otherwise/)
 })
+
+test("nothing open with logs still waiting says neither that nothing is recorded nor that nothing came up", () => {
+  const text = renderNothing({ decided: 3, queued: 2 })
+  assert.match(text, /Nothing is open\. In `\.retro\/archive\/`: 3 decided\./)
+  assert.doesNotMatch(text, /nothing is recorded yet|nothing new has come up/i)
+})

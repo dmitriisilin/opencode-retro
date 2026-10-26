@@ -99,6 +99,10 @@ told to the extractor and filters its answer, and the store refuses to reopen an
   `a fix named for the first time after a reopening is measured against its own file`
   `a kept proposal that names no file is not measured against a file another reading named`
   `a decision's several-line proposal stays inside its item in the hand-over`
+- A lesson file reads back as it was written, every text in it included — a block whose first
+  line is itself indented carries its indentation stated, or reading it back cut the lines
+  after it.
+  `a block of text whose first line is indented comes back as it went in`
   `evidence from before a fix does not reopen it, and evidence from after does`
   `undated evidence reopens a decision, because nothing says it is old`
   `evidence is dated by the range it cites, not by whatever came after it in the log`

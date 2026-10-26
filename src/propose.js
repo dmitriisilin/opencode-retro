@@ -359,7 +359,7 @@ export function renderNothing({ queued = 0, extracted = null, dir = DEFAULTS.dir
   } else {
     lines.push(
       "",
-      (decided || evicted) && !queued
+      decided || evicted
         ? `Nothing is open. In \`${dir}/archive/\`: ` +
             [
               decided ? `${decided} decided` : null,
@@ -367,8 +367,11 @@ export function renderNothing({ queued = 0, extracted = null, dir = DEFAULTS.dir
             ]
               .filter(Boolean)
               .join("; ") +
-            ". Nothing new has come up since."
-        : "Either the sessions have been going straight, or nothing is recorded yet.",
+            // With logs still unread, nothing can be said of what came up since.
+            (queued ? "." : ". Nothing new has come up since.")
+        : queued
+          ? "Nothing is recorded yet; the logs above are what there is to read."
+          : "Either the sessions have been going straight, or nothing is recorded yet.",
       `\`${dir}/selfcheck.md\` says whether the plugin is actually watching.`,
     )
   }

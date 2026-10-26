@@ -2507,7 +2507,7 @@ test("a log passed over as one exchange, grown since by the plugin's round, says
     await fake.hooks.get("session.prompt")({ sessionID: "ses_reader", messageID: "r1", prompt: { text: "opencode-retro work order: read /x/.retro/work/ses_a.md and do what it says." } })
     const report = readFileSync(join(dir, ".retro", "selfcheck.md"), "utf8")
     assert.match(report, /measured on session\s+`ses_review`/, report)
-    assert.match(report, /one exchange[^\n]*; what it holds since is the plugin's own work/, report)
+    assert.match(report, /one exchange[^\n]*; nothing it holds since is anything to read/, report)
     await cleanup?.()
   } finally {
     Date.now = real
