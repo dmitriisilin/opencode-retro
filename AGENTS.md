@@ -1199,7 +1199,7 @@ Known, listed so nobody discovers them as surprises:
 
 ## Release
 
-- Package `opencode-retro` on npm, owner `dmitriisilin`. Published placeholders: 0.0.1, 0.0.2 (no functionality). `main` is already at 0.0.3 — the next real release.
+- Package `opencode-retro` on npm, owner `dmitriisilin`. Published placeholders: 0.0.1, 0.0.2 (no functionality). 0.1.0 is the first release with functionality.
 - Publishing is via npm Trusted Publishing (status: Valid) from `.github/workflows/publish.yml` on tags `v*`. Tag must match `package.json` version, and the workflow runs `npm test` before publishing, so a tarball, translation stamp or version mismatch stops the release.
 - The workflow upgrades npm before publishing: Trusted Publishing needs npm ≥ 11.5.1, Node 22 ships npm 10, and old npm fails with a misleading `E404 Not Found - PUT`. Don't remove that step.
 - Release: `npm version <x.y.z> && git push --follow-tags`. No tokens anywhere.
