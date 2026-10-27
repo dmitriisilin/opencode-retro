@@ -1,6 +1,6 @@
 {
   "name": "opencode-retro",
-  "version": "0.0.3",
+  "version": "0.1.0",
   "description": "Retrospectives for coding agents: an OpenCode v2 plugin that reads agent sessions and proposes improvements to skills, instructions and tools",
   "type": "module",
   "main": "index.js",
