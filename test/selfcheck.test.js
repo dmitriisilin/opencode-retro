@@ -169,7 +169,7 @@ test("the rendered file carries its own cadence, threshold and remedy", () => {
   assert.match(text, /heartbeat .*at most once a minute/)
   assert.match(text, /this\n?plugin is not running/, "the staleness rule must be in the file itself")
   assert.match(text, /absolute\s+path/, "an absolute path is the checkout remedy")
-  assert.match(text, /still names the plugin/, "and a package install has a remedy too, not only a checkout")
+  assert.match(text, /needs the entry still there/, "and a package install has a remedy too, not only a checkout")
   assert.match(text, /## Notes/)
   assert.match(text, /extract\.v3\.md/)
 })
