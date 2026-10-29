@@ -423,6 +423,11 @@ export default {
       await ctx.tool.transform((tools) => {
         tools.add({
           name: "retro_decide",
+          // A tool of its own in the model's list, not one reached through Code Mode's
+          // `execute`: under a permissions configuration that denies `execute` — any
+          // deny-all-then-allowlist does — a Code Mode tool is unreachable whatever its own
+          // permission says (Tool.snapshot, 2.0.32; issues #1 and #2).
+          options: { codemode: false },
           description:
             "Record the human's decision on a retro lesson. This tool is already available " +
             "in this session — there is nothing to install, locate or configure. Call it once " +
@@ -440,6 +445,11 @@ export default {
         })
         tools.add({
           name: "retro_record",
+          // A tool of its own in the model's list, not one reached through Code Mode's
+          // `execute`: under a permissions configuration that denies `execute` — any
+          // deny-all-then-allowlist does — a Code Mode tool is unreachable whatever its own
+          // permission says (Tool.snapshot, 2.0.32; issues #1 and #2).
+          options: { codemode: false },
           description:
             "Record what one opencode-retro work order found. Call it exactly once per work " +
             "order, with the session id named in the order, the lessons — an empty list when " +
@@ -458,6 +468,11 @@ export default {
         })
         tools.add({
           name: "retro_propose",
+          // A tool of its own in the model's list, not one reached through Code Mode's
+          // `execute`: under a permissions configuration that denies `execute` — any
+          // deny-all-then-allowlist does — a Code Mode tool is unreachable whatever its own
+          // permission says (Tool.snapshot, 2.0.32; issues #1 and #2).
+          options: { codemode: false },
           description:
             "Hand over what the opencode-retro analyses found, once every work order has been " +
             "answered: the top lesson, or with `all` every waiting lesson as one plan. Returns " +
