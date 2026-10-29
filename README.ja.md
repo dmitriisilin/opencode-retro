@@ -1,4 +1,4 @@
-<!-- translated-from: README.en.md@654a2098ed08 -->
+<!-- translated-from: README.en.md@7dcedf76bc5e -->
 # opencode-retro
 
 [Русский](README.md) | [English](README.en.md) | [简体中文](README.zh-CN.md) | [Español](README.es.md) | **日本語**
@@ -171,6 +171,8 @@ OpenCode が npm からプラグインを取得します。`opencode.json` に�
   "plugins": [{ "package": "opencode-retro" }]
 }
 ```
+
+あるいはプラグインを丸ごと手元に置くこともできます。`~/.config/opencode/plugins/opencode-retro/` にコピーを置けば、`opencode.json` への記載は要りません。OpenCode は各設定ディレクトリの `plugin/` と `plugins/` を自分で走査します。フックはサービス単位で登録されるので、すでに動いているセッションも次のプロンプトかツール呼び出しでプラグインを読み込みます。
 
 設定するものはありません。プラグインは自分でモデルを呼ばないので、選ぶモデルも、渡す鍵も、つなぐプロバイダーもありません。分析は、それを求めたセッションのサブエージェントとして動きます。`.retro/selfcheck.md` が、それが実行されたか、実行されなかった場合はその理由を報告します。
 

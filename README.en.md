@@ -169,6 +169,8 @@ OpenCode fetches the plugin from npm; name it in `opencode.json`:
 }
 ```
 
+Or vendor the whole plugin: put a copy in `~/.config/opencode/plugins/opencode-retro/` and no entry in `opencode.json` is needed — OpenCode scans the `plugin/` and `plugins/` directories in every config directory itself. Hooks are registered at service level, so sessions already running pick the plugin up at their next prompt or tool call.
+
 There is nothing to configure: the plugin calls no model of its own, so there is no model to pick, no key to supply and no provider to reach. An analysis runs as a subagent of the session that asked for it. `.retro/selfcheck.md` reports whether one ran, and why it failed if it did not.
 
 **Check what npm actually has first.** Every version below `0.1.0` is a name placeholder: it loads without error, registers no command, creates no `.retro/`, and reports nothing — so following this snippet before the first real release leaves a session that looks normal and a plugin that is not there. If `npm view opencode-retro version` is below `0.1.0`, point `package` at an absolute path to a checkout instead; that is also how the plugin is run while working on it. A relative path leaves session startup hanging without an error, and an exact version can be pinned (`opencode-retro@0.1.0`) once there is one.

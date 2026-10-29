@@ -1,4 +1,4 @@
-<!-- translated-from: README.en.md@654a2098ed08 -->
+<!-- translated-from: README.en.md@7dcedf76bc5e -->
 # opencode-retro
 
 [Русский](README.md) | [English](README.en.md) | [简体中文](README.zh-CN.md) | **Español** | [日本語](README.ja.md)
@@ -172,6 +172,8 @@ OpenCode descarga el plugin desde npm; basta con nombrarlo en `opencode.json`:
   "plugins": [{ "package": "opencode-retro" }]
 }
 ```
+
+O incluya el plugin entero: ponga una copia en `~/.config/opencode/plugins/opencode-retro/` y no hace falta ninguna entrada en `opencode.json` — OpenCode recorre por sí mismo los directorios `plugin/` y `plugins/` de cada directorio de configuración. Los hooks se registran a nivel de servicio, así que las sesiones que ya están en marcha recogen el plugin en su siguiente prompt o llamada a herramienta.
 
 No hay nada que configurar: el plugin no llama a ningún modelo propio, así que no hay modelo que elegir, ni clave que aportar, ni proveedor al que llegar. Un análisis se ejecuta como subagente de la sesión que lo pidió. `.retro/selfcheck.md` informa de si se ejecutó y de por qué falló si no lo hizo.
 

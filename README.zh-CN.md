@@ -1,4 +1,4 @@
-<!-- translated-from: README.en.md@654a2098ed08 -->
+<!-- translated-from: README.en.md@7dcedf76bc5e -->
 # opencode-retro
 
 [Русский](README.md) | [English](README.en.md) | **简体中文** | [Español](README.es.md) | [日本語](README.ja.md)
@@ -171,6 +171,8 @@ OpenCode 会从 npm 获取插件；在 `opencode.json` 中写出包名即可：
   "plugins": [{ "package": "opencode-retro" }]
 }
 ```
+
+或者把整个插件放进本地：将一份副本放到 `~/.config/opencode/plugins/opencode-retro/`，就不需要在 `opencode.json` 中添加条目——OpenCode 会自行扫描每个配置目录下的 `plugin/` 和 `plugins/` 目录。钩子在服务层注册，因此已在运行的会话会在下一次提示或工具调用时加载插件。
 
 无需任何配置：插件自己不调用模型，所以没有模型要挑、没有密钥要填、也没有服务商要连通。分析以请求它的那个会话的子智能体身份运行。`.retro/selfcheck.md` 会报告它是否运行过，以及失败时的原因。
 

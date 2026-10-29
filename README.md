@@ -1,4 +1,4 @@
-<!-- translated-from: README.en.md@654a2098ed08 -->
+<!-- translated-from: README.en.md@7dcedf76bc5e -->
 # opencode-retro
 
 **Русский** | [English](README.en.md) | [简体中文](README.zh-CN.md) | [Español](README.es.md) | [日本語](README.ja.md)
