@@ -1,4 +1,5 @@
 import { join, relative } from "node:path"
+import { PLUGIN_TOOLS, hiddenTools } from "./permissions.js"
 /**
  * The self-check (AGENTS.md decisions 16-17).
  *
@@ -582,6 +583,28 @@ export function activeCheck({ ctx, config, prompts, store }) {
     const where = config?.updates && config?.dir ? relative(config.dir, join(config.updates, file)) : `prompts/updates/${file}`
     notes.push(`${where} is a newer default waiting to be read. Nothing was changed for you.`)
   }
+
+  // Whether a permissions rule hides the plugin's tools from the model. The commands, the hooks
+  // and this file go on working when it does, so nothing else would say (issues #1 and #2).
+  const perms = hiddenTools({ directory: ctx?.location?.directory })
+  checks.push(
+    perms.hidden.length
+      ? {
+          status: BROKEN,
+          name: "tool permissions",
+          detail: `${perms.hidden.map((t) => `\`${t}\``).join(", ")} hidden from the model by a deny rule in ${perms.files.join(", ")}`,
+          meaning:
+            "OpenCode drops a tool whose permission a rule with resource \"*\" denies, in every session, so no round " +
+            "can record and nothing can be proposed. Allow them, after the deny rule: " +
+            PLUGIN_TOOLS.map((t) => `{ "action": "${t}", "resource": "*", "effect": "allow" }`).join(", ") +
+            ". See the README, Permissions.",
+        }
+      : {
+          status: OK,
+          name: "tool permissions",
+          detail: perms.rules ? "no rule in opencode.json hides the plugin's tools" : "no permission rules in opencode.json",
+        },
+  )
 
   // 3. Stock, so the answer to "is it doing anything" is in the same place.
   const lessons = store.list()

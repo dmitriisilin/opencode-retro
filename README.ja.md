@@ -1,4 +1,4 @@
-<!-- translated-from: README.en.md@f654c69bf54f -->
+<!-- translated-from: README.en.md@654a2098ed08 -->
 # opencode-retro
 
 [Русский](README.md) | [English](README.en.md) | [简体中文](README.zh-CN.md) | [Español](README.es.md) | **日本語**
@@ -186,6 +186,18 @@ OpenCode が npm からプラグインを取得します。`opencode.json` に�
 - `maxOutput` — シャドーログに一ステップごとに保存するツール出力の文字数。既定は 8000。
 - `heartbeatMs` — セッション作業中のセルフチェック書き込みの最短間隔。既定は 60000。
 - `keepSessions` — 誰も引用していないものも含め、すべてのログを残す。既定では無効。
+
+### 権限
+
+プラグインの作業は、プラグインが登録する三つのツール——`retro_record`、`retro_propose`、`retro_decide`——を通して行われます。OpenCode は、権限が拒否されたツールを各セッションのツール一覧から取り除きます。そのため、すべてを拒否してから一覧だけを許可する設定（`{ "action": "*", "resource": "*", "effect": "deny" }` の後に許可を並べるもの）では、これらが隠れてしまいます。`/retro` は動いて引き継ぎも届き、フックもセルフチェックも動き続けますが、どの分析も結果を記録できず、提案するものもありません。拒否ルールの後で許可してください。
+
+```json
+{ "action": "retro_record",  "resource": "*", "effect": "allow" },
+{ "action": "retro_propose", "resource": "*", "effect": "allow" },
+{ "action": "retro_decide",  "resource": "*", "effect": "allow" }
+```
+
+`.retro/selfcheck.md` は `opencode.json`（プロジェクトのものとグローバルのもの）の権限ルールを読み、それがツールを隠しているときは `BROKEN tool permissions` と報告します。エージェント自身の権限は読みません。
 
 ### ディスク上に現れるもの
 

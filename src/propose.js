@@ -298,6 +298,14 @@ export function renderWorkOrders(orders, { all = false, failures = [], left = 0 
     "Do not read the work orders yourself and do not analyse the logs here: each subagent reads one, " +
       "in a context of its own, and records what it found with `retro_record`. When every subagent " +
       `has finished, call \`retro_propose\`${all ? " with `all: true`" : ""} and follow what it returns.`,
+    "",
+    // A defined exit when the tools never reached the model — a permissions rule hides them in
+    // every session, and an agent that believes they exist treats each failure as its own and
+    // flails (issue #1).
+    "If `retro_propose` is not among your tools, or a subagent reports that `retro_record` is not " +
+      "among its own, do not look for them, retry or work around it: tell the person that the " +
+      "opencode-retro tools are not visible to the model — usually a permissions rule denying them, " +
+      "which `.retro/selfcheck.md` names — and stop.",
   ]
   for (const f of failures) lines.push("", `_${failureLine(f)}_`)
   if (left > 0) lines.push("", backlogLine(left))

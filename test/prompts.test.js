@@ -154,11 +154,10 @@ test("the propose prompt asks the currency question without prescribing how", ()
     assert.match(text, /retro_decide/, `${name} must say how to record the outcome`)
     assert.match(text, /discovered/, `${name} must ask for what the work turned up`)
     assert.match(text, /proposed again/, `${name} must say what happens if nothing is recorded`)
-    assert.match(
-      text,
-      /already available in\s+this session|already available in this session/,
-      `${name} must say the tool is present, or the agent goes looking for it`,
-    )
+    assert.match(text, /nothing to install or look for on disk/, `${name} must say there is nothing to go looking for`)
+    // And not that it is certainly there: a permissions rule can hide it, and an agent told it
+    // exists treats each failure as its own (issue #1). It is given the way out instead.
+    assert.match(text, /If it is not among your\s+tools, a permissions rule is hiding it/, `${name} must give the way out`)
     assert.doesNotMatch(text, /git log/, `${name} must not prescribe a command`)
   }
   assert.match(s.prompts.resolve("propose").text, /Change nothing until they have decided/)

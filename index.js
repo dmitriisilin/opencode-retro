@@ -1,5 +1,5 @@
 import { appendFileSync, closeSync, fstatSync, mkdirSync, openSync, readFileSync, readSync, rmSync, writeFileSync } from "node:fs"
-import { join, relative as relativePath, resolve as resolvePath, sep } from "node:path"
+import { basename, join, relative as relativePath, resolve as resolvePath, sep } from "node:path"
 import { createIngest, isTurnEnd } from "./src/ingest.js"
 import { createPrompts } from "./src/prompts.js"
 import { SET_ASIDE, createSelfCheck } from "./src/selfcheck.js"
@@ -8,7 +8,7 @@ import { createState } from "./src/state.js"
 import { concludedIn, createStore, score } from "./src/lessons.js"
 import { assessCurrency, fingerprintOf } from "./src/currency.js"
 import { writeAtomic } from "./src/atomic.js"
-import { composeOrder, isWorkLine, lastReadable, nothingNew, ownSteps, recordAnswer, recordedLessons, refreshLessons, turnHandovers } from "./src/extract.js"
+import { WORK_LINE, composeOrder, isWorkLine, lastReadable, nothingNew, ownSteps, recordAnswer, recordedLessons, refreshLessons, turnHandovers } from "./src/extract.js"
 import { RECORD_INPUT } from "./src/contract.js"
 import {
   PROPOSE_INPUT,
@@ -157,6 +157,8 @@ export default {
      * plan to the person, where one invocation is one lesson (decision 9).
      */
     const roundAll = new Map()
+    /** Logs whose reader was started with the work line and has finished, this process (issue #1). */
+    const readersDone = new Set()
     /**
      * Whether a log is a session of its own — the person's, read and reported as one: not a
      * delegation (`parents`) and not one of our readers (`internal`). One predicate for every
@@ -368,6 +370,13 @@ export default {
       // A delegation's child belongs to the task that delegated it — unless it is one of our
       // readers, which is in no log at all.
       if (child && !internal.has(child)) adopt(child, p.sessionID)
+      // A reader started with the work line and finished: if no record comes for its order, it
+      // ran and could not record — the plugin's tools hidden from it, usually (issue #1).
+      const prompt = p.tool === "subagent" && typeof p.input?.prompt === "string" ? p.input.prompt : ""
+      if (prompt.includes(WORK_LINE)) {
+        const path = prompt.slice(prompt.indexOf(WORK_LINE) + WORK_LINE.length).split(/\s/)[0]
+        if (path.endsWith(".md")) readersDone.add(basename(path, ".md"))
+      }
       ingest.toolAfter(p)
       // Measured by `pulse`, after this handler, on the parent and never on the child: the
       // child's records are written into the parent's log, so the self-check would otherwise
@@ -1497,11 +1506,19 @@ export default {
          * log owed, and what is reported is the one thing we know: how many times we asked.
          */
         const asked = order.asked ?? 1
+        // A reader that was started and finished without recording is not an inbox waiting: it
+        // ran, and could not answer — what a permissions rule hiding the plugin's tools does.
+        const ran = readersDone.delete(order.session)
         const detail =
-          `asked ${asked} time${asked === 1 ? "" : "s"} and no record came back. Nothing is owed ` +
-          "of the log itself; the next `/retro` asks again. If this keeps happening, the " +
-          "hand-over is probably waiting in the inbox of a session that is still working — one " +
-          "`/retro` in a session that is not will be picked up."
+          `asked ${asked} time${asked === 1 ? "" : "s"} and no record came back. ` +
+          (ran
+            ? "A reader was started for it and finished without calling `retro_record` — most often " +
+              "because the plugin's tools are not visible to the model: a permissions rule denying " +
+              "`retro_record`, `retro_propose` and `retro_decide` hides them in every session " +
+              "(`.retro/selfcheck.md` says if one does; README, Permissions). The next `/retro` asks again."
+            : "Nothing is owed of the log itself; the next `/retro` asks again. If this keeps happening, " +
+              "the hand-over is probably waiting in the inbox of a session that is still working — one " +
+              "`/retro` in a session that is not will be picked up.")
         state.close(order.session, "unanswered")
         removeWork(order.session)
         // Said as such, so the session's own line reports the asking rather than "waiting" (the
@@ -1647,6 +1664,7 @@ export default {
       }
       state.markExtracted(session, { ok: true, detail: answered.detail })
       state.close(session, "answered")
+      readersDone.delete(session)
       removeWork(session)
       refreshOpenOrders()
       lastExtraction.set(session, result)

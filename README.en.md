@@ -184,6 +184,18 @@ Everything else is optional:
 - `heartbeatMs` — the shortest gap between self-check writes while a session works, default 60000.
 - `keepSessions` — keep every log, including ones nothing cites; off by default.
 
+### Permissions
+
+The plugin's work runs through three tools it registers — `retro_record`, `retro_propose` and `retro_decide` — and OpenCode drops from every session's toolset a tool whose permission is denied. A configuration that denies everything and then allows a list (`{ "action": "*", "resource": "*", "effect": "deny" }` followed by allows) therefore hides them: `/retro` still runs and hands over, the hooks and the self-check go on working, but no analysis can record and nothing can be proposed. Allow them after the deny rule:
+
+```json
+{ "action": "retro_record",  "resource": "*", "effect": "allow" },
+{ "action": "retro_propose", "resource": "*", "effect": "allow" },
+{ "action": "retro_decide",  "resource": "*", "effect": "allow" }
+```
+
+`.retro/selfcheck.md` reads the permission rules in `opencode.json` — the project's and the global one — and reports `BROKEN tool permissions` when they hide the tools. An agent's own permissions are not read.
+
 ### What appears on disk
 
 Everything the plugin writes stays under `.retro/` in the project, and nowhere else unless a proposal is accepted. All of it is plain text.

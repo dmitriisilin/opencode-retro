@@ -122,6 +122,14 @@ last analysis of the session whichever path ran it.
   `the checks section agrees with the rest of the report after a decision and a prompt edit`
   `a note about a file that is gone goes with it`
   `right after a start the report says what is missing is since this start, and names both prompts`
+- A permissions rule that hides the plugin's tools from the model is BROKEN, with the rules
+  to add: OpenCode drops a tool whose permission the last matching rule denies with resource
+  `*`, in every session, while the commands, the hooks and this file go on working (issues #1
+  and #2). Read from `opencode.json`, the global one and the project's; an agent's own
+  permissions are not.
+  `a deny-all permissions rule that hides the plugin's tools is reported BROKEN, with the remedy`
+  `a deny-all with an allowlist that leaves the plugin's tools out hides them, as OpenCode reads it`
+  `allow rules after the deny, or a project rule over a global one, make them visible`
   `a pending update is named where it really is, an overridden prompts directory included`
   `a session whose first hook wrote nothing yet is not a broken shadow log`
 - What it says reads true to a newcomer: more hook calls than events is explained, the remedy

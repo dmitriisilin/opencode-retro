@@ -211,7 +211,9 @@ stretch of log is the reader's job).*
   `a record that arrives after its round was closed is still recorded`
   `a record is refused once its log was replaced, even if its round is still closeable`
 - An order not answered by the next `/retro` is reported with how many times the log has been
-  asked about, and asked again — on the session's own line as in the stock, not as "waiting". It never retires the log: the plugin does not know whether
+  asked about — and, when a reader was started for it and finished without recording, that it
+  was, since that is what the plugin's tools hidden from the model look like (issue #1) — and
+  asked again — on the session's own line as in the stock, not as "waiting". It never retires the log: the plugin does not know whether
   anybody came. The count starts again only when the log grew by something to read — not by
   the plugin's own hand-overs and rounds, which lengthen the session `/retro` runs in every
   time — or is another file: a log pruned and written again under the same id was never asked
@@ -219,6 +221,8 @@ stretch of log is the reader's job).*
   for — whole, partial or covering nothing — starts the count again.
   `an order nobody answered is reported and asked again, not held against the log`
   `the session's line reports an asking nobody answered, not just that the log waits`
+  `a reader that finished without recording is reported as such, pointing at the tools' visibility`
+  `the hand-over and the reader's contract give a way out when the tools are not there`
   `a log asked about many times is never given up on for it, and says how many`
   `the askings add up in the session /retro runs in, which its own rounds lengthen`
   `the askings start again for a log replaced under the same id`

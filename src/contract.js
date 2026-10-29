@@ -68,6 +68,11 @@ over and left out as the plugin's own count as read: they are part of how far yo
 it up to make the answer look complete; an honest partial read loses nothing, and a false
 full one loses the part nobody will ever come back to.
 
+If \`retro_record\` is not among your tools, do not try another way to answer and do not keep
+looking for it: say in your reply that \`retro_record\` is not available to you, and stop. The
+agent that started you will tell the person; a permissions rule hiding the plugin's tools is
+the usual cause.
+
 Do not edit anything, do not run commands, and do not go looking through the project: you
 are judging the log, not redoing the work, and not checking whether the problem is still
 there. When the call has been made, reply with one word: done.

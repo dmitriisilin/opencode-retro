@@ -2484,3 +2484,43 @@ test("the command, not the tool caller, decides one lesson or every one", async 
   assert.doesNotMatch(result.content, /## 2\. /, "one lesson, as /retro asked")
   await cleanup?.()
 })
+
+/* Issues #1 and #2: the plugin's tools hidden from the model. */
+
+test("a deny-all permissions rule that hides the plugin's tools is reported BROKEN, with the remedy", async () => {
+  const dir = sandbox()
+  writeFileSync(join(dir, "opencode.json"), JSON.stringify({ permissions: [
+    { action: "*", resource: "*", effect: "deny" },
+    { action: "read", resource: "*", effect: "allow" },
+  ] }))
+  const fake = fakeOpenCode({ directory: dir, agent: false })
+  const cleanup = await plugin.setup(fake.ctx)
+  await fake.hooks.get("session.prompt")({ sessionID: "ses_a", messageID: "m1", prompt: { text: "go" } })
+  const report = readFileSync(join(dir, ".retro", "selfcheck.md"), "utf8")
+  assert.match(report, /BROKEN\s+tool permissions\s+`retro_record`, `retro_propose`, `retro_decide` hidden from the model/)
+  assert.match(report, /\{ "action": "retro_record", "resource": "\*", "effect": "allow" \}/)
+  await cleanup?.()
+})
+
+test("a reader that finished without recording is reported as such, pointing at the tools' visibility", async () => {
+  const dir = sandbox()
+  const fake = fakeOpenCode({ directory: dir, agent: false })
+  const cleanup = await plugin.setup(fake.ctx)
+  await work(fake, "ses_a")
+  const { paths } = await retro(fake)
+  const d = { sessionID: "ses_review", id: "d1", tool: "subagent", input: { agent: "general", prompt: `opencode-retro work order: read ${paths[0]} and do what it says.` } }
+  await fake.hooks.get("tool.execute.before")(d)
+  await fake.hooks.get("tool.execute.after")({ ...d, status: "completed", result: { output: "retro_record is not available to me" } })
+  const again = await retro(fake)
+  assert.match(again.handover, /finished without calling `retro_record`/)
+  assert.match(again.handover, /not visible to the model/)
+  await cleanup?.()
+})
+
+test("the hand-over and the reader's contract give a way out when the tools are not there", async () => {
+  const { renderWorkOrders } = await import("../src/propose.js")
+  const { OUTPUT_CONTRACT } = await import("../src/contract.js")
+  const text = renderWorkOrders([{ session: "ses_a", path: "/x/.retro/work/ses_a.md" }]).replace(/\s+/g, " ")
+  assert.match(text, /If `retro_propose` is not among your tools, or a subagent reports that `retro_record` is not among its own, do not look for them, retry or work around it/)
+  assert.match(OUTPUT_CONTRACT.replace(/\s+/g, " "), /If `retro_record` is not among your tools, do not try another way to answer/)
+})

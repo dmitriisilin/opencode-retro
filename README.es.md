@@ -1,4 +1,4 @@
-<!-- translated-from: README.en.md@f654c69bf54f -->
+<!-- translated-from: README.en.md@654a2098ed08 -->
 # opencode-retro
 
 [Русский](README.md) | [English](README.en.md) | [简体中文](README.zh-CN.md) | **Español** | [日本語](README.ja.md)
@@ -187,6 +187,18 @@ Todo lo demás es opcional:
 - `maxOutput` — caracteres de salida de herramienta que se guardan en el log paralelo por paso, por omisión 8000.
 - `heartbeatMs` — el intervalo mínimo entre escrituras de la autocomprobación mientras una sesión trabaja, por omisión 60000.
 - `keepSessions` — conservar todos los logs, incluidos los que nadie cita; desactivado por omisión.
+
+### Permisos
+
+El trabajo del plugin pasa por tres herramientas que registra — `retro_record`, `retro_propose` y `retro_decide` — y OpenCode quita del conjunto de herramientas de cada sesión toda herramienta cuyo permiso está denegado. Una configuración que lo deniega todo y luego permite una lista (`{ "action": "*", "resource": "*", "effect": "deny" }` seguido de permisos) las oculta, por tanto: `/retro` sigue ejecutándose y entregando, los hooks y el autodiagnóstico siguen funcionando, pero ningún análisis puede registrar nada y no hay nada que proponer. Permítalas después de la regla de denegación:
+
+```json
+{ "action": "retro_record",  "resource": "*", "effect": "allow" },
+{ "action": "retro_propose", "resource": "*", "effect": "allow" },
+{ "action": "retro_decide",  "resource": "*", "effect": "allow" }
+```
+
+`.retro/selfcheck.md` lee las reglas de permisos de `opencode.json` — el del proyecto y el global — e informa `BROKEN tool permissions` cuando ocultan las herramientas. Los permisos propios de un agente no se leen.
 
 ### Qué aparece en disco
 

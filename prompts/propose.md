@@ -1,6 +1,6 @@
 ---
 prompt: propose
-base: 8
+base: 9
 ---
 
 A lesson from an earlier session in this project is about to be handed to the human. You
@@ -71,8 +71,10 @@ been decided.
 session, the way you would make any change. The lesson's `change` field is prose, not a
 patch — read the target and do the right thing rather than applying the wording literally.
 
-When they have decided, record it with the `retro_decide` tool. It is already available in
-this session: there is nothing to install or look for on disk, and no command to find.
+When they have decided, record it with the `retro_decide` tool. The plugin registers it: there
+is nothing to install or look for on disk, and no command to find. If it is not among your
+tools, a permissions rule is hiding it — do not look for it or retry; tell the human, and that
+`.retro/selfcheck.md` names the rule.
 
 Use `accepted` if the change was made or the problem was already settled, `rejected` if it
 is wrong for this project — give the reason, and it will not be proposed again — or `later`

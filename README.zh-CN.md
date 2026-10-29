@@ -1,4 +1,4 @@
-<!-- translated-from: README.en.md@f654c69bf54f -->
+<!-- translated-from: README.en.md@654a2098ed08 -->
 # opencode-retro
 
 [Русский](README.md) | [English](README.en.md) | **简体中文** | [Español](README.es.md) | [日本語](README.ja.md)
@@ -186,6 +186,18 @@ OpenCode 会从 npm 获取插件；在 `opencode.json` 中写出包名即可：
 - `maxOutput` —— 影子日志中每一步保留的工具输出字符数，默认 8000。
 - `heartbeatMs` —— 会话进行中两次自检写入之间的最短间隔，默认 60000。
 - `keepSessions` —— 保留所有日志，包括无人引用的；默认关闭。
+
+### 权限
+
+插件的工作通过它注册的三个工具进行——`retro_record`、`retro_propose` 和 `retro_decide`——而 OpenCode 会从每个会话的工具集中移除权限被拒绝的工具。因此，一个先拒绝一切、再放行一份清单的配置（`{ "action": "*", "resource": "*", "effect": "deny" }`，其后是各项放行）会把它们藏起来：`/retro` 照常运行并交接，钩子和自检也照常工作，但任何分析都无法记录结果，也没有什么可以提议。请在拒绝规则之后放行它们：
+
+```json
+{ "action": "retro_record",  "resource": "*", "effect": "allow" },
+{ "action": "retro_propose", "resource": "*", "effect": "allow" },
+{ "action": "retro_decide",  "resource": "*", "effect": "allow" }
+```
+
+`.retro/selfcheck.md` 会读取 `opencode.json`（项目的和全局的）中的权限规则，当这些规则把工具藏起来时报告 `BROKEN tool permissions`。代理自身的权限不会被读取。
 
 ### 磁盘上会出现什么
 

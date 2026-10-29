@@ -368,6 +368,17 @@ plugin needed — and it gets the `sessionID`, so it can drive the review conver
    there, silently: measured, the bench's second run at one path recorded nothing at all. Use a
    fresh path every time, as `bench/friction/run.sh` does.
 
+20. **A permissions rule can hide the plugin's tools from every session, and nothing else
+   breaks.** OpenCode builds each session's toolset in `Tool.snapshot`, dropping every tool whose
+   permission action — `options.permission`, or the tool's name when it declares none — is
+   denied: the last rule whose `action` matches decides, and `resource: "*"` with `effect:
+   "deny"` removes it (read from 2.0.32's bundled source). A deny-all-then-allowlist
+   configuration therefore removes `retro_record`, `retro_propose` and `retro_decide`; the
+   commands still run, hooks fire and the self-check was all `ok`, while every round deadlocked
+   with readers that could not record (issues #1 and #2, from a real setup on 2.0.22). The
+   self-check now reads the rules in `opencode.json` and reports BROKEN, the README says what to
+   allow, and the hand-over and the reader's contract give an exit instead of a search.
+
 ### Still unverified
 
 - `session.hook("compaction")` — its payload is unknown, because the plugin does not hook it
