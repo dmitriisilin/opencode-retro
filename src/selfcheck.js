@@ -125,12 +125,14 @@ export function assess(session) {
           ? {
               status: SKIPPED,
               name: "prompt hook",
-              // A process loaded in the middle of a turn — a restart, or opencode.json edited
-              // mid-session, which reloads the plugin — never saw that turn's prompt. Measured:
+              // A process loaded in the middle of a turn — a restart, or opencode.json or the
+              // plugin's own files edited mid-session, either of which reloads the plugin with no
+              // restart (measured on 2.0.32, issue #3) — never saw that turn's prompt. Measured:
               // a stranger edited opencode.json mid-session as the README suggests, and the
               // report said BROKEN about a session whose log had its prompt at step 1.
               detail: "the plugin was loaded after this turn began",
-              meaning: "a restart or a config change reloads the plugin; the next turn you type in proves the hook.",
+              meaning:
+                "an edit to `opencode.json` or to the plugin's files reloads it, with no restart; the next turn you type in proves the hook.",
             }
           : {
             status: BROKEN,
@@ -365,8 +367,8 @@ export function render(state) {
     )
   } else {
     lines.push(
-      "Nothing measured since the plugin last started — a restart or a change to",
-      "`opencode.json` starts it again, and what it measured before is not kept. Hooks that",
+      "Nothing measured since the plugin last started — a change to `opencode.json` or to the",
+      "plugin's own files starts it again, and what it measured before is not kept. Hooks that",
       "registered prove nothing — a wrong hook name registers happily and never fires — so",
       "these lines stay empty until a hook has fired for real: the next prompt you type.",
       "",

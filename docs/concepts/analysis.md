@@ -223,6 +223,13 @@ stretch of log is the reader's job).*
   `the session's line reports an asking nobody answered, not just that the log waits`
   `a reader that finished without recording is reported as such, pointing at the tools' visibility`
   `the hand-over and the reader's contract give a way out when the tools are not there`
+- The hand-over names the agent a reader is started as: `general`, which carries the plugin's
+  tools, and not `explore`, which does not (measured on 2.0.32; issue #3). A reader that finds
+  `retro_record` missing says which agent it runs as, and one not started as `general` is
+  started again as `general`, once, before the person is told. A restart is ruled out in so
+  many words: the plugin reloads by itself, an open session gains its tools at its next step,
+  and `opencode service restart` closes the session it is typed in.
+  `the hand-over names the agent that carries the plugin's tools and rules out a restart`
   `a log asked about many times is never given up on for it, and says how many`
   `the askings add up in the session /retro runs in, which its own rounds lengthen`
   `the askings start again for a log replaced under the same id`

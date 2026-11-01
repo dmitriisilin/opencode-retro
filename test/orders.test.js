@@ -2521,6 +2521,23 @@ test("the hand-over and the reader's contract give a way out when the tools are 
   const { renderWorkOrders } = await import("../src/propose.js")
   const { OUTPUT_CONTRACT } = await import("../src/contract.js")
   const text = renderWorkOrders([{ session: "ses_a", path: "/x/.retro/work/ses_a.md" }]).replace(/\s+/g, " ")
-  assert.match(text, /If `retro_propose` is not among your tools, or a subagent reports that `retro_record` is not among its own, do not look for them, retry or work around it/)
+  assert.match(text, /If `retro_propose` is not among your own tools, or a `general` subagent reports `retro_record` missing too, do not look for them, retry or work around it/)
   assert.match(OUTPUT_CONTRACT.replace(/\s+/g, " "), /If `retro_record` is not among your tools, do not try another way to answer/)
+})
+
+// Issue #3. Measured on 2.0.32: `explore` has glob, grep, read, shell and the web tools and
+// none of the plugin's, `general` has all three. A reader started as `explore` reads its
+// order and cannot answer; the hand-over named no agent, and its exit named only a
+// permissions rule, so the agent looked for another cause and prescribed a restart.
+test("the hand-over names the agent that carries the plugin's tools and rules out a restart", async () => {
+  const { renderWorkOrders } = await import("../src/propose.js")
+  const { OUTPUT_CONTRACT } = await import("../src/contract.js")
+  const text = renderWorkOrders([{ session: "ses_a", path: "/x/.retro/work/ses_a.md" }]).replace(/\s+/g, " ")
+  assert.match(text, /as the `general` agent — not `explore`/)
+  assert.match(text, /it was not started as `general`, start that one again as `general`, once/)
+  assert.match(text, /Restarting OpenCode does not bring them/)
+  assert.match(text, /`opencode service restart` closes the session you are in/)
+  // The reader says what it ran as, so the agent that started it can tell which exit applies.
+  assert.match(OUTPUT_CONTRACT.replace(/\s+/g, " "), /and which agent you are running as/)
+  assert.match(OUTPUT_CONTRACT.replace(/\s+/g, " "), /such as `explore`, does not carry the plugin's tools/)
 })

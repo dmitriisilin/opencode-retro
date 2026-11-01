@@ -1522,13 +1522,15 @@ export default {
          */
         const asked = order.asked ?? 1
         // A reader that was started and finished without recording is not an inbox waiting: it
-        // ran, and could not answer — what a permissions rule hiding the plugin's tools does.
+        // ran, and could not answer — what a reader without the plugin's tools does, started as
+        // `explore` or under a permissions rule hiding them (issues #2 and #3).
         const ran = readersDone.delete(order.session)
         const detail =
           `asked ${asked} time${asked === 1 ? "" : "s"} and no record came back. ` +
           (ran
             ? "A reader was started for it and finished without calling `retro_record` — most often " +
-              "because the plugin's tools are not visible to the model: a permissions rule denying " +
+              "because the plugin's tools were not visible to it: a reader started as an agent limited " +
+              "to reading, such as `explore`, does not carry them, and a permissions rule denying " +
               "`retro_record`, `retro_propose` and `retro_decide` hides them in every session " +
               "(`.retro/selfcheck.md` says if one does; README, Permissions). The next `/retro` asks again."
             : "Nothing is owed of the log itself; the next `/retro` asks again. If this keeps happening, " +

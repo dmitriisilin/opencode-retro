@@ -262,8 +262,19 @@ plugin needed — and it gets the `sessionID`, so it can drive the review conver
 3. **The plugin path must be absolute.** A relative `package` path hangs session startup
    and the plugin never loads — no error, no log line, nothing in `/api/plugin`. Retested
    against an absolute control that completed in seconds under the same service.
-4. **The background service caches the plugin**, including the environment it was started
-   with. Use `--standalone` while iterating, or `opencode service restart`.
+4. **The background service reloads the plugin by itself — no restart.** Measured on 2.0.32
+   (issue #3): renaming a tool in the plugin's `index.js` was seen by the next turn, and
+   `selfcheck.md`'s `loaded` moved; adding the plugin to `opencode.json` loaded it the same
+   way. And a session already open gains the tools at its next *step*: a session started
+   before the plugin was named, continued with `opencode run -s`; a turn already in a
+   `sleep 45` when the entry was written, which called the tool once the sleep returned; and a
+   TUI session — all three called `retro_decide`. So the issue's other half, "a session begun
+   before a (re)load never gains the plugin's tools", does not reproduce on 2.0.32; it came
+   from an older OpenCode or from another cause, and the cause measured alongside it is
+   Gotcha 21. *This gotcha used to say the service caches the plugin and needs a restart —
+   true of an earlier build, or never — and it is what an agent reading this file reached for:
+   `opencode service restart`, which Gotcha 18 says kills its own session.* The service's
+   environment is still the one it was started with.
 5. **Never hook `session.hook("http.request"|"http.response")`** — they carry the provider
    `Authorization` header. `model.request` is safe (checked: headers are session/telemetry
    only), and that is the one to use if we ever need the model ref.
@@ -382,6 +393,20 @@ plugin needed — and it gets the `sessionID`, so it can drive the review conver
    with readers that could not record (issues #1 and #2, from a real setup on 2.0.22). The
    self-check now reads the rules in `opencode.json` and reports BROKEN, the README says what to
    allow, and the hand-over and the reader's contract give an exit instead of a search.
+
+21. **`explore` carries none of the plugin's tools.** Measured on 2.0.32 by asking two
+   subagents for their own tool lists: `explore` has `glob, grep, read, shell, webfetch,
+   websearch`, and `general` has those plus `edit, write, skill, execute` and `retro_record`,
+   `retro_propose`, `retro_decide`. A plugin tool reaches an agent only when the agent's own
+   configuration lets it, and `explore` is built to read. The hand-over used to name no agent
+   ("whichever general-purpose agent you have"), and `explore` is the natural pick for "read
+   a file and do what it says": its reader reads the order and cannot answer, and the exit
+   then blamed a permissions rule — so an agent with no such rule is left to guess a cause.
+   Issue #3 records an agent that guessed a restart; it does not say which agent its readers
+   ran as, and this is the cause that reproduces on 2.0.32 where its own explanation did not. The hand-over now names `general`, rules out
+   `explore`, has a reader started again as `general` once, and rules a restart out in so many
+   words; the reader says which agent it runs as when the tool is missing. A user's own agents
+   can be limited the same way, and nothing reads that — README, Permissions says so.
 
 ### Still unverified
 
@@ -1020,9 +1045,11 @@ understood is just a diagnostic that was written badly.
       logged, a false `BROKEN tool hook`, recurrence unreachable in a round with a backlog,
       the lesson snapshot placed ahead of the pointer to the live set, and the bench scoring
       before the second round had run.
-- [x] **Naming no agent works.** "Whichever general-purpose agent you have" was a guess;
-      four bench runs and two playground runs say the agent picks something that can read a
-      file and call a tool, every time. Not worth pinning a name we have not measured.
+- [x] **Naming no agent works** — *until it did not.* "Whichever general-purpose agent you
+      have" was a guess; four bench runs and two playground runs picked something that could
+      call a tool, every time. Issue #3 is the run that did not, and Gotcha 21 is why: the
+      obvious pick for reading a file, `explore`, has none of the plugin's tools. `general`
+      has been measured now, so it is named.
 - [x] **An unanswered order concludes nothing about the log.** The owner's question: why guess
       at what happened when the only thing we know is that we asked? A `/retro` posted into a
       session whose turn has not ended leaves its hand-over in the inbox — `resume: true` does
@@ -1133,10 +1160,11 @@ Known, listed so nobody discovers them as surprises:
 
 - Develop **outside** your everyday OpenCode config: load the plugin by absolute path in a dedicated playground project's `opencode.json`, not globally. The path must be absolute — a relative one hangs startup and the plugin never loads.
 - The **playground with planted traps** lives in `spike/playground/` (`lint` skill with no linter, `AGENTS.md` pointing at a `npm run build` that does not exist). See `spike/README.md` for how to run it. Deterministic friction → reproducible test sessions.
-- The background service caches the plugin and its environment, so restart it after editing
-  (`opencode service restart`). `--standalone` avoids that but is flaky here — it has hung
-  at `serve --stdio` repeatedly, with an absolute-path control passing seconds later. Prefer
-  restarting the service.
+- The background service reloads the plugin when its files or `opencode.json` change, and
+  open sessions pick the change up at their next step (Gotcha 4) — no restart, and an agent
+  that restarts the service closes its own session (Gotcha 18). Only a change to the
+  service's environment needs `opencode service restart`. `--standalone` is flaky here — it
+  has hung at `serve --stdio` repeatedly, with an absolute-path control passing seconds later.
 - Save real shadow logs from the playground into `fixtures/sessions/` — then projection, detectors and the extractor prompt can be iterated without running OpenCode. Raw hook/event captures (a layer below the shadow log) are in `fixtures/payloads/`.
 - Dogfooding: once M1 works, keep the plugin enabled while developing the plugin itself. This
   repository does that, which needs an `opencode.json` of its own — and it is **not** in git,

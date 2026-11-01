@@ -60,6 +60,12 @@ project's own instructions are where they always were.
 
 A person can start with \`selfcheck.md\` (is the plugin working) and \`lessons/\` (what it
 has learned).
+
+The plugin needs no restart. OpenCode reloads it by itself when \`opencode.json\` or the
+plugin's own files change, and a session already open gains its tools — \`retro_record\`,
+\`retro_propose\`, \`retro_decide\` — at its next step. \`opencode service restart\` closes
+every session running on the service, the one it is typed in included. A subagent started as
+\`explore\`, or as any agent limited to reading, does not carry those tools; \`general\` does.
 `
 
 export function seedReadme({ dir, onError }) {

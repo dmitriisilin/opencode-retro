@@ -273,14 +273,16 @@ export function renderWorkOrders(orders, { all = false, failures = [], left = 0 
     "",
     ...orders.map((o) => `- \`${o.path}\``),
     "",
-    // No agent is named on purpose: the only subagent names this project has actually
-    // observed from OpenCode are `build` and `explore` (AGENTS.md, "Subagents run in
-    // sessions of their own"), and naming one we have not verified would send the agent
-    // after something that may not exist. It knows its own roster; the requirement is only
-    // that the subagent can read a file and call a tool.
-    "Start one subagent per work order, with whichever general-purpose agent you have; it " +
-      "only needs to read a file and call a tool. Give each exactly this prompt, with its own " +
-      "path filled in, and nothing else:",
+    // `general`, by name, and `explore` ruled out. Measured on 2.0.32: OpenCode's `general`
+    // carries every tool the plugin registers, while `explore` — the obvious pick for "read a
+    // file" — has only glob, grep, read, shell and the web tools, so a reader started as it
+    // can read the order and never answer, and an exit that named only a permissions rule
+    // left the agent to guess at another cause — it guessed a restart (issue #3). "Whichever
+    // general-purpose agent you have" left the choice to a guess; the requirement is the same.
+    "Start one subagent per work order, as the `general` agent — not `explore` or any other " +
+      "agent limited to reading: the subagent has to call `retro_record`, and `explore` does not " +
+      "carry the plugin's tools. Give each exactly this prompt, with its own path filled in, and " +
+      "nothing else:",
     "",
     `    ${WORK_LINE}<path> and do what it says.`,
     "",
@@ -301,11 +303,18 @@ export function renderWorkOrders(orders, { all = false, failures = [], left = 0 
     "",
     // A defined exit when the tools never reached the model — a permissions rule hides them in
     // every session, and an agent that believes they exist treats each failure as its own and
-    // flails (issue #1).
-    "If `retro_propose` is not among your tools, or a subagent reports that `retro_record` is not " +
-      "among its own, do not look for them, retry or work around it: tell the person that the " +
-      "opencode-retro tools are not visible to the model — usually a permissions rule denying them, " +
-      "which `.retro/selfcheck.md` names — and stop.",
+    // flails (issue #1). The agent the reader was started as is checked first, with the one
+    // retry that fixes it; and the restart an agent reached for is ruled out by what was
+    // measured: the plugin reloads by itself, a session gains its tools at its next step, and
+    // a restart closes the session it is run from (issue #3; AGENTS.md Gotchas 4 and 18).
+    "If a subagent reports that `retro_record` is not among its tools and it was not started as " +
+      "`general`, start that one again as `general`, once. If `retro_propose` is not among your " +
+      "own tools, or a `general` subagent reports `retro_record` missing too, do not look for them, " +
+      "retry or work around it: tell the person that the opencode-retro tools are not visible to " +
+      "the model — usually a permissions rule denying them, which `.retro/selfcheck.md` names — and " +
+      "stop. Restarting OpenCode does not bring them: the plugin reloads by itself when its files or " +
+      "`opencode.json` change, an open session gains its tools at its next step, and " +
+      "`opencode service restart` closes the session you are in.",
   ]
   for (const f of failures) lines.push("", `_${failureLine(f)}_`)
   if (left > 0) lines.push("", backlogLine(left))
